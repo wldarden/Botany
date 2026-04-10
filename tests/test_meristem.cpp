@@ -354,9 +354,9 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     REQUIRE(tip2 != nullptr);
 
     // Low sugar = slow growth, high sugar = full growth
-    float max_cost = g.growth_rate * g.sugar_cost_growth;
-    tip1->sugar = g.sugar_save_threshold + max_cost * 0.5f; // half growth
-    tip2->sugar = g.sugar_save_threshold + max_cost * 2.0f; // full growth (capped at 1.0)
+    float max_cost = g.growth_rate * g.sugar_cost_shoot_growth;
+    tip1->sugar = g.sugar_save_shoot + max_cost * 0.5f; // half growth
+    tip2->sugar = g.sugar_save_shoot + max_cost * 2.0f; // full growth (capped at 1.0)
 
     glm::vec3 pos1_before = tip1->position;
     glm::vec3 pos2_before = tip2->position;
@@ -384,7 +384,7 @@ TEST_CASE("Growth at save_threshold produces zero growth", "[meristem][sugar]") 
     REQUIRE(shoot_tip != nullptr);
 
     // Exactly at save threshold — no growth
-    shoot_tip->sugar = g.sugar_save_threshold;
+    shoot_tip->sugar = g.sugar_save_shoot;
     glm::vec3 pos_before = shoot_tip->position;
     tick_meristems(plant);
     REQUIRE(shoot_tip->position.y == pos_before.y);
@@ -399,8 +399,8 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     Node* seed2 = plant2.seed_mut();
 
     float max_cost = g.thickening_rate * g.sugar_cost_thickening;
-    seed1->sugar = g.sugar_save_threshold + max_cost * 0.5f;
-    seed2->sugar = g.sugar_save_threshold + max_cost * 2.0f;
+    seed1->sugar = g.sugar_save_stem + max_cost * 0.5f;
+    seed2->sugar = g.sugar_save_stem + max_cost * 2.0f;
 
     float r1_before = seed1->radius;
     float r2_before = seed2->radius;

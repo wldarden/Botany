@@ -9,6 +9,7 @@
 #include <string>
 #include "engine/engine.h"
 #include "engine/node.h"
+#include "engine/world_params.h"
 #include "renderer/renderer.h"
 
 using namespace botany;
@@ -23,14 +24,20 @@ static void scroll_callback(GLFWwindow*, double, double yoffset) {
 
 int main(int argc, char* argv[]) {
     std::string color_chemical;
+    std::string world_path;
 
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--color") == 0 && i + 1 < argc) {
             color_chemical = argv[++i];
+        } else if (std::strcmp(argv[i], "--world") == 0 && i + 1 < argc) {
+            world_path = argv[++i];
         }
     }
 
     Engine engine;
+    if (!world_path.empty()) {
+        engine.world_params_mut() = load_world_params(world_path);
+    }
     Genome g = default_genome();
     PlantID plant_id = engine.create_plant(g, glm::vec3(0.0f));
 
@@ -72,6 +79,8 @@ int main(int argc, char* argv[]) {
     ImGui_ImplOpenGL3_Init("#version 410");
     ImGui::StyleColorsDark();
 
+    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR };
+    Overlay active_overlay = Overlay::NONE;
     bool playing = false;
     int steps_remaining = 0;
     bool space_was_pressed = false;
@@ -178,21 +187,56 @@ int main(int argc, char* argv[]) {
             if (ImGui::Button("None")) {
                 renderer.set_color_mode(ChemicalAccessor{});
                 renderer.set_color_by_type(false);
+                active_overlay = Overlay::NONE;
             }
             ImGui::SameLine();
             if (ImGui::Button("Node Type")) {
                 renderer.set_color_mode(ChemicalAccessor{});
                 renderer.set_color_by_type(true);
+                active_overlay = Overlay::NODE_TYPE;
             }
             ImGui::SameLine();
             if (ImGui::Button("Auxin")) {
                 renderer.set_color_by_type(false);
                 renderer.set_color_mode([](const Node& n) { return n.auxin; });
+                active_overlay = Overlay::AUXIN;
             }
             ImGui::SameLine();
             if (ImGui::Button("Cytokinin")) {
                 renderer.set_color_by_type(false);
                 renderer.set_color_mode([](const Node& n) { return n.cytokinin; });
+                active_overlay = Overlay::CYTOKININ;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Sugar")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.sugar; });
+                active_overlay = Overlay::SUGAR;
+            }
+
+            if (active_overlay == Overlay::NODE_TYPE) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Shoot Apical");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Shoot Axillary");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Stem");
+                ImGui::TextColored(ImVec4(0.2f, 0.4f, 1.0f, 1.0f), "Root Apical");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.6f, 0.2f, 0.8f, 1.0f), "Root Axillary");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "Root");
+            } else if (active_overlay != Overlay::NONE) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "Low");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "-");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "-");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "-");
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
             }
         }
 

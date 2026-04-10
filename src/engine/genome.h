@@ -46,13 +46,18 @@ struct Genome {
     float sugar_maintenance_root;
     float sugar_maintenance_meristem;
 
-    float seed_sugar;                // initial sugar stored in the seed node
-    float sugar_cost_activation;     // sugar cost to activate an axillary meristem
-    float sugar_cost_growth;         // sugar cost per unit of extension growth distance
-    float sugar_cost_thickening;     // sugar cost per unit of radius increase
+    float seed_sugar;                   // initial sugar stored in the seed node
 
-    // Sugar-growth scaling
-    float sugar_save_threshold;      // sugar reserve below which no growth occurs
+    // Sugar costs — per activity type
+    float sugar_cost_shoot_growth;      // cost per unit of shoot extension
+    float sugar_cost_root_growth;       // cost per unit of root extension
+    float sugar_cost_thickening;        // cost per unit of radius increase
+    float sugar_cost_activation;        // cost to activate an axillary meristem
+
+    // Sugar save thresholds — per node type
+    float sugar_save_shoot;             // reserve for shoot apical meristems
+    float sugar_save_root;              // reserve for root apical meristems
+    float sugar_save_stem;              // reserve for stem thickening
 };
 
 inline Genome default_genome() {
@@ -86,18 +91,21 @@ inline Genome default_genome() {
         .growth_noise = 0.03f,  // ~1.7 degrees
 
         .sugar_production_rate = 0.5f,
-        .sugar_transport_conductance = 0.1f,
+        .sugar_transport_conductance = 10.0f,
         .sugar_maintenance_leaf = 0.02f,
         .sugar_maintenance_stem = 0.01f,
         .sugar_maintenance_root = 0.01f,
         .sugar_maintenance_meristem = 0.005f,
 
-        .seed_sugar = 5.0f,
-        .sugar_cost_activation = 1.0f,
-        .sugar_cost_growth = 0.5f,
+        .seed_sugar = 50.0f,
+        .sugar_cost_shoot_growth = 0.3f,
+        .sugar_cost_root_growth = 0.2f,
         .sugar_cost_thickening = 0.1f,
+        .sugar_cost_activation = 1.0f,
 
-        .sugar_save_threshold = 0.1f,
+        .sugar_save_shoot = 0.05f,
+        .sugar_save_root = 0.05f,
+        .sugar_save_stem = 0.02f,
     };
 }
 

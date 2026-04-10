@@ -94,12 +94,12 @@ void ShootApicalMeristem::tick(Node& node, Plant& plant) {
     glm::vec3 dir = perturb(growth_direction(node), g.growth_noise);
 
     // Sugar-scaled growth
-    float max_cost = g.growth_rate * g.sugar_cost_growth;
-    float gf = sugar_growth_fraction(node.sugar, g.sugar_save_threshold, max_cost);
+    float max_cost = g.growth_rate * g.sugar_cost_shoot_growth;
+    float gf = sugar_growth_fraction(node.sugar, g.sugar_save_shoot, max_cost);
     if (gf < 1e-6f) return; // no sugar for growth
 
     float actual_rate = g.growth_rate * gf;
-    float actual_cost = actual_rate * g.sugar_cost_growth;
+    float actual_cost = actual_rate * g.sugar_cost_shoot_growth;
     node.sugar -= actual_cost;
 
     node.position += dir * actual_rate;
@@ -174,12 +174,12 @@ void RootApicalMeristem::tick(Node& node, Plant& plant) {
     }
 
     // Sugar-scaled growth
-    float max_cost = g.root_growth_rate * g.sugar_cost_growth;
-    float gf = sugar_growth_fraction(node.sugar, g.sugar_save_threshold, max_cost);
+    float max_cost = g.root_growth_rate * g.sugar_cost_root_growth;
+    float gf = sugar_growth_fraction(node.sugar, g.sugar_save_root, max_cost);
     if (gf < 1e-6f) return;
 
     float actual_rate = g.root_growth_rate * gf;
-    float actual_cost = actual_rate * g.sugar_cost_growth;
+    float actual_cost = actual_rate * g.sugar_cost_root_growth;
     node.sugar -= actual_cost;
 
     node.position += dir * actual_rate;
@@ -241,7 +241,7 @@ void tick_meristems(Plant& plant) {
         bool is_active_tip = n.meristem && n.meristem->is_tip() && n.meristem->active;
         if (!is_active_tip && n.type != NodeType::LEAF) {
             float max_cost = g.thickening_rate * g.sugar_cost_thickening;
-            float gf = sugar_growth_fraction(n.sugar, g.sugar_save_threshold, max_cost);
+            float gf = sugar_growth_fraction(n.sugar, g.sugar_save_stem, max_cost);
             if (gf > 1e-6f) {
                 float actual_rate = g.thickening_rate * gf;
                 float actual_cost = actual_rate * g.sugar_cost_thickening;

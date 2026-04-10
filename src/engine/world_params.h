@@ -1,6 +1,8 @@
 // src/engine/world_params.h
 #pragma once
 
+#include <string>
+
 namespace botany {
 
 struct WorldParams {
@@ -14,5 +16,7 @@ inline WorldParams default_world_params() {
         .sugar_diffusion_iterations = 5,
     };
 }
+
+WorldParams load_world_params(const std::string& path);
 
 } // namespace botany
