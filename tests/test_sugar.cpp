@@ -176,14 +176,23 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
 TEST_CASE("Multiple diffusion iterations produce smoother distribution", "[sugar]") {
     Genome g = default_genome();
 
+    // Create plants with large-cap children so cap clamping doesn't interfere
     Plant plant1(g, glm::vec3(0.0f));
-    plant1.seed_mut()->sugar = 100.0f;
+    for (int i = 0; i < 3; i++) {
+        Node* c = plant1.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.2f);
+        plant1.seed_mut()->add_child(c);
+    }
+    plant1.seed_mut()->sugar = 10.0f;
     WorldParams wp1 = default_world_params();
     wp1.sugar_diffusion_iterations = 1;
     diffuse_sugar(plant1, wp1);
 
     Plant plant2(g, glm::vec3(0.0f));
-    plant2.seed_mut()->sugar = 100.0f;
+    for (int i = 0; i < 3; i++) {
+        Node* c = plant2.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.2f);
+        plant2.seed_mut()->add_child(c);
+    }
+    plant2.seed_mut()->sugar = 10.0f;
     WorldParams wp2 = default_world_params();
     wp2.sugar_diffusion_iterations = 10;
     diffuse_sugar(plant2, wp2);
@@ -443,4 +452,54 @@ TEST_CASE("Production works normally when leaf is below cap", "[sugar]") {
     produce_sugar(plant, wp);
 
     REQUIRE(leaf->sugar > 0.0f);
+}
+
+TEST_CASE("Diffusion does not push sugar past receiver cap", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Create a child node with small cap (tiny radius, short offset)
+    Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.02f);
+    plant.seed_mut()->add_child(child);
+
+    float child_cap = sugar_cap(*child, g);
+
+    // Give seed lots of sugar, child already at cap
+    plant.seed_mut()->sugar = 100.0f;
+    child->sugar = child_cap;
+
+    WorldParams wp = default_world_params();
+    wp.sugar_diffusion_iterations = 10;
+    diffuse_sugar(plant, wp);
+
+    // Child should not exceed its cap
+    REQUIRE(child->sugar <= child_cap + 1e-6f);
+}
+
+TEST_CASE("Diffusion still conserves sugar when caps are not hit", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Build a tree with nodes that have large caps (big radii, long offsets)
+    for (int i = 0; i < 3; i++) {
+        Node* child = plant.create_node(NodeType::STEM,
+            glm::vec3(0.0f, 1.0f, 0.0f), 0.2f);
+        plant.seed_mut()->add_child(child);
+    }
+
+    // Give modest sugar amounts (well below caps)
+    plant.seed_mut()->sugar = 5.0f;
+    plant.seed_mut()->children[0]->sugar = 2.0f;
+
+    float total_before = 0.0f;
+    plant.for_each_node([&](const Node& n) { total_before += n.sugar; });
+
+    WorldParams wp = default_world_params();
+    wp.sugar_diffusion_iterations = 10;
+    diffuse_sugar(plant, wp);
+
+    float total_after = 0.0f;
+    plant.for_each_node([&](const Node& n) { total_after += n.sugar; });
+
+    REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
 }

@@ -141,6 +141,8 @@ void diffuse_sugar(Plant& plant, const WorldParams& world) {
         Node* a;
         Node* b;
         float conductance;
+        float a_cap;
+        float b_cap;
     };
     std::vector<Edge> edges;
     plant.for_each_node_mut([&](Node& node) {
@@ -154,7 +156,8 @@ void diffuse_sugar(Plant& plant, const WorldParams& world) {
             // Conductance: fraction of gradient to move. Clamped to 0.25 max
             // so that even thick stems don't equalize instantly.
             float conductance = std::min(area * g.sugar_transport_conductance, 0.25f);
-            edges.push_back({&node, node.parent, conductance});
+            edges.push_back({&node, node.parent, conductance,
+                             sugar_cap(node, g), sugar_cap(*node.parent, g)});
         }
     });
 
@@ -164,16 +167,16 @@ void diffuse_sugar(Plant& plant, const WorldParams& world) {
     for (int iter = 0; iter < world.sugar_diffusion_iterations; iter++) {
         for (Edge& e : edges) {
             float diff = e.a->sugar - e.b->sugar;
-
-            // Transfer = fraction of the gradient. Positive means a -> b.
             float transfer = diff * e.conductance;
 
-            // Clamp: never take more than the source has.
-            // This is the ONLY clamp — it prevents negatives without creating sugar.
             if (transfer > 0.0f) {
-                transfer = std::min(transfer, e.a->sugar);
+                // a -> b: clamp by a's available sugar and b's headroom
+                float b_headroom = std::max(0.0f, e.b_cap - e.b->sugar);
+                transfer = std::min({transfer, e.a->sugar, b_headroom});
             } else {
-                transfer = std::max(transfer, -e.b->sugar);
+                // b -> a: clamp by b's available sugar and a's headroom
+                float a_headroom = std::max(0.0f, e.a_cap - e.a->sugar);
+                transfer = std::max({transfer, -e.b->sugar, -a_headroom});
             }
 
             e.a->sugar -= transfer;
