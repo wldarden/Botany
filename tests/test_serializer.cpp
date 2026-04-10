@@ -50,6 +50,8 @@ TEST_CASE("Round-trip: node positions preserved", "[serializer]") {
         REQUIRE(snap.nodes[i].position.y == engine_nodes[i]->position.y);
         REQUIRE(snap.nodes[i].position.z == engine_nodes[i]->position.z);
         REQUIRE(snap.nodes[i].radius == engine_nodes[i]->radius);
+        REQUIRE(snap.nodes[i].sugar == engine_nodes[i]->sugar);
+        REQUIRE(snap.nodes[i].leaf_size == engine_nodes[i]->leaf_size);
     }
 }
 

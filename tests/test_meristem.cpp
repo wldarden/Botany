@@ -44,7 +44,7 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     REQUIRE(shoot->radius == shoot_r_before);
 }
 
-TEST_CASE("Chain growth spawns axillary node with leaf on interior node", "[meristem]") {
+TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "[meristem]") {
     Genome g = default_genome();
     g.growth_rate = 0.5f;
     g.max_internode_length = 0.6f;
@@ -57,22 +57,26 @@ TEST_CASE("Chain growth spawns axillary node with leaf on interior node", "[meri
         tick_meristems(plant);
     }
 
-    // Should have spawned an axillary node with a dormant meristem and a leaf
+    // Should have spawned an axillary node with a dormant meristem and a LEAF node
     REQUIRE(plant.node_count() > initial_count);
 
     bool found_axillary = false;
+    bool found_leaf = false;
     plant.for_each_node([&](const Node& n) {
         if (n.meristem && n.meristem->type() == MeristemType::AXILLARY) {
             found_axillary = true;
             REQUIRE(n.meristem->active == false);
-            REQUIRE(n.leaf != nullptr);
-            REQUIRE(n.leaf->size == g.leaf_size);
+        }
+        if (n.type == NodeType::LEAF) {
+            found_leaf = true;
+            REQUIRE(n.leaf_size == g.leaf_size);
         }
     });
     REQUIRE(found_axillary);
+    REQUIRE(found_leaf);
 }
 
-TEST_CASE("Interior nodes have at most 2 children", "[meristem]") {
+TEST_CASE("Interior STEM nodes have at most 3 children", "[meristem]") {
     Genome g = default_genome();
     g.growth_rate = 0.2f;
     g.max_internode_length = 0.3f;
@@ -83,9 +87,11 @@ TEST_CASE("Interior nodes have at most 2 children", "[meristem]") {
         tick_meristems(plant);
     }
 
-    // Every node should have at most 2 children: one continuation + one axillary
+    // Every STEM node should have at most 3 children: continuation tip + axillary + LEAF
     plant.for_each_node([&](const Node& n) {
-        REQUIRE(n.children.size() <= 2);
+        if (n.type == NodeType::STEM) {
+            REQUIRE(n.children.size() <= 3);
+        }
     });
 }
 

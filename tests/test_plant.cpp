@@ -84,17 +84,11 @@ TEST_CASE("Plant can create new nodes", "[plant]") {
     REQUIRE(child->parent == parent);
 }
 
-TEST_CASE("Plant can create meristems and leaves", "[plant]") {
+TEST_CASE("Plant can create LEAF nodes", "[plant]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
-
-    Node* node = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
-    Meristem* m = plant.create_meristem<ShootAxillaryMeristem>();
-    node->meristem = m;
-    Leaf* l = plant.create_leaf(0.3f);
-    node->leaf = l;
-
-    REQUIRE(node->meristem->type() == MeristemType::AXILLARY);
-    REQUIRE(node->meristem->active == false);
-    REQUIRE(node->leaf->size == 0.3f);
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 1.0f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.3f;
+    REQUIRE(leaf->type == NodeType::LEAF);
+    REQUIRE(leaf->leaf_size == 0.3f);
 }

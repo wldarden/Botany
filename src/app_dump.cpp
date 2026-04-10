@@ -22,7 +22,12 @@
 using namespace botany;
 
 static const char* node_type_str(NodeType t) {
-    return t == NodeType::STEM ? "STEM" : "ROOT";
+    switch (t) {
+        case NodeType::STEM: return "STEM";
+        case NodeType::ROOT: return "ROOT";
+        case NodeType::LEAF: return "LEAF";
+    }
+    return "UNKNOWN";
 }
 
 static void print_genome(const Genome& g) {
@@ -84,8 +89,9 @@ static void print_tick_full(const TickSnapshot& snap) {
                   << " r=" << n.radius
                   << " dist=" << dist_to_parent
                   << " auxin=" << n.auxin
-                  << " cyto=" << n.cytokinin;
-        if (n.has_leaf) {
+                  << " cyto=" << n.cytokinin
+                  << " sugar=" << n.sugar;
+        if (n.type == NodeType::LEAF) {
             std::cout << " LEAF(" << n.leaf_size << ")";
         }
         std::cout << std::endl;
@@ -136,8 +142,9 @@ static void print_tick_tree(const TickSnapshot& snap) {
                       << " dist=" << dist
                       << " y=" << n.position.y
                       << " aux=" << n.auxin
-                      << " cyt=" << n.cytokinin;
-            if (n.has_leaf) std::cout << " LEAF";
+                      << " cyt=" << n.cytokinin
+                      << " sugar=" << n.sugar;
+            if (n.type == NodeType::LEAF) std::cout << " LEAF";
 
             // Count children
             auto cit = children_map.find(n.id);
@@ -162,7 +169,7 @@ static void print_tick_tree(const TickSnapshot& snap) {
 }
 
 static void print_tick_stats(const TickSnapshot& snap) {
-    int stem_count = 0, root_count = 0, leaf_count = 0;
+    int stem_count = 0, root_count = 0, leaf_count = 0, leaf_node_count = 0;
     float min_radius = 1e9f, max_radius = 0.0f;
     float min_auxin = 1e9f, max_auxin = 0.0f, sum_auxin = 0.0f;
     float min_cyto = 1e9f, max_cyto = 0.0f, sum_cyto = 0.0f;
@@ -178,8 +185,9 @@ static void print_tick_stats(const TickSnapshot& snap) {
 
     for (const auto& n : snap.nodes) {
         if (n.type == NodeType::STEM) stem_count++;
-        else root_count++;
-        if (n.has_leaf) leaf_count++;
+        else if (n.type == NodeType::ROOT) root_count++;
+        else if (n.type == NodeType::LEAF) leaf_node_count++;
+        if (n.type == NodeType::LEAF) leaf_count++;
 
         min_radius = std::min(min_radius, n.radius);
         max_radius = std::max(max_radius, n.radius);

@@ -44,10 +44,8 @@ void save_tick(std::ostream& out, const Engine& engine, uint32_t plant_id) {
         write_val(out, node.radius);
         write_val(out, node.auxin);
         write_val(out, node.cytokinin);
-        bool has_leaf = (node.leaf != nullptr);
-        write_val(out, has_leaf);
-        float leaf_size = has_leaf ? node.leaf->size : 0.0f;
-        write_val(out, leaf_size);
+        write_val(out, node.sugar);
+        write_val(out, node.leaf_size);
     });
 }
 
@@ -66,7 +64,7 @@ TickSnapshot load_tick(std::istream& in) {
         ns.radius = read_val<float>(in);
         ns.auxin = read_val<float>(in);
         ns.cytokinin = read_val<float>(in);
-        ns.has_leaf = read_val<bool>(in);
+        ns.sugar = read_val<float>(in);
         ns.leaf_size = read_val<float>(in);
     }
 

@@ -42,8 +42,6 @@ public:
         return root_meristem_count_ >= max_root_meristems;
     }
 
-    Leaf* create_leaf(float size);
-
     void for_each_node(std::function<void(const Node&)> fn) const;
     void for_each_node_mut(std::function<void(Node&)> fn);
 
@@ -55,7 +53,6 @@ private:
     uint32_t root_meristem_count_ = 0;
     std::vector<std::unique_ptr<Node>> nodes_;
     std::vector<std::unique_ptr<Meristem>> meristems_;
-    std::vector<std::unique_ptr<Leaf>> leaves_;
 };
 
 } // namespace botany

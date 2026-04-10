@@ -28,13 +28,6 @@ Node* Plant::create_node(NodeType type, glm::vec3 position, float radius) {
     return ptr;
 }
 
-Leaf* Plant::create_leaf(float size) {
-    auto l = std::make_unique<Leaf>(Leaf{size});
-    Leaf* ptr = l.get();
-    leaves_.push_back(std::move(l));
-    return ptr;
-}
-
 void Plant::for_each_node(std::function<void(const Node&)> fn) const {
     for (const auto& node : nodes_) {
         fn(*node);

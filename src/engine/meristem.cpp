@@ -95,8 +95,14 @@ void ShootApicalMeristem::tick(Node& node, Plant& plant) {
             glm::vec3 ax_pos = node.position + branch_dir * g.tip_offset;
             Node* axillary = plant.create_node(NodeType::STEM, ax_pos, g.initial_radius * 0.5f);
             axillary->meristem = plant.create_meristem<ShootAxillaryMeristem>();
-            axillary->leaf = plant.create_leaf(g.leaf_size);
             node.add_child(axillary);
+
+            // Create leaf as a separate LEAF node on this interior node
+            glm::vec3 leaf_dir = branch_direction(dir, g.branch_angle, node.id + 1000);
+            glm::vec3 leaf_pos = node.position + leaf_dir * g.tip_offset;
+            Node* leaf_node = plant.create_node(NodeType::LEAF, leaf_pos, 0.0f);
+            leaf_node->leaf_size = g.leaf_size;
+            node.add_child(leaf_node);
 
             // Create new tip node slightly ahead along current direction
             // so it inherits the branch's growth direction
@@ -196,7 +202,7 @@ void tick_meristems(Plant& plant) {
 
         // Secondary growth: interior nodes (no active tip meristem) thicken.
         bool is_active_tip = n.meristem && n.meristem->is_tip() && n.meristem->active;
-        if (!is_active_tip) {
+        if (!is_active_tip && n.type != NodeType::LEAF) {
             n.radius += g.thickening_rate;
         }
         if (n.meristem) {

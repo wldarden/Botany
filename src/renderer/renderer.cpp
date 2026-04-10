@@ -109,6 +109,12 @@ void Renderer::draw_plant(const Plant& plant) {
     plant.for_each_node([&](const Node& node) {
         if (!node.parent) return;
 
+        if (node.type == NodeType::LEAF) {
+            glm::vec3 dir = glm::normalize(node.position - node.parent->position);
+            draw_leaf(node.position, dir, node.leaf_size);
+            return;
+        }
+
         glm::vec3 color;
         if (chemical_accessor_) {
             float v = chemical_accessor_(node);
@@ -125,13 +131,6 @@ void Renderer::draw_plant(const Plant& plant) {
 
         draw_cylinder(node.parent->position, node.position,
                       node.parent->radius, node.radius, color);
-
-        if (node.leaf) {
-            glm::vec3 dir = (node.parent)
-                ? glm::normalize(node.position - node.parent->position)
-                : glm::vec3(0.0f, 1.0f, 0.0f);
-            draw_leaf(node.position, dir, node.leaf->size);
-        }
     });
 }
 
@@ -148,6 +147,12 @@ void Renderer::draw_snapshot(const TickSnapshot& snapshot) {
         if (it == id_to_idx.end()) continue;
         const auto& parent = snapshot.nodes[it->second];
 
+        if (ns.type == NodeType::LEAF) {
+            glm::vec3 dir = glm::normalize(ns.position - parent.position);
+            draw_leaf(ns.position, dir, ns.leaf_size);
+            continue;
+        }
+
         glm::vec3 color;
         if (ns.type == NodeType::STEM) {
             color = glm::vec3(0.45f, 0.3f, 0.15f);
@@ -157,11 +162,6 @@ void Renderer::draw_snapshot(const TickSnapshot& snapshot) {
 
         draw_cylinder(parent.position, ns.position,
                       parent.radius, ns.radius, color);
-
-        if (ns.has_leaf) {
-            glm::vec3 dir = glm::normalize(ns.position - parent.position);
-            draw_leaf(ns.position, dir, ns.leaf_size);
-        }
     }
 }
 

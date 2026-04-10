@@ -19,7 +19,7 @@ struct NodeSnapshot {
     float radius;
     float auxin;
     float cytokinin;
-    bool has_leaf;
+    float sugar;
     float leaf_size;
 };
 

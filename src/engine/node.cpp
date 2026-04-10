@@ -12,7 +12,6 @@ Node::Node(uint32_t id, NodeType type, glm::vec3 position, float radius)
     , auxin(0.0f)
     , cytokinin(0.0f)
     , meristem(nullptr)
-    , leaf(nullptr)
 {}
 
 void Node::add_child(Node* child) {
