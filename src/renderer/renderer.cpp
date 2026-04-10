@@ -111,7 +111,14 @@ void Renderer::draw_plant(const Plant& plant) {
 
         if (node.type == NodeType::LEAF) {
             glm::vec3 dir = glm::normalize(node.position - node.parent->position);
-            draw_leaf(node.position, dir, node.leaf_size);
+            glm::vec3 leaf_color(0.2f, 0.6f, 0.15f);
+            if (node.starvation_ticks > 0) {
+                float stress = static_cast<float>(node.starvation_ticks) / 50.0f;
+                stress = glm::clamp(stress, 0.0f, 1.0f);
+                glm::vec3 dead_color(0.4f, 0.3f, 0.1f);
+                leaf_color = glm::mix(leaf_color, dead_color, stress);
+            }
+            draw_leaf(node.position, dir, node.leaf_size, leaf_color);
             return;
         }
 
@@ -120,13 +127,32 @@ void Renderer::draw_plant(const Plant& plant) {
             float v = chemical_accessor_(node);
             color = heatmap(v / max_val);
         } else if (color_by_type_) {
-            color = (node.type == NodeType::STEM)
-                ? glm::vec3(0.2f, 0.8f, 0.2f)   // green = shoot
-                : glm::vec3(0.8f, 0.4f, 0.1f);   // orange = root
+            if (node.meristem) {
+                switch (node.meristem->type()) {
+                    case MeristemType::APICAL:        color = glm::vec3(1.0f, 0.2f, 0.2f); break;  // red
+                    case MeristemType::AXILLARY:      color = glm::vec3(1.0f, 0.6f, 0.0f); break;  // orange
+                    case MeristemType::ROOT_APICAL:   color = glm::vec3(0.2f, 0.4f, 1.0f); break;  // blue
+                    case MeristemType::ROOT_AXILLARY: color = glm::vec3(0.6f, 0.2f, 0.8f); break;  // purple
+                }
+            } else if (node.type == NodeType::STEM) {
+                color = glm::vec3(0.2f, 0.8f, 0.2f);   // green
+            } else if (node.type == NodeType::ROOT) {
+                color = glm::vec3(0.8f, 0.6f, 0.2f);   // yellow-brown
+            } else {
+                color = glm::vec3(0.2f, 0.8f, 0.2f);   // green (leaf drawn separately, but fallback)
+            }
         } else if (node.type == NodeType::STEM) {
             color = glm::vec3(0.45f, 0.3f, 0.15f);
         } else {
             color = glm::vec3(0.35f, 0.2f, 0.1f);
+        }
+
+        // Starvation visual: interpolate toward grey/brown
+        if (node.starvation_ticks > 0) {
+            float stress = static_cast<float>(node.starvation_ticks) / 50.0f;
+            stress = glm::clamp(stress, 0.0f, 1.0f);
+            glm::vec3 dead_color(0.3f, 0.25f, 0.2f);
+            color = glm::mix(color, dead_color, stress);
         }
 
         draw_cylinder(node.parent->position, node.position,
@@ -226,7 +252,7 @@ void Renderer::draw_cylinder(glm::vec3 start, glm::vec3 end,
     glDeleteBuffers(1, &vbo);
 }
 
-void Renderer::draw_leaf(glm::vec3 position, glm::vec3 direction, float size) {
+void Renderer::draw_leaf(glm::vec3 position, glm::vec3 direction, float size, glm::vec3 color) {
     glm::vec3 perp;
     if (std::abs(direction.y) < 0.9f) {
         perp = glm::normalize(glm::cross(direction, glm::vec3(0.0f, 1.0f, 0.0f)));
@@ -241,7 +267,6 @@ void Renderer::draw_leaf(glm::vec3 position, glm::vec3 direction, float size) {
     glm::vec3 p2 = position - perp * half - up * half;
     glm::vec3 p3 = position + perp * half - up * half;
     glm::vec3 normal = glm::normalize(glm::cross(p1 - p0, p3 - p0));
-    glm::vec3 color(0.2f, 0.6f, 0.15f);
 
     float vertices[] = {
         p0.x, p0.y, p0.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,

@@ -41,6 +41,7 @@ struct Node {
     float cytokinin;
     float sugar = 0.0f;
     float leaf_size = 0.0f;
+    uint32_t starvation_ticks = 0;
 
     Meristem* meristem;
 

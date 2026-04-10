@@ -36,6 +36,13 @@ void consume_sugar(Plant& plant) {
             cost += g.sugar_maintenance_meristem;
         }
         node.sugar = std::max(0.0f, node.sugar - cost);
+
+        // Track starvation
+        if (node.sugar <= 0.0f) {
+            node.starvation_ticks++;
+        } else {
+            node.starvation_ticks = 0;
+        }
     });
 }
 
@@ -92,10 +99,29 @@ void diffuse_sugar(Plant& plant, const WorldParams& world) {
     }
 }
 
+void prune_starved_nodes(Plant& plant, const WorldParams& world) {
+    std::vector<Node*> to_prune;
+    plant.for_each_node_mut([&](Node& node) {
+        if (node.starvation_ticks >= world.starvation_ticks_max) {
+            // Only prune if parent is NOT also starved (prune from the top)
+            bool parent_starved = node.parent &&
+                node.parent->starvation_ticks >= world.starvation_ticks_max;
+            if (!parent_starved && node.parent != nullptr) {  // never prune seed (parent == nullptr)
+                to_prune.push_back(&node);
+            }
+        }
+    });
+
+    for (Node* n : to_prune) {
+        plant.remove_subtree(n);
+    }
+}
+
 void transport_sugar(Plant& plant, const WorldParams& world) {
     produce_sugar(plant, world);
     diffuse_sugar(plant, world);
     consume_sugar(plant);
+    prune_starved_nodes(plant, world);
 }
 
 } // namespace botany

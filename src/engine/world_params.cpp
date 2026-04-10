@@ -27,6 +27,11 @@ WorldParams load_world_params(const std::string& path) {
             if (colon != std::string::npos) {
                 wp.sugar_diffusion_iterations = std::stoi(line.substr(colon + 1));
             }
+        } else if (line.find("starvation_ticks_max") != std::string::npos) {
+            auto colon = line.find(':');
+            if (colon != std::string::npos) {
+                wp.starvation_ticks_max = static_cast<uint32_t>(std::stoi(line.substr(colon + 1)));
+            }
         }
     }
     return wp;

@@ -53,7 +53,7 @@ private:
     void draw_cylinder(glm::vec3 start, glm::vec3 end,
                        float r_start, float r_end,
                        glm::vec3 color, int segments = 8);
-    void draw_leaf(glm::vec3 position, glm::vec3 direction, float size);
+    void draw_leaf(glm::vec3 position, glm::vec3 direction, float size, glm::vec3 color = glm::vec3(0.2f, 0.6f, 0.15f));
 };
 
 } // namespace botany

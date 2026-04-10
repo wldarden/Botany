@@ -186,6 +186,98 @@ TEST_CASE("Multiple diffusion iterations produce smoother distribution", "[sugar
     REQUIRE(child_sugar_10iter > child_sugar_1iter);
 }
 
+// === Starvation tests ===
+
+TEST_CASE("Starvation ticks increment when sugar is zero", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* seed = plant.seed_mut();
+    seed->sugar = 0.0f;
+
+    consume_sugar(plant);
+
+    REQUIRE(seed->starvation_ticks > 0);
+}
+
+TEST_CASE("Starvation ticks reset when sugar is available", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* seed = plant.seed_mut();
+    seed->starvation_ticks = 10;
+    seed->sugar = 100.0f;
+
+    consume_sugar(plant);
+
+    REQUIRE(seed->starvation_ticks == 0);
+}
+
+TEST_CASE("Starved non-seed nodes are pruned after max starvation ticks", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Create a child node and starve it
+    Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(child);
+
+    uint32_t count_before = plant.node_count();
+    child->starvation_ticks = 100; // way past max
+
+    WorldParams wp = default_world_params();
+    wp.starvation_ticks_max = 50;
+
+    prune_starved_nodes(plant, wp);
+
+    REQUIRE(plant.node_count() < count_before);
+}
+
+TEST_CASE("Seed node is never pruned even when starved", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    plant.seed_mut()->starvation_ticks = 1000; // extremely starved
+
+    WorldParams wp = default_world_params();
+    wp.starvation_ticks_max = 50;
+
+    uint32_t count_before = plant.node_count();
+    prune_starved_nodes(plant, wp);
+
+    // Seed should still exist
+    REQUIRE(plant.seed() != nullptr);
+}
+
+TEST_CASE("Subtree removal cleans up all descendants", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Create a chain: seed -> A -> B -> C
+    Node* a = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
+    Node* b = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 2.0f, 0.0f), 0.05f);
+    Node* c = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 3.0f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(a);
+    a->add_child(b);
+    b->add_child(c);
+
+    uint32_t a_id = a->id;
+
+    // Starve A — should remove A, B, and C
+    a->starvation_ticks = 100;
+
+    WorldParams wp = default_world_params();
+    wp.starvation_ticks_max = 50;
+
+    prune_starved_nodes(plant, wp);
+
+    // A, B, C should all be gone
+    bool found_a = false;
+    plant.for_each_node([&](const Node& n) {
+        if (n.id == a_id) found_a = true;
+    });
+    REQUIRE_FALSE(found_a);
+}
+
 // === Integration test ===
 
 TEST_CASE("transport_sugar runs full produce-diffuse-consume cycle", "[sugar]") {

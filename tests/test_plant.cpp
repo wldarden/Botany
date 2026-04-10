@@ -92,3 +92,27 @@ TEST_CASE("Plant can create LEAF nodes", "[plant]") {
     REQUIRE(leaf->type == NodeType::LEAF);
     REQUIRE(leaf->leaf_size == 0.3f);
 }
+
+TEST_CASE("Plant::remove_subtree removes node and descendants", "[plant]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
+    Node* grandchild = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 2.0f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(child);
+    child->add_child(grandchild);
+
+    uint32_t id_child = child->id;
+    uint32_t count_before = plant.node_count();
+
+    plant.remove_subtree(child);
+
+    REQUIRE(plant.node_count() == count_before - 2);
+
+    // Child should no longer be in seed's children
+    bool found = false;
+    for (const Node* c : plant.seed()->children) {
+        if (c->id == id_child) found = true;
+    }
+    REQUIRE_FALSE(found);
+}
