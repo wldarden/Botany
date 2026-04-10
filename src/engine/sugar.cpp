@@ -121,6 +121,10 @@ void consume_sugar(Plant& plant) {
         }
         node.sugar = std::max(0.0f, node.sugar - cost);
 
+        // Safety clamp: cap sugar to node's storage capacity
+        float cap = sugar_cap(node, g);
+        node.sugar = std::min(node.sugar, cap);
+
         // Track starvation
         if (node.sugar <= 0.0f) {
             node.starvation_ticks++;

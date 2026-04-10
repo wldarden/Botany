@@ -69,18 +69,22 @@ TEST_CASE("consume_sugar deducts volume-based maintenance cost", "[sugar]") {
 
     // Create a stem with known dimensions for predictable cost
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
-    stem->sugar = 10.0f;
     plant.seed_mut()->add_child(stem);
 
+    // Set sugar within cap so safety clamp doesn't interfere
+    float cap = sugar_cap(*stem, g);
+    float initial_sugar = cap * 0.9f;
+    stem->sugar = initial_sugar;
+
     // Zero out other nodes' sugar so we only check our stem
-    plant.seed_mut()->sugar = 10.0f;
+    plant.seed_mut()->sugar = sugar_cap(*plant.seed_mut(), g);
 
     consume_sugar(plant);
 
     float length = glm::length(stem->offset);  // 1.0
     float volume = 3.14159f * 0.1f * 0.1f * length;
     float expected_cost = g.sugar_maintenance_stem * volume;
-    REQUIRE_THAT(stem->sugar, WithinAbs(10.0f - expected_cost, 1e-5));
+    REQUIRE_THAT(stem->sugar, WithinAbs(initial_sugar - expected_cost, 1e-5));
 }
 
 TEST_CASE("LEAF maintenance cost uses leaf area", "[sugar]") {
@@ -89,13 +93,17 @@ TEST_CASE("LEAF maintenance cost uses leaf area", "[sugar]") {
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->leaf_size = 0.5f;
-    leaf->sugar = 10.0f;
     plant.seed_mut()->add_child(leaf);
+
+    // Set sugar within cap so safety clamp doesn't interfere
+    float cap = sugar_cap(*leaf, g);
+    float initial_sugar = cap * 0.9f;
+    leaf->sugar = initial_sugar;
 
     consume_sugar(plant);
 
     float expected_cost = g.sugar_maintenance_leaf * 0.5f * 0.5f;
-    REQUIRE_THAT(leaf->sugar, WithinAbs(10.0f - expected_cost, 1e-6));
+    REQUIRE_THAT(leaf->sugar, WithinAbs(initial_sugar - expected_cost, 1e-6));
 }
 
 TEST_CASE("Sugar cannot go below zero after consumption", "[sugar]") {
@@ -122,7 +130,11 @@ TEST_CASE("Active meristem tips have additional maintenance cost", "[sugar]") {
         }
     });
     REQUIRE(shoot_tip != nullptr);
-    shoot_tip->sugar = 10.0f;
+
+    // Set sugar within cap so safety clamp doesn't interfere
+    float cap = sugar_cap(*shoot_tip, g);
+    float initial_sugar = cap * 0.9f;
+    shoot_tip->sugar = initial_sugar;
 
     consume_sugar(plant);
 
@@ -130,7 +142,7 @@ TEST_CASE("Active meristem tips have additional maintenance cost", "[sugar]") {
     float volume = 3.14159f * shoot_tip->radius * shoot_tip->radius * length;
     float expected_cost = g.sugar_maintenance_stem * volume
                         + g.sugar_maintenance_meristem;
-    REQUIRE_THAT(shoot_tip->sugar, WithinAbs(10.0f - expected_cost, 1e-5));
+    REQUIRE_THAT(shoot_tip->sugar, WithinAbs(initial_sugar - expected_cost, 1e-5));
 }
 
 // === Diffusion tests ===
@@ -474,6 +486,22 @@ TEST_CASE("Diffusion does not push sugar past receiver cap", "[sugar]") {
 
     // Child should not exceed its cap
     REQUIRE(child->sugar <= child_cap + 1e-6f);
+}
+
+TEST_CASE("Safety clamp caps sugar after consumption", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
+    plant.seed_mut()->add_child(stem);
+
+    float cap = sugar_cap(*stem, g);
+    // Set sugar way above cap (simulating an edge case)
+    stem->sugar = cap * 10.0f;
+
+    consume_sugar(plant);
+
+    REQUIRE(stem->sugar <= cap + 1e-6f);
 }
 
 TEST_CASE("Diffusion still conserves sugar when caps are not hit", "[sugar]") {

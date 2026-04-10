@@ -57,19 +57,28 @@ Hormones are **reset to zero every tick** then recomputed as a fresh signal snap
 
 ## Sugar Model
 
-Sugar **persists across ticks** (NOT reset like hormones). Three phases per tick:
+Sugar **persists across ticks** (NOT reset like hormones). Four phases per tick:
 
 1. **Production** — LEAF nodes produce: `sugar += light_level * leaf_size * sugar_production_rate`
+   - Feedback inhibition: production skipped if node sugar >= storage cap
 2. **Diffusion** — Gradient-based bidirectional flow through all node connections:
    - Transport capacity = `min_radius^2 * PI * sugar_transport_conductance` (thicker = more)
    - LEAF connections use baseline capacity (leaf radius is 0)
    - Runs `sugar_diffusion_iterations` passes per tick (WorldParams, default 5)
-   - Compute-then-apply: all flows calculated first, then applied atomically (order-independent)
-3. **Consumption** — Every node deducts maintenance cost. `sugar = max(0, sugar - cost)`:
-   - LEAF: `sugar_maintenance_leaf * leaf_size`
-   - STEM: `sugar_maintenance_stem * radius`
-   - ROOT: `sugar_maintenance_root * radius`
-   - Active meristem tips: `+ sugar_maintenance_meristem`
+   - Cap-aware: transfers clamped by receiver's available headroom
+3. **Leaf growth** — Growing leaves spend sugar to expand toward max_leaf_size
+4. **Consumption** — Every node deducts volume-based maintenance cost:
+   - LEAF: `sugar_maintenance_leaf * leaf_size²` (scales with leaf area)
+   - STEM: `sugar_maintenance_stem * π * r² * internode_length` (scales with tissue volume)
+   - ROOT: `sugar_maintenance_root * π * r² * internode_length` (scales with tissue volume)
+   - Active meristem tips: `+ sugar_maintenance_meristem` (flat per-tip)
+   - Safety clamp: sugar capped to node storage limit after consumption
+
+**Storage caps** — Each node has a maximum sugar capacity proportional to its tissue volume:
+- STEM/ROOT: `π * r² * internode_length * sugar_storage_density_wood`
+- LEAF: `leaf_size² * sugar_storage_density_leaf`
+- Minimum cap of `sugar_cap_minimum` for tiny/new nodes
+- Seed node cap is at least `seed_sugar` to hold initial reserves
 
 **WorldParams** (non-genetic, on Engine):
 - `light_level` (1.0) — global light intensity, controls sugar production
