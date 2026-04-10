@@ -85,6 +85,10 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
             angle_efficiency = std::max(0.0f, leaf_normal.y); // dot with (0,1,0)
         }
 
+        // Feedback inhibition: full storage stops photosynthesis
+        float cap = sugar_cap(*leaf.node, g);
+        if (leaf.node->sugar >= cap) continue;
+
         leaf.node->sugar += leaf.node->light_exposure * angle_efficiency
                           * world.light_level * leaf.node->leaf_size
                           * g.sugar_production_rate;

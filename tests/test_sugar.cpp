@@ -408,3 +408,39 @@ TEST_CASE("sugar_cap for root scales with volume", "[sugar]") {
     // Volume cap (0.0785) > minimum (0.01), so volume wins
     REQUIRE_THAT(sugar_cap(*root, g), WithinAbs(expected, 1e-5));
 }
+
+TEST_CASE("Production skipped when leaf sugar is at cap", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.3f;
+    plant.seed_mut()->add_child(leaf);
+
+    // Fill leaf to its cap
+    float cap = sugar_cap(*leaf, g);
+    leaf->sugar = cap;
+
+    WorldParams wp = default_world_params();
+    produce_sugar(plant, wp);
+
+    // Sugar should not have increased
+    REQUIRE_THAT(leaf->sugar, WithinAbs(cap, 1e-6));
+}
+
+TEST_CASE("Production works normally when leaf is below cap", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.5f;
+    leaf->sugar = 0.0f;
+    plant.seed_mut()->add_child(leaf);
+
+    WorldParams wp = default_world_params();
+    wp.light_level = 2.0f;
+
+    produce_sugar(plant, wp);
+
+    REQUIRE(leaf->sugar > 0.0f);
+}
