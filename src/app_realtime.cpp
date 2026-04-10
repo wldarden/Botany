@@ -45,7 +45,7 @@ static const Node* pick_node(const Plant& plant, const OrbitCamera& camera,
 
     const Node* closest = nullptr;
     float closest_dist = FLT_MAX;
-    float max_pick_dist = 0.5f; // max distance from ray to count as a hit
+    float max_pick_dist = 1.0f; // max distance from ray to count as a hit
 
     plant.for_each_node([&](const Node& node) {
         // Point-to-ray distance
@@ -136,6 +136,7 @@ int main(int argc, char* argv[]) {
     bool playing = false;
     int steps_remaining = 0;
     bool space_was_pressed = false;
+    bool mouse_was_pressed = false;
     int total_ticks = 0;
 
     while (!glfwWindowShouldClose(window)) {
@@ -187,22 +188,23 @@ int main(int argc, char* argv[]) {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // Mouse picking (left click when ImGui doesn't want the mouse)
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-            if (!ImGui::GetIO().WantCaptureMouse) {
-                double mx, my;
-                glfwGetCursorPos(window, &mx, &my);
-                int w, h;
-                glfwGetFramebufferSize(window, &w, &h);
-                const Node* picked = pick_node(engine.get_plant(plant_id),
-                                                renderer.camera(),
-                                                static_cast<int>(mx), static_cast<int>(my), w, h);
-                if (picked) {
-                    g_selected_node = picked;
-                    g_show_node_panel = true;
-                }
+        // Mouse picking — debounced: fire once on press, not every frame
+        bool mouse_down = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+        if (mouse_down && !mouse_was_pressed && !ImGui::GetIO().WantCaptureMouse) {
+            double mx, my;
+            glfwGetCursorPos(window, &mx, &my);
+            // Use window size (not framebuffer) since glfwGetCursorPos returns window coords
+            int w, h;
+            glfwGetWindowSize(window, &w, &h);
+            const Node* picked = pick_node(engine.get_plant(plant_id),
+                                            renderer.camera(),
+                                            static_cast<int>(mx), static_cast<int>(my), w, h);
+            if (picked) {
+                g_selected_node = picked;
+                g_show_node_panel = true;
             }
         }
+        mouse_was_pressed = mouse_down;
 
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Once);
         ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX));
