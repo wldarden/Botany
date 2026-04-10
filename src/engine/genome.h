@@ -37,6 +37,14 @@ struct Genome {
     float root_initial_radius;
     float tip_offset;     // small forward offset when chaining new tip/axillary nodes
     float growth_noise;   // max angular perturbation per segment (radians)
+
+    // Sugar / photosynthesis
+    float sugar_production_rate;
+    float sugar_transport_conductance;
+    float sugar_maintenance_leaf;
+    float sugar_maintenance_stem;
+    float sugar_maintenance_root;
+    float sugar_maintenance_meristem;
 };
 
 inline Genome default_genome() {
@@ -68,6 +76,13 @@ inline Genome default_genome() {
         .root_initial_radius = 0.025f,
         .tip_offset = 0.01f,
         .growth_noise = 0.03f,  // ~1.7 degrees
+
+        .sugar_production_rate = 0.5f,
+        .sugar_transport_conductance = 0.1f,
+        .sugar_maintenance_leaf = 0.02f,
+        .sugar_maintenance_stem = 0.01f,
+        .sugar_maintenance_root = 0.01f,
+        .sugar_maintenance_meristem = 0.005f,
     };
 }
 

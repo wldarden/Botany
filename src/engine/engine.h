@@ -7,6 +7,7 @@
 #include <glm/vec3.hpp>
 #include "engine/genome.h"
 #include "engine/plant.h"
+#include "engine/world_params.h"
 
 namespace botany {
 
@@ -25,9 +26,13 @@ public:
     uint32_t get_tick() const { return tick_; }
     uint32_t plant_count() const { return static_cast<uint32_t>(plants_.size()); }
 
+    const WorldParams& world_params() const { return world_params_; }
+    WorldParams& world_params_mut() { return world_params_; }
+
 private:
     uint32_t tick_ = 0;
     std::vector<std::unique_ptr<Plant>> plants_;
+    WorldParams world_params_;
 };
 
 } // namespace botany

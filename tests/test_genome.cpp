@@ -36,4 +36,13 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
         REQUIRE(g.max_internode_length > 0.0f);
         REQUIRE(g.root_max_internode_length > 0.0f);
     }
+
+    SECTION("sugar parameters are positive") {
+        REQUIRE(g.sugar_production_rate > 0.0f);
+        REQUIRE(g.sugar_transport_conductance > 0.0f);
+        REQUIRE(g.sugar_maintenance_leaf > 0.0f);
+        REQUIRE(g.sugar_maintenance_stem > 0.0f);
+        REQUIRE(g.sugar_maintenance_root > 0.0f);
+        REQUIRE(g.sugar_maintenance_meristem > 0.0f);
+    }
 }
