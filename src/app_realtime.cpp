@@ -9,7 +9,6 @@
 #include <iostream>
 #include <cstdlib>
 #include <cstring>
-#include <cstdio>
 #include <string>
 #include "engine/engine.h"
 #include "engine/node.h"
@@ -193,7 +192,6 @@ int main(int argc, char* argv[]) {
         if (mouse_down && !mouse_was_pressed && !ImGui::GetIO().WantCaptureMouse) {
             double mx, my;
             glfwGetCursorPos(window, &mx, &my);
-            // Use window size (not framebuffer) since glfwGetCursorPos returns window coords
             int w, h;
             glfwGetWindowSize(window, &w, &h);
             const Node* picked = pick_node(engine.get_plant(plant_id),
@@ -327,9 +325,9 @@ int main(int argc, char* argv[]) {
 
         if (g_show_node_panel && g_selected_node) {
             int w, h;
-            glfwGetFramebufferSize(window, &w, &h);
-            ImGui::SetNextWindowPos(ImVec2(static_cast<float>(w) - 320, 10), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(310, 0), ImGuiCond_Always);
+            glfwGetWindowSize(window, &w, &h);
+            ImGui::SetNextWindowPos(ImVec2(static_cast<float>(w) - 320, 10), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(ImVec2(310, 0), ImGuiCond_Once);
 
             if (ImGui::Begin("Node Inspector", &g_show_node_panel, ImGuiWindowFlags_AlwaysAutoResize)) {
                 const Node& sel = *g_selected_node;
