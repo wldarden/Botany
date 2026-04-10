@@ -2,6 +2,7 @@
 #include "engine/engine.h"
 #include "engine/hormone.h"
 #include "engine/meristem.h"
+#include "engine/sugar.h"
 
 namespace botany {
 
@@ -15,6 +16,7 @@ void Engine::tick() {
     for (auto& plant : plants_) {
         transport_auxin(*plant);
         transport_cytokinin(*plant);
+        transport_sugar(*plant, world_params_);
         tick_meristems(*plant);
     }
     tick_++;

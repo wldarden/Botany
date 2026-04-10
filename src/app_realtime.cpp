@@ -1,5 +1,8 @@
 // src/app_realtime.cpp
 #include <GLFW/glfw3.h>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 #include <iostream>
 #include <cstdlib>
 #include <cstring>
@@ -10,25 +13,7 @@
 
 using namespace botany;
 
-static bool mouse_pressed = false;
-static double last_mouse_x = 0, last_mouse_y = 0;
 static Renderer* g_renderer = nullptr;
-
-static void mouse_button_callback(GLFWwindow*, int button, int action, int) {
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        mouse_pressed = (action == GLFW_PRESS);
-    }
-}
-
-static void cursor_pos_callback(GLFWwindow* window, double x, double y) {
-    if (mouse_pressed && g_renderer) {
-        float dx = static_cast<float>(x - last_mouse_x);
-        float dy = static_cast<float>(y - last_mouse_y);
-        g_renderer->camera().rotate(dx, dy);
-    }
-    last_mouse_x = x;
-    last_mouse_y = y;
-}
 
 static void scroll_callback(GLFWwindow*, double, double yoffset) {
     if (g_renderer) {
@@ -37,14 +22,11 @@ static void scroll_callback(GLFWwindow*, double, double yoffset) {
 }
 
 int main(int argc, char* argv[]) {
-    int stop_at = -1;
     std::string color_chemical;
 
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--color") == 0 && i + 1 < argc) {
             color_chemical = argv[++i];
-        } else {
-            stop_at = std::atoi(argv[i]);
         }
     }
 
@@ -62,70 +44,171 @@ int main(int argc, char* argv[]) {
     if (!color_chemical.empty()) {
         if (color_chemical == "type") {
             renderer.set_color_by_type(true);
-            std::cout << "Color mode: type (green=shoot, orange=root)" << std::endl;
         } else {
             ChemicalAccessor accessor;
             if (color_chemical == "auxin") {
                 accessor = [](const Node& n) { return n.auxin; };
             } else if (color_chemical == "cytokinin") {
                 accessor = [](const Node& n) { return n.cytokinin; };
+            } else if (color_chemical == "sugar") {
+                accessor = [](const Node& n) { return n.sugar; };
             } else {
                 std::cerr << "Unknown chemical: " << color_chemical
-                          << " (available: auxin, cytokinin, type)" << std::endl;
+                          << " (available: auxin, cytokinin, sugar, type)" << std::endl;
                 renderer.shutdown();
                 return 1;
             }
             renderer.set_color_mode(std::move(accessor));
-            std::cout << "Color mode: " << color_chemical << std::endl;
         }
     }
 
     GLFWwindow* window = renderer.window();
-    glfwSetMouseButtonCallback(window, mouse_button_callback);
-    glfwSetCursorPosCallback(window, cursor_pos_callback);
     glfwSetScrollCallback(window, scroll_callback);
 
-    int ticks_per_frame = 1;
-    bool paused = false;
-    bool space_was_pressed = false;
+    // ImGui setup
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 410");
+    ImGui::StyleColorsDark();
 
-    // If stop_at given, run those ticks immediately before rendering
-    if (stop_at > 0) {
-        for (int i = 0; i < stop_at; i++) {
-            engine.tick();
-        }
-        paused = true;
-        std::cout << "Ran " << stop_at << " ticks (" << engine.get_plant(plant_id).node_count() << " nodes). Paused — press Space to continue." << std::endl;
-    }
+    bool playing = false;
+    int steps_remaining = 0;
+    bool space_was_pressed = false;
+    int total_ticks = 0;
 
     while (!glfwWindowShouldClose(window)) {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
 
-        // Debounce space — toggle on press, not hold
+        // Arrow keys rotate camera
+        const float rotate_speed = 6.0f;
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+            renderer.camera().rotate(-rotate_speed, 0.0f);
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+            renderer.camera().rotate(rotate_speed, 0.0f);
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+            renderer.camera().rotate(0.0f, rotate_speed);
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+            renderer.camera().rotate(0.0f, -rotate_speed);
+
+        // Z/X translate camera target vertically
+        const float pan_speed = 0.05f;
+        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS)
+            renderer.camera().set_target(renderer.camera().target() + glm::vec3(0.0f, pan_speed, 0.0f));
+        if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS)
+            renderer.camera().set_target(renderer.camera().target() - glm::vec3(0.0f, pan_speed, 0.0f));
+
+        // Space toggles play/pause
         bool space_down = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         if (space_down && !space_was_pressed) {
-            paused = !paused;
+            if (playing) {
+                playing = false;
+            } else {
+                playing = true;
+                steps_remaining = 0;
+            }
         }
         space_was_pressed = space_down;
 
-        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
-            ticks_per_frame = std::min(ticks_per_frame + 1, 100);
-        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
-            ticks_per_frame = std::max(ticks_per_frame - 1, 1);
+        // Run sim
+        if (playing) {
+            engine.tick();
+            total_ticks++;
+        } else if (steps_remaining > 0) {
+            engine.tick();
+            total_ticks++;
+            steps_remaining--;
+        }
 
-        if (!paused) {
-            for (int i = 0; i < ticks_per_frame; i++) {
-                engine.tick();
+        // ImGui
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Once);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX));
+        ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        ImGui::Text("Tick: %d  Nodes: %d", total_ticks,
+                     static_cast<int>(engine.get_plant(plant_id).node_count()));
+
+        // Sugar stats
+        float total_sugar = 0.0f;
+        float max_sugar = 0.0f;
+        int leaf_count = 0;
+        engine.get_plant(plant_id).for_each_node([&](const Node& n) {
+            total_sugar += n.sugar;
+            if (n.sugar > max_sugar) max_sugar = n.sugar;
+            if (n.type == NodeType::LEAF) leaf_count++;
+        });
+        ImGui::Text("Leaves: %d", leaf_count);
+        ImGui::Text("Sugar: total=%.1f max=%.3f", total_sugar, max_sugar);
+        ImGui::Separator();
+        ImGui::SliderFloat("Light", &engine.world_params_mut().light_level, 0.0f, 2.0f);
+        ImGui::SliderInt("Diffusion Iters",
+            &engine.world_params_mut().sugar_diffusion_iterations, 1, 20);
+
+        ImGui::SeparatorText("Time");
+        if (ImGui::Button("Step 1")) {
+            playing = false;
+            steps_remaining = 1;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Step 10")) {
+            playing = false;
+            steps_remaining = 10;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Step 100")) {
+            playing = false;
+            steps_remaining = 100;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(playing ? "Pause" : "Play")) {
+            if (playing) {
+                playing = false;
+            } else {
+                playing = true;
+                steps_remaining = 0;
             }
         }
+
+        if (ImGui::CollapsingHeader("Overlays")) {
+            if (ImGui::Button("None")) {
+                renderer.set_color_mode(ChemicalAccessor{});
+                renderer.set_color_by_type(false);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Node Type")) {
+                renderer.set_color_mode(ChemicalAccessor{});
+                renderer.set_color_by_type(true);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Auxin")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.auxin; });
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cytokinin")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.cytokinin; });
+            }
+        }
+
+        ImGui::End();
+        ImGui::Render();
 
         renderer.begin_frame();
         renderer.draw_ground();
         renderer.draw_plant(engine.get_plant(plant_id));
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         renderer.end_frame();
     }
 
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
     renderer.shutdown();
     return 0;
 }
