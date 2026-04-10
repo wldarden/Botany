@@ -47,6 +47,9 @@ TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
+    // Zero out any initial sugar (e.g. seed_sugar) so we only measure production
+    plant.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
+
     WorldParams wp = default_world_params();
     produce_sugar(plant, wp);
 

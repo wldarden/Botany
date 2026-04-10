@@ -46,9 +46,13 @@ struct Genome {
     float sugar_maintenance_root;
     float sugar_maintenance_meristem;
 
+    float seed_sugar;                // initial sugar stored in the seed node
     float sugar_cost_activation;     // sugar cost to activate an axillary meristem
     float sugar_cost_growth;         // sugar cost per unit of extension growth distance
     float sugar_cost_thickening;     // sugar cost per unit of radius increase
+
+    // Sugar-growth scaling
+    float sugar_save_threshold;      // sugar reserve below which no growth occurs
 };
 
 inline Genome default_genome() {
@@ -88,9 +92,12 @@ inline Genome default_genome() {
         .sugar_maintenance_root = 0.01f,
         .sugar_maintenance_meristem = 0.005f,
 
+        .seed_sugar = 5.0f,
         .sugar_cost_activation = 1.0f,
         .sugar_cost_growth = 0.5f,
         .sugar_cost_thickening = 0.1f,
+
+        .sugar_save_threshold = 0.1f,
     };
 }
 

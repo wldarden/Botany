@@ -71,6 +71,16 @@ static glm::vec3 perturb(const glm::vec3& dir, float max_angle) {
     return glm::normalize(dir * std::cos(tilt) + radial * std::sin(tilt));
 }
 
+// Compute growth fraction based on available sugar.
+// Returns 0.0 if sugar is at or below save threshold.
+// Returns 1.0 if sugar is sufficient for max growth.
+// Linearly interpolates in between.
+static float sugar_growth_fraction(float sugar, float save_threshold, float max_cost) {
+    if (max_cost < 1e-6f) return 1.0f; // zero-cost growth always happens
+    float available = std::max(sugar - save_threshold, 0.0f);
+    return std::min(available / max_cost, 1.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Subclass tick() implementations
 // ---------------------------------------------------------------------------
@@ -83,12 +93,16 @@ void ShootApicalMeristem::tick(Node& node, Plant& plant) {
     // Extend with slight angular noise
     glm::vec3 dir = perturb(growth_direction(node), g.growth_noise);
 
-    // Growth costs sugar — skip if insufficient
-    float growth_cost = g.sugar_cost_growth * g.growth_rate;
-    if (node.sugar < growth_cost) return;
-    node.sugar -= growth_cost;
+    // Sugar-scaled growth
+    float max_cost = g.growth_rate * g.sugar_cost_growth;
+    float gf = sugar_growth_fraction(node.sugar, g.sugar_save_threshold, max_cost);
+    if (gf < 1e-6f) return; // no sugar for growth
 
-    node.position += dir * g.growth_rate;
+    float actual_rate = g.growth_rate * gf;
+    float actual_cost = actual_rate * g.sugar_cost_growth;
+    node.sugar -= actual_cost;
+
+    node.position += dir * actual_rate;
 
     // Chain growth: when distance to parent exceeds max, this node becomes
     // an interior node with one axillary meristem + leaf, and a new tip node
@@ -159,12 +173,16 @@ void RootApicalMeristem::tick(Node& node, Plant& plant) {
         dir = glm::normalize(dir + down * strength);
     }
 
-    // Growth costs sugar — skip if insufficient
-    float growth_cost = g.sugar_cost_growth * g.root_growth_rate;
-    if (node.sugar < growth_cost) return;
-    node.sugar -= growth_cost;
+    // Sugar-scaled growth
+    float max_cost = g.root_growth_rate * g.sugar_cost_growth;
+    float gf = sugar_growth_fraction(node.sugar, g.sugar_save_threshold, max_cost);
+    if (gf < 1e-6f) return;
 
-    node.position += dir * g.root_growth_rate;
+    float actual_rate = g.root_growth_rate * gf;
+    float actual_cost = actual_rate * g.sugar_cost_growth;
+    node.sugar -= actual_cost;
+
+    node.position += dir * actual_rate;
 
     // Chain growth: same logic as shoot — interior node gets one root axillary
     if (node.parent) {
@@ -222,10 +240,13 @@ void tick_meristems(Plant& plant) {
         // Secondary growth: interior nodes (no active tip meristem) thicken.
         bool is_active_tip = n.meristem && n.meristem->is_tip() && n.meristem->active;
         if (!is_active_tip && n.type != NodeType::LEAF) {
-            float thicken_cost = g.sugar_cost_thickening * g.thickening_rate;
-            if (n.sugar >= thicken_cost) {
-                n.sugar -= thicken_cost;
-                n.radius += g.thickening_rate;
+            float max_cost = g.thickening_rate * g.sugar_cost_thickening;
+            float gf = sugar_growth_fraction(n.sugar, g.sugar_save_threshold, max_cost);
+            if (gf > 1e-6f) {
+                float actual_rate = g.thickening_rate * gf;
+                float actual_cost = actual_rate * g.sugar_cost_thickening;
+                n.sugar -= actual_cost;
+                n.radius += actual_rate;
             }
         }
         if (n.meristem) {

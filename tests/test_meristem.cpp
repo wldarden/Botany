@@ -1,6 +1,7 @@
 // tests/test_meristem.cpp
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <glm/geometric.hpp>
 #include "engine/plant.h"
 #include "engine/meristem.h"
 
@@ -331,4 +332,93 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
     tick_meristems(plant);
     REQUIRE(seed->sugar < sugar_before);
     REQUIRE(seed->radius > g.initial_radius);
+}
+
+TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
+    Genome g = default_genome();
+    Plant plant1(g, glm::vec3(0.0f));
+    Plant plant2(g, glm::vec3(0.0f));
+
+    // Find shoot tips in both plants
+    Node* tip1 = nullptr;
+    Node* tip2 = nullptr;
+    plant1.for_each_node_mut([&](Node& n) {
+        if (n.meristem && n.meristem->type() == MeristemType::APICAL && n.meristem->active)
+            tip1 = &n;
+    });
+    plant2.for_each_node_mut([&](Node& n) {
+        if (n.meristem && n.meristem->type() == MeristemType::APICAL && n.meristem->active)
+            tip2 = &n;
+    });
+    REQUIRE(tip1 != nullptr);
+    REQUIRE(tip2 != nullptr);
+
+    // Low sugar = slow growth, high sugar = full growth
+    float max_cost = g.growth_rate * g.sugar_cost_growth;
+    tip1->sugar = g.sugar_save_threshold + max_cost * 0.5f; // half growth
+    tip2->sugar = g.sugar_save_threshold + max_cost * 2.0f; // full growth (capped at 1.0)
+
+    glm::vec3 pos1_before = tip1->position;
+    glm::vec3 pos2_before = tip2->position;
+
+    tick_meristems(plant1);
+    tick_meristems(plant2);
+
+    float dist1 = glm::length(tip1->position - pos1_before);
+    float dist2 = glm::length(tip2->position - pos2_before);
+
+    // Half sugar should produce less growth than full sugar
+    REQUIRE(dist1 > 0.0f);
+    REQUIRE(dist2 > dist1);
+}
+
+TEST_CASE("Growth at save_threshold produces zero growth", "[meristem][sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* shoot_tip = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.meristem && n.meristem->type() == MeristemType::APICAL && n.meristem->active)
+            shoot_tip = &n;
+    });
+    REQUIRE(shoot_tip != nullptr);
+
+    // Exactly at save threshold — no growth
+    shoot_tip->sugar = g.sugar_save_threshold;
+    glm::vec3 pos_before = shoot_tip->position;
+    tick_meristems(plant);
+    REQUIRE(shoot_tip->position.y == pos_before.y);
+}
+
+TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
+    Genome g = default_genome();
+    Plant plant1(g, glm::vec3(0.0f));
+    Plant plant2(g, glm::vec3(0.0f));
+
+    Node* seed1 = plant1.seed_mut();
+    Node* seed2 = plant2.seed_mut();
+
+    float max_cost = g.thickening_rate * g.sugar_cost_thickening;
+    seed1->sugar = g.sugar_save_threshold + max_cost * 0.5f;
+    seed2->sugar = g.sugar_save_threshold + max_cost * 2.0f;
+
+    float r1_before = seed1->radius;
+    float r2_before = seed2->radius;
+
+    // Give shoot tips sugar so they don't interfere
+    plant1.for_each_node_mut([&](Node& n) {
+        if (n.meristem && n.meristem->is_tip()) n.sugar = 100.0f;
+    });
+    plant2.for_each_node_mut([&](Node& n) {
+        if (n.meristem && n.meristem->is_tip()) n.sugar = 100.0f;
+    });
+
+    tick_meristems(plant1);
+    tick_meristems(plant2);
+
+    float thicken1 = seed1->radius - r1_before;
+    float thicken2 = seed2->radius - r2_before;
+
+    REQUIRE(thicken1 > 0.0f);
+    REQUIRE(thicken2 > thicken1);
 }
