@@ -4,31 +4,59 @@
 
 namespace botany {
 
-// Post-order traversal: process children before parent
-static void auxin_postorder(Node& node, const Genome& genome) {
+// Phase 1 (post-order): produce auxin at shoot tips and flow basipetally
+// toward the seed. Junction nodes accumulate auxin from all child branches.
+static void auxin_collect(Node& node, const Genome& genome) {
     for (Node* child : node.children) {
-        auxin_postorder(*child, genome);
+        auxin_collect(*child, genome);
     }
 
-    // Production: only shoot apical meristems produce auxin
+    // Production: only active shoot apical meristems produce auxin
     if (node.meristem && node.meristem->active &&
-        node.meristem->type == MeristemType::APICAL) {
+        node.meristem->type() == MeristemType::APICAL) {
         node.auxin += genome.auxin_production_rate;
     }
 
-    // Transport: send fraction to parent
+    // Basipetal transport: send fraction toward parent (seed-ward)
     if (node.parent) {
         float flow = node.auxin * genome.auxin_transport_rate;
         node.parent->auxin += flow;
         node.auxin -= flow;
     }
+}
+
+// Phase 2 (pre-order): a small fraction of accumulated auxin spills back
+// into child branches — the "traffic jam" at junctions where multiple
+// branches feed auxin into one node pushes some back up into branches.
+static void auxin_spillback(Node& node, const Genome& genome) {
+    if (!node.children.empty()) {
+        float flow_total = node.auxin * genome.auxin_spillback_rate;
+        float flow_per_child = flow_total / static_cast<float>(node.children.size());
+        for (Node* child : node.children) {
+            child->auxin += flow_per_child;
+        }
+        node.auxin -= flow_total;
+    }
 
     // Decay
     node.auxin *= (1.0f - genome.auxin_decay_rate);
+
+    for (Node* child : node.children) {
+        auxin_spillback(*child, genome);
+    }
+}
+
+static void reset_auxin(Node& node) {
+    node.auxin = 0.0f;
+    for (Node* child : node.children) {
+        reset_auxin(*child);
+    }
 }
 
 void transport_auxin(Plant& plant) {
-    auxin_postorder(*plant.seed_mut(), plant.genome());
+    reset_auxin(*plant.seed_mut());
+    auxin_collect(*plant.seed_mut(), plant.genome());
+    auxin_spillback(*plant.seed_mut(), plant.genome());
 }
 
 // Pre-order traversal for cytokinin: roots -> tips
@@ -41,7 +69,7 @@ static void cytokinin_collect(Node& node, const Genome& genome) {
 
     // Production: only root apical meristems produce cytokinin
     if (node.meristem && node.meristem->active &&
-        node.meristem->type == MeristemType::ROOT_APICAL) {
+        node.meristem->type() == MeristemType::ROOT_APICAL) {
         node.cytokinin += genome.cytokinin_production_rate;
     }
 
@@ -72,7 +100,15 @@ static void cytokinin_distribute(Node& node, const Genome& genome) {
     }
 }
 
+static void reset_cytokinin(Node& node) {
+    node.cytokinin = 0.0f;
+    for (Node* child : node.children) {
+        reset_cytokinin(*child);
+    }
+}
+
 void transport_cytokinin(Plant& plant) {
+    reset_cytokinin(*plant.seed_mut());
     cytokinin_collect(*plant.seed_mut(), plant.genome());
     cytokinin_distribute(*plant.seed_mut(), plant.genome());
 }

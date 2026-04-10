@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
+#include "engine/meristem_types.h"
 
 using namespace botany;
 
@@ -26,7 +27,7 @@ TEST_CASE("Plant seed initialization creates correct graph", "[plant]") {
         bool found_shoot = false;
         for (const Node* child : seed->children) {
             if (child->type == NodeType::STEM && child->meristem &&
-                child->meristem->type == MeristemType::APICAL) {
+                child->meristem->type() == MeristemType::APICAL) {
                 found_shoot = true;
                 REQUIRE(child->meristem->active == true);
                 REQUIRE(child->position.y >= 0.0f);
@@ -40,7 +41,7 @@ TEST_CASE("Plant seed initialization creates correct graph", "[plant]") {
         bool found_root = false;
         for (const Node* child : seed->children) {
             if (child->type == NodeType::ROOT && child->meristem &&
-                child->meristem->type == MeristemType::ROOT_APICAL) {
+                child->meristem->type() == MeristemType::ROOT_APICAL) {
                 found_root = true;
                 REQUIRE(child->meristem->active == true);
                 REQUIRE(child->position.y <= 0.0f);
@@ -88,12 +89,12 @@ TEST_CASE("Plant can create meristems and leaves", "[plant]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* node = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
-    Meristem* m = plant.create_meristem(MeristemType::AXILLARY, false);
+    Meristem* m = plant.create_meristem<ShootAxillaryMeristem>();
     node->meristem = m;
     Leaf* l = plant.create_leaf(0.3f);
     node->leaf = l;
 
-    REQUIRE(node->meristem->type == MeristemType::AXILLARY);
+    REQUIRE(node->meristem->type() == MeristemType::AXILLARY);
     REQUIRE(node->meristem->active == false);
     REQUIRE(node->leaf->size == 0.3f);
 }

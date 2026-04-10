@@ -1,7 +1,11 @@
 // src/app_realtime.cpp
 #include <GLFW/glfw3.h>
 #include <iostream>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 #include "engine/engine.h"
+#include "engine/node.h"
 #include "renderer/renderer.h"
 
 using namespace botany;
@@ -32,7 +36,18 @@ static void scroll_callback(GLFWwindow*, double, double yoffset) {
     }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    int stop_at = -1;
+    std::string color_chemical;
+
+    for (int i = 1; i < argc; i++) {
+        if (std::strcmp(argv[i], "--color") == 0 && i + 1 < argc) {
+            color_chemical = argv[++i];
+        } else {
+            stop_at = std::atoi(argv[i]);
+        }
+    }
+
     Engine engine;
     Genome g = default_genome();
     PlantID plant_id = engine.create_plant(g, glm::vec3(0.0f));
@@ -44,6 +59,27 @@ int main() {
     }
     g_renderer = &renderer;
 
+    if (!color_chemical.empty()) {
+        if (color_chemical == "type") {
+            renderer.set_color_by_type(true);
+            std::cout << "Color mode: type (green=shoot, orange=root)" << std::endl;
+        } else {
+            ChemicalAccessor accessor;
+            if (color_chemical == "auxin") {
+                accessor = [](const Node& n) { return n.auxin; };
+            } else if (color_chemical == "cytokinin") {
+                accessor = [](const Node& n) { return n.cytokinin; };
+            } else {
+                std::cerr << "Unknown chemical: " << color_chemical
+                          << " (available: auxin, cytokinin, type)" << std::endl;
+                renderer.shutdown();
+                return 1;
+            }
+            renderer.set_color_mode(std::move(accessor));
+            std::cout << "Color mode: " << color_chemical << std::endl;
+        }
+    }
+
     GLFWwindow* window = renderer.window();
     glfwSetMouseButtonCallback(window, mouse_button_callback);
     glfwSetCursorPosCallback(window, cursor_pos_callback);
@@ -51,12 +87,28 @@ int main() {
 
     int ticks_per_frame = 1;
     bool paused = false;
+    bool space_was_pressed = false;
+
+    // If stop_at given, run those ticks immediately before rendering
+    if (stop_at > 0) {
+        for (int i = 0; i < stop_at; i++) {
+            engine.tick();
+        }
+        paused = true;
+        std::cout << "Ran " << stop_at << " ticks (" << engine.get_plant(plant_id).node_count() << " nodes). Paused — press Space to continue." << std::endl;
+    }
 
     while (!glfwWindowShouldClose(window)) {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+
+        // Debounce space — toggle on press, not hold
+        bool space_down = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+        if (space_down && !space_was_pressed) {
             paused = !paused;
+        }
+        space_was_pressed = space_down;
+
         if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
             ticks_per_frame = std::min(ticks_per_frame + 1, 100);
         if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)

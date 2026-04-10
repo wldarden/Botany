@@ -33,7 +33,7 @@ TEST_CASE("Engine tick grows the plant", "[engine]") {
 
     const Node* shoot_before = nullptr;
     engine.get_plant(id).for_each_node([&](const Node& n) {
-        if (n.meristem && n.meristem->type == MeristemType::APICAL) {
+        if (n.meristem && n.meristem->type() == MeristemType::APICAL) {
             shoot_before = &n;
         }
     });
@@ -48,7 +48,8 @@ TEST_CASE("Engine tick grows the plant", "[engine]") {
 TEST_CASE("Engine runs multiple ticks and plant grows complex structure", "[engine]") {
     Engine engine;
     Genome g = default_genome();
-    g.internode_spacing = 3;
+    g.growth_rate = 0.2f;
+    g.max_internode_length = 0.3f; // chain growth fires often
     PlantID id = engine.create_plant(g, glm::vec3(0.0f));
 
     for (int i = 0; i < 20; i++) {

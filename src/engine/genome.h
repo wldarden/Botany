@@ -9,6 +9,7 @@ struct Genome {
     // Hormone production & sensitivity
     float auxin_production_rate;
     float auxin_transport_rate;
+    float auxin_spillback_rate;   // fraction of junction auxin that spills back into branches
     float auxin_decay_rate;
     float auxin_threshold;
 
@@ -20,46 +21,53 @@ struct Genome {
     // Shoot growth
     float growth_rate;
     float max_internode_length;
-    uint32_t internode_spacing;
     float branch_angle;
     float thickening_rate;
 
     // Root growth
     float root_growth_rate;
     float root_max_internode_length;
-    uint32_t root_internode_spacing;
     float root_branch_angle;
+    float root_gravitropism_strength;  // how strongly roots turn downward near surface
+    float root_gravitropism_depth;     // depth at which gravitropism correction begins
 
     // Geometry
     float leaf_size;
     float initial_radius;
+    float root_initial_radius;
+    float tip_offset;     // small forward offset when chaining new tip/axillary nodes
+    float growth_noise;   // max angular perturbation per segment (radians)
 };
 
 inline Genome default_genome() {
     return Genome{
         .auxin_production_rate = 1.0f,
         .auxin_transport_rate = 0.3f,
+        .auxin_spillback_rate = 0.1f,
         .auxin_decay_rate = 0.05f,
-        .auxin_threshold = 0.5f,
+        .auxin_threshold = 0.15f,
 
         .cytokinin_production_rate = 1.0f,
         .cytokinin_transport_rate = 0.3f,
         .cytokinin_decay_rate = 0.05f,
-        .cytokinin_threshold = 0.5f,
+        .cytokinin_threshold = 0.15f,
 
         .growth_rate = 0.1f,
         .max_internode_length = 1.0f,
-        .internode_spacing = 5,
         .branch_angle = 0.785f,  // ~45 degrees
         .thickening_rate = 0.001f,
 
-        .root_growth_rate = 0.08f,
+        .root_growth_rate = 0.04f,
         .root_max_internode_length = 0.8f,
-        .root_internode_spacing = 4,
-        .root_branch_angle = 0.925f,  // ~53 degrees
+        .root_branch_angle = 0.35f,   // ~20 degrees — tight spread, pushing through soil
+        .root_gravitropism_strength = 2.0f,
+        .root_gravitropism_depth = 0.5f,
 
         .leaf_size = 0.3f,
         .initial_radius = 0.05f,
+        .root_initial_radius = 0.025f,
+        .tip_offset = 0.01f,
+        .growth_noise = 0.03f,  // ~1.7 degrees
     };
 }
 

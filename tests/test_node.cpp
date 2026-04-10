@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/node.h"
+#include "engine/meristem_types.h"
 
 using namespace botany;
 
@@ -33,11 +34,11 @@ TEST_CASE("add_child establishes parent-child relationship", "[node]") {
 
 TEST_CASE("Node can have a meristem attached", "[node]") {
     Node node(1, NodeType::STEM, glm::vec3(0.0f), 0.05f);
-    Meristem m{MeristemType::APICAL, true, 0};
+    ShootApicalMeristem m;
     node.meristem = &m;
 
     REQUIRE(node.meristem != nullptr);
-    REQUIRE(node.meristem->type == MeristemType::APICAL);
+    REQUIRE(node.meristem->type() == MeristemType::APICAL);
     REQUIRE(node.meristem->active == true);
 }
 

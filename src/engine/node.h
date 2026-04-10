@@ -10,10 +10,21 @@ enum class NodeType { STEM, ROOT };
 
 enum class MeristemType { APICAL, AXILLARY, ROOT_APICAL, ROOT_AXILLARY };
 
-struct Meristem {
-    MeristemType type;
-    bool active;
-    uint32_t ticks_since_last_node;
+class Plant;
+
+class Meristem {
+public:
+    virtual ~Meristem() = default;
+
+    virtual MeristemType type() const = 0;
+    virtual bool is_tip() const = 0;
+    virtual void tick(struct Node& node, Plant& plant) = 0;
+
+    bool active = false;
+    uint32_t ticks_since_last_node = 0;
+
+protected:
+    Meristem(bool active) : active(active) {}
 };
 
 struct Leaf {

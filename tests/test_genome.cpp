@@ -32,8 +32,8 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
         REQUIRE(g.root_growth_rate > 0.0f);
     }
 
-    SECTION("internode spacing is at least 1") {
-        REQUIRE(g.internode_spacing >= 1);
-        REQUIRE(g.root_internode_spacing >= 1);
+    SECTION("internode lengths are positive") {
+        REQUIRE(g.max_internode_length > 0.0f);
+        REQUIRE(g.root_max_internode_length > 0.0f);
     }
 }

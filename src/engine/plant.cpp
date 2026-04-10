@@ -1,5 +1,6 @@
 // src/engine/plant.cpp
 #include "engine/plant.h"
+#include "engine/meristem_types.h"
 
 namespace botany {
 
@@ -11,14 +12,12 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
 
     // Shoot apical meristem node (just above seed)
     Node* shoot = create_node(NodeType::STEM, position + glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
-    Meristem* shoot_m = create_meristem(MeristemType::APICAL, true);
-    shoot->meristem = shoot_m;
+    shoot->meristem = create_meristem<ShootApicalMeristem>();
     seed->add_child(shoot);
 
     // Root apical meristem node (just below seed)
-    Node* root = create_node(NodeType::ROOT, position - glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
-    Meristem* root_m = create_meristem(MeristemType::ROOT_APICAL, true);
-    root->meristem = root_m;
+    Node* root = create_node(NodeType::ROOT, position - glm::vec3(0.0f, 0.01f, 0.0f), genome.root_initial_radius);
+    root->meristem = create_meristem<RootApicalMeristem>();
     seed->add_child(root);
 }
 
@@ -26,13 +25,6 @@ Node* Plant::create_node(NodeType type, glm::vec3 position, float radius) {
     auto node = std::make_unique<Node>(next_id(), type, position, radius);
     Node* ptr = node.get();
     nodes_.push_back(std::move(node));
-    return ptr;
-}
-
-Meristem* Plant::create_meristem(MeristemType type, bool active) {
-    auto m = std::make_unique<Meristem>(Meristem{type, active, 0});
-    Meristem* ptr = m.get();
-    meristems_.push_back(std::move(m));
     return ptr;
 }
 

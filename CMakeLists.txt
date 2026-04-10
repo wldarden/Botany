@@ -94,13 +94,16 @@ target_link_libraries(botany_renderer PUBLIC botany_engine glad_gl glfw glm::glm
 
 # Executables
 add_executable(botany_realtime src/app_realtime.cpp)
-target_link_libraries(botany_realtime PRIVATE botany_engine botany_renderer)
+target_link_libraries(botany_realtime PRIVATE botany_engine botany_renderer imgui)
 
 add_executable(botany_headless src/app_headless.cpp)
 target_link_libraries(botany_headless PRIVATE botany_engine botany_serialization)
 
 add_executable(botany_playback src/app_playback.cpp)
 target_link_libraries(botany_playback PRIVATE botany_engine botany_renderer botany_serialization imgui)
+
+add_executable(botany_dump src/app_dump.cpp)
+target_link_libraries(botany_dump PRIVATE botany_engine botany_serialization)
 
 # Tests
 enable_testing()

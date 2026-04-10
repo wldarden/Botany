@@ -22,8 +22,26 @@ public:
 
     uint32_t node_count() const { return static_cast<uint32_t>(nodes_.size()); }
 
+    uint32_t root_meristem_count() const { return root_meristem_count_; }
+    static constexpr uint32_t max_root_meristems = 100;
+
     Node* create_node(NodeType type, glm::vec3 position, float radius);
-    Meristem* create_meristem(MeristemType type, bool active);
+
+    template<typename T, typename... Args>
+    T* create_meristem(Args&&... args) {
+        auto m = std::make_unique<T>(std::forward<Args>(args)...);
+        T* ptr = m.get();
+        if (ptr->type() == MeristemType::ROOT_APICAL || ptr->type() == MeristemType::ROOT_AXILLARY) {
+            root_meristem_count_++;
+        }
+        meristems_.push_back(std::move(m));
+        return ptr;
+    }
+
+    bool root_meristems_at_cap() const {
+        return root_meristem_count_ >= max_root_meristems;
+    }
+
     Leaf* create_leaf(float size);
 
     void for_each_node(std::function<void(const Node&)> fn) const;
@@ -34,6 +52,7 @@ public:
 private:
     Genome genome_;
     uint32_t next_id_ = 0;
+    uint32_t root_meristem_count_ = 0;
     std::vector<std::unique_ptr<Node>> nodes_;
     std::vector<std::unique_ptr<Meristem>> meristems_;
     std::vector<std::unique_ptr<Leaf>> leaves_;

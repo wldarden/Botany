@@ -73,12 +73,51 @@ void Renderer::begin_frame() {
     shader_.set_vec3("uAmbient", glm::vec3(0.3f, 0.3f, 0.3f));
 }
 
+void Renderer::set_color_mode(ChemicalAccessor accessor) {
+    chemical_accessor_ = std::move(accessor);
+}
+
+glm::vec3 Renderer::heatmap(float t) const {
+    // blue (0) -> cyan (0.25) -> green (0.5) -> yellow (0.75) -> red (1)
+    t = glm::clamp(t, 0.0f, 1.0f);
+    if (t < 0.25f) {
+        float s = t / 0.25f;
+        return glm::vec3(0.0f, s, 1.0f);
+    } else if (t < 0.5f) {
+        float s = (t - 0.25f) / 0.25f;
+        return glm::vec3(0.0f, 1.0f, 1.0f - s);
+    } else if (t < 0.75f) {
+        float s = (t - 0.5f) / 0.25f;
+        return glm::vec3(s, 1.0f, 0.0f);
+    } else {
+        float s = (t - 0.75f) / 0.25f;
+        return glm::vec3(1.0f, 1.0f - s, 0.0f);
+    }
+}
+
 void Renderer::draw_plant(const Plant& plant) {
+    // If coloring by chemical, find max value for normalization
+    float max_val = 0.0f;
+    if (chemical_accessor_) {
+        plant.for_each_node([&](const Node& node) {
+            float v = chemical_accessor_(node);
+            if (v > max_val) max_val = v;
+        });
+        if (max_val < 1e-6f) max_val = 1.0f; // avoid div-by-zero
+    }
+
     plant.for_each_node([&](const Node& node) {
         if (!node.parent) return;
 
         glm::vec3 color;
-        if (node.type == NodeType::STEM) {
+        if (chemical_accessor_) {
+            float v = chemical_accessor_(node);
+            color = heatmap(v / max_val);
+        } else if (color_by_type_) {
+            color = (node.type == NodeType::STEM)
+                ? glm::vec3(0.2f, 0.8f, 0.2f)   // green = shoot
+                : glm::vec3(0.8f, 0.4f, 0.1f);   // orange = root
+        } else if (node.type == NodeType::STEM) {
             color = glm::vec3(0.45f, 0.3f, 0.15f);
         } else {
             color = glm::vec3(0.35f, 0.2f, 0.1f);
