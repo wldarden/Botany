@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <glm/geometric.hpp>
 #include "engine/plant.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
@@ -62,20 +63,27 @@ TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
 
 // === Consumption tests ===
 
-TEST_CASE("consume_sugar deducts maintenance cost by node type", "[sugar]") {
+TEST_CASE("consume_sugar deducts volume-based maintenance cost", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    Node* seed = plant.seed_mut();
-    seed->sugar = 10.0f;
+    // Create a stem with known dimensions for predictable cost
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
+    stem->sugar = 10.0f;
+    plant.seed_mut()->add_child(stem);
+
+    // Zero out other nodes' sugar so we only check our stem
+    plant.seed_mut()->sugar = 10.0f;
 
     consume_sugar(plant);
 
-    float expected_cost = g.sugar_maintenance_stem * seed->radius;
-    REQUIRE_THAT(seed->sugar, WithinAbs(10.0f - expected_cost, 1e-6));
+    float length = glm::length(stem->offset);  // 1.0
+    float volume = 3.14159f * 0.1f * 0.1f * length;
+    float expected_cost = g.sugar_maintenance_stem * volume;
+    REQUIRE_THAT(stem->sugar, WithinAbs(10.0f - expected_cost, 1e-5));
 }
 
-TEST_CASE("LEAF maintenance cost uses leaf_size", "[sugar]") {
+TEST_CASE("LEAF maintenance cost uses leaf area", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
@@ -86,7 +94,7 @@ TEST_CASE("LEAF maintenance cost uses leaf_size", "[sugar]") {
 
     consume_sugar(plant);
 
-    float expected_cost = g.sugar_maintenance_leaf * leaf->leaf_size;
+    float expected_cost = g.sugar_maintenance_leaf * 0.5f * 0.5f;
     REQUIRE_THAT(leaf->sugar, WithinAbs(10.0f - expected_cost, 1e-6));
 }
 
@@ -118,9 +126,11 @@ TEST_CASE("Active meristem tips have additional maintenance cost", "[sugar]") {
 
     consume_sugar(plant);
 
-    float expected_cost = g.sugar_maintenance_stem * shoot_tip->radius
+    float length = std::max(glm::length(shoot_tip->offset), 0.01f);
+    float volume = 3.14159f * shoot_tip->radius * shoot_tip->radius * length;
+    float expected_cost = g.sugar_maintenance_stem * volume
                         + g.sugar_maintenance_meristem;
-    REQUIRE_THAT(shoot_tip->sugar, WithinAbs(10.0f - expected_cost, 1e-6));
+    REQUIRE_THAT(shoot_tip->sugar, WithinAbs(10.0f - expected_cost, 1e-5));
 }
 
 // === Diffusion tests ===

@@ -95,16 +95,22 @@ void consume_sugar(Plant& plant) {
     const Genome& g = plant.genome();
     plant.for_each_node_mut([&](Node& node) {
         float cost = 0.0f;
+        float length = std::max(glm::length(node.offset), 0.01f);
+
         switch (node.type) {
             case NodeType::LEAF:
-                cost = g.sugar_maintenance_leaf * node.leaf_size;
+                cost = g.sugar_maintenance_leaf * node.leaf_size * node.leaf_size;
                 break;
-            case NodeType::STEM:
-                cost = g.sugar_maintenance_stem * node.radius;
+            case NodeType::STEM: {
+                float volume = 3.14159f * node.radius * node.radius * length;
+                cost = g.sugar_maintenance_stem * volume;
                 break;
-            case NodeType::ROOT:
-                cost = g.sugar_maintenance_root * node.radius;
+            }
+            case NodeType::ROOT: {
+                float volume = 3.14159f * node.radius * node.radius * length;
+                cost = g.sugar_maintenance_root * volume;
                 break;
+            }
         }
         if (node.meristem && node.meristem->is_tip() && node.meristem->active) {
             cost += g.sugar_maintenance_meristem;
