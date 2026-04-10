@@ -44,5 +44,8 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
         REQUIRE(g.sugar_maintenance_stem > 0.0f);
         REQUIRE(g.sugar_maintenance_root > 0.0f);
         REQUIRE(g.sugar_maintenance_meristem > 0.0f);
+        REQUIRE(g.sugar_cost_activation > 0.0f);
+        REQUIRE(g.sugar_cost_growth > 0.0f);
+        REQUIRE(g.sugar_cost_thickening > 0.0f);
     }
 }

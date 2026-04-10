@@ -82,6 +82,12 @@ void ShootApicalMeristem::tick(Node& node, Plant& plant) {
 
     // Extend with slight angular noise
     glm::vec3 dir = perturb(growth_direction(node), g.growth_noise);
+
+    // Growth costs sugar — skip if insufficient
+    float growth_cost = g.sugar_cost_growth * g.growth_rate;
+    if (node.sugar < growth_cost) return;
+    node.sugar -= growth_cost;
+
     node.position += dir * g.growth_rate;
 
     // Chain growth: when distance to parent exceeds max, this node becomes
@@ -124,6 +130,10 @@ void ShootAxillaryMeristem::tick(Node& node, Plant& plant) {
     // meaning they're far from any active shoot tip.
     float stem_auxin = node.parent ? node.parent->auxin : node.auxin;
     if (stem_auxin < g.auxin_threshold) {
+        // Activation costs sugar
+        if (node.sugar < g.sugar_cost_activation) return;
+        node.sugar -= g.sugar_cost_activation;
+
         // Replace this dormant axillary with an active shoot apical
         auto* apical = plant.create_meristem<ShootApicalMeristem>();
         apical->ticks_since_last_node = 0;
@@ -148,6 +158,11 @@ void RootApicalMeristem::tick(Node& node, Plant& plant) {
         glm::vec3 down(0.0f, -1.0f, 0.0f);
         dir = glm::normalize(dir + down * strength);
     }
+
+    // Growth costs sugar — skip if insufficient
+    float growth_cost = g.sugar_cost_growth * g.root_growth_rate;
+    if (node.sugar < growth_cost) return;
+    node.sugar -= growth_cost;
 
     node.position += dir * g.root_growth_rate;
 
@@ -181,6 +196,10 @@ void RootAxillaryMeristem::tick(Node& node, Plant& plant) {
     // Sense cytokinin on the parent root node, not this side-branch node
     float stem_cytokinin = node.parent ? node.parent->cytokinin : node.cytokinin;
     if (stem_cytokinin < g.cytokinin_threshold) {
+        // Activation costs sugar
+        if (node.sugar < g.sugar_cost_activation) return;
+        node.sugar -= g.sugar_cost_activation;
+
         // Replace this dormant root axillary with an active root apical
         auto* apical = plant.create_meristem<RootApicalMeristem>();
         apical->ticks_since_last_node = 0;
@@ -203,7 +222,11 @@ void tick_meristems(Plant& plant) {
         // Secondary growth: interior nodes (no active tip meristem) thicken.
         bool is_active_tip = n.meristem && n.meristem->is_tip() && n.meristem->active;
         if (!is_active_tip && n.type != NodeType::LEAF) {
-            n.radius += g.thickening_rate;
+            float thicken_cost = g.sugar_cost_thickening * g.thickening_rate;
+            if (n.sugar >= thicken_cost) {
+                n.sugar -= thicken_cost;
+                n.radius += g.thickening_rate;
+            }
         }
         if (n.meristem) {
             to_tick.push_back(&n);

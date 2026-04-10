@@ -45,6 +45,10 @@ struct Genome {
     float sugar_maintenance_stem;
     float sugar_maintenance_root;
     float sugar_maintenance_meristem;
+
+    float sugar_cost_activation;     // sugar cost to activate an axillary meristem
+    float sugar_cost_growth;         // sugar cost per unit of extension growth distance
+    float sugar_cost_thickening;     // sugar cost per unit of radius increase
 };
 
 inline Genome default_genome() {
@@ -83,6 +87,10 @@ inline Genome default_genome() {
         .sugar_maintenance_stem = 0.01f,
         .sugar_maintenance_root = 0.01f,
         .sugar_maintenance_meristem = 0.005f,
+
+        .sugar_cost_activation = 1.0f,
+        .sugar_cost_growth = 0.5f,
+        .sugar_cost_thickening = 0.1f,
     };
 }
 

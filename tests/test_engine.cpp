@@ -39,6 +39,7 @@ TEST_CASE("Engine tick grows the plant", "[engine]") {
     });
     float y_before = shoot_before->position.y;
 
+    engine.get_plant_mut(id).for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
     engine.tick();
 
     float y_after = shoot_before->position.y;
@@ -53,6 +54,7 @@ TEST_CASE("Engine runs multiple ticks and plant grows complex structure", "[engi
     PlantID id = engine.create_plant(g, glm::vec3(0.0f));
 
     for (int i = 0; i < 20; i++) {
+        engine.get_plant_mut(id).for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
         engine.tick();
     }
 
