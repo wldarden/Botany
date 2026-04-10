@@ -23,6 +23,13 @@ glm::mat4 OrbitCamera::view_matrix() const {
     return glm::lookAt(eye, target_, glm::vec3(0.0f, 1.0f, 0.0f));
 }
 
+glm::vec3 OrbitCamera::eye_position() const {
+    float x = distance_ * std::cos(pitch_) * std::sin(yaw_);
+    float y = distance_ * std::sin(pitch_);
+    float z = distance_ * std::cos(pitch_) * std::cos(yaw_);
+    return target_ + glm::vec3(x, y, z);
+}
+
 glm::mat4 OrbitCamera::projection_matrix(float aspect) const {
     return glm::perspective(glm::radians(fov_), aspect, near_, far_);
 }

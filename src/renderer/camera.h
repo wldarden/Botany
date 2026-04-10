@@ -17,6 +17,7 @@ public:
     void set_target(glm::vec3 target) { target_ = target; }
 
     glm::vec3 target() const { return target_; }
+    glm::vec3 eye_position() const;
 
 private:
     glm::vec3 target_;
