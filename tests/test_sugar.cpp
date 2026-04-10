@@ -186,6 +186,46 @@ TEST_CASE("Multiple diffusion iterations produce smoother distribution", "[sugar
     REQUIRE(child_sugar_10iter > child_sugar_1iter);
 }
 
+TEST_CASE("Sugar diffusion conserves total across many iterations", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Build a bigger tree: seed -> 5 children, each with 2 grandchildren
+    for (int i = 0; i < 5; i++) {
+        Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.05f);
+        plant.seed_mut()->add_child(child);
+        for (int j = 0; j < 2; j++) {
+            Node* gc = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.03f);
+            child->add_child(gc);
+        }
+    }
+
+    // Give sugar to just a few nodes
+    plant.seed_mut()->sugar = 50.0f;
+    plant.seed_mut()->children[0]->sugar = 20.0f;
+    plant.seed_mut()->children[2]->sugar = 10.0f;
+
+    float total_before = 0.0f;
+    plant.for_each_node([&](const Node& n) { total_before += n.sugar; });
+
+    WorldParams wp = default_world_params();
+    for (int iters : {1, 5, 15, 50}) {
+        // Reset to initial distribution
+        plant.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
+        plant.seed_mut()->sugar = 50.0f;
+        plant.seed_mut()->children[0]->sugar = 20.0f;
+        plant.seed_mut()->children[2]->sugar = 10.0f;
+
+        wp.sugar_diffusion_iterations = iters;
+        diffuse_sugar(plant, wp);
+
+        float total_after = 0.0f;
+        plant.for_each_node([&](const Node& n) { total_after += n.sugar; });
+
+        REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-3));
+    }
+}
+
 // === Starvation tests ===
 
 TEST_CASE("Starvation ticks increment when sugar is zero", "[sugar]") {
@@ -296,4 +336,65 @@ TEST_CASE("transport_sugar runs full produce-diffuse-consume cycle", "[sugar]") 
 
     REQUIRE(leaf->sugar > 0.0f);
     REQUIRE(plant.seed()->sugar > 0.0f);
+}
+
+// === Sugar cap tests ===
+
+TEST_CASE("sugar_cap scales with stem volume", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Create a stem with known dimensions: radius 0.1, internode length 1.0
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
+    plant.seed_mut()->add_child(stem);
+
+    float volume = 3.14159f * 0.1f * 0.1f * 1.0f;  // π * r² * length
+    float expected = volume * g.sugar_storage_density_wood;
+    REQUIRE_THAT(sugar_cap(*stem, g), WithinAbs(expected, 1e-4));
+}
+
+TEST_CASE("sugar_cap scales with leaf area", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.3f;
+    plant.seed_mut()->add_child(leaf);
+
+    float area = 0.3f * 0.3f;
+    float expected = area * g.sugar_storage_density_leaf;
+    REQUIRE_THAT(sugar_cap(*leaf, g), WithinAbs(expected, 1e-6));
+}
+
+TEST_CASE("sugar_cap returns minimum for tiny nodes", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Tiny node: radius 0.001, offset 0.001 — volume-based cap is below minimum
+    Node* tiny = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.001f, 0.0f), 0.001f);
+    plant.seed_mut()->add_child(tiny);
+
+    REQUIRE_THAT(sugar_cap(*tiny, g), WithinAbs(g.sugar_cap_minimum, 1e-6));
+}
+
+TEST_CASE("sugar_cap for seed node covers seed_sugar", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Seed node (no parent) should have cap >= seed_sugar
+    REQUIRE(sugar_cap(*plant.seed(), g) >= g.seed_sugar);
+}
+
+TEST_CASE("sugar_cap for root scales with volume", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* root = plant.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.8f, 0.0f), 0.025f);
+    plant.seed_mut()->add_child(root);
+
+    float length = 0.8f;  // glm::length of offset
+    float volume = 3.14159f * 0.025f * 0.025f * length;
+    float expected = volume * g.sugar_storage_density_wood;
+    // Volume cap (0.0785) > minimum (0.01), so volume wins
+    REQUIRE_THAT(sugar_cap(*root, g), WithinAbs(expected, 1e-5));
 }
