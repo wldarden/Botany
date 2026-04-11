@@ -18,7 +18,7 @@ public:
 
     virtual MeristemType type() const = 0;
     virtual bool is_tip() const = 0;
-    virtual void tick(struct Node& node, Plant& plant) = 0;
+    virtual void tick(struct Node& node, Plant& plant, const struct WorldParams& world) = 0;
 
     bool active = false;
     uint32_t ticks_since_last_node = 0;
@@ -32,7 +32,8 @@ struct Node {
     Node* parent;
     std::vector<Node*> children;
 
-    glm::vec3 position;
+    glm::vec3 offset;       // vector from parent to this node (seed: world position)
+    glm::vec3 position;     // cached world position (recomputed from offset chain)
     float radius;
 
     NodeType type;
@@ -41,7 +42,11 @@ struct Node {
     float cytokinin;
     float sugar = 0.0f;
     float leaf_size = 0.0f;
+    float light_exposure = 1.0f;   // 0..1, computed per tick from shading
     uint32_t starvation_ticks = 0;
+    float gibberellin = 0.0f;            // GA concentration (reset each tick)
+    float ethylene = 0.0f;               // ethylene concentration (reset each tick)
+    uint32_t senescence_ticks = 0;       // 0 = healthy, >0 = senescing (irreversible)
 
     Meristem* meristem;
 
