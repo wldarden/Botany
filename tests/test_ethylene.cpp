@@ -162,3 +162,62 @@ TEST_CASE("Ethylene resets to zero before recomputing", "[ethylene]") {
 
     REQUIRE(plant.seed()->ethylene < 999.0f);
 }
+
+TEST_CASE("Leaf above ethylene threshold begins senescence", "[ethylene][abscission]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.2f;
+    leaf->ethylene = g.ethylene_abscission_threshold + 0.1f;
+    plant.seed_mut()->add_child(leaf);
+
+    process_abscission(plant);
+
+    REQUIRE(leaf->senescence_ticks > 0);
+}
+
+TEST_CASE("Leaf below ethylene threshold stays healthy", "[ethylene][abscission]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.2f;
+    leaf->ethylene = g.ethylene_abscission_threshold * 0.5f;
+    plant.seed_mut()->add_child(leaf);
+
+    process_abscission(plant);
+
+    REQUIRE(leaf->senescence_ticks == 0);
+}
+
+TEST_CASE("Senescing leaf is removed after senescence_duration", "[ethylene][abscission]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.2f;
+    leaf->ethylene = g.ethylene_abscission_threshold + 0.1f;
+    leaf->senescence_ticks = g.senescence_duration - 1; // almost done
+    plant.seed_mut()->add_child(leaf);
+
+    uint32_t count_before = plant.node_count();
+    process_abscission(plant);
+
+    REQUIRE(plant.node_count() < count_before);
+}
+
+TEST_CASE("Non-leaf nodes do not senesce", "[ethylene][abscission]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
+    stem->ethylene = g.ethylene_abscission_threshold + 10.0f; // very high
+    plant.seed_mut()->add_child(stem);
+
+    uint32_t count_before = plant.node_count();
+    process_abscission(plant);
+
+    REQUIRE(stem->senescence_ticks == 0);
+    REQUIRE(plant.node_count() == count_before);
+}
