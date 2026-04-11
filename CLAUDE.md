@@ -9,7 +9,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 /usr/local/bin/cmake --build build
 
 # Run realtime viewer (must run from project root for shader path)
-./build/botany_realtime [--color auxin|cytokinin|sugar|type]
+./build/botany_realtime [--color auxin|cytokinin|sugar|gibberellin|ethylene|type]
 
 # Run tests
 ./build/botany_tests
@@ -20,18 +20,26 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 ### Engine (`src/engine/`)
 - **genome.h** - `Genome` struct with all tunable parameters + `default_genome()`
 - **node.h** - `Node` (position, radius, parent/children, hormone levels, sugar, leaf_size), `Meristem` base class, `MeristemType` enum. `NodeType`: STEM, ROOT, LEAF
-- **meristem_types.h** - Concrete meristem subclasses: `ShootApicalMeristem`, `ShootAxillaryMeristem`, `RootApicalMeristem`, `RootAxillaryMeristem`
-- **meristem.cpp** - All meristem tick logic and `tick_meristems()` dispatch
+- **meristems/** - Meristem subfolder:
+  - `meristem.h/cpp` — `tick_meristems()` dispatch + secondary/intercalary growth
+  - `meristem_types.h` — convenience umbrella, includes all 4 type headers
+  - `shoot_apical.h/cpp` — `ShootApicalMeristem` (chain growth, phyllotaxis)
+  - `shoot_axillary.h/cpp` — `ShootAxillaryMeristem` (auxin-gated activation)
+  - `root_apical.h/cpp` — `RootApicalMeristem` (gravitropism, root chain growth)
+  - `root_axillary.h/cpp` — `RootAxillaryMeristem` (cytokinin-gated activation)
+  - `helpers.h` — shared helper functions (growth_direction, branch_direction, perturb, etc.)
 - **hormone.cpp** - `transport_auxin()` and `transport_cytokinin()` - per-tick hormone reset + transport
+- **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves
+- **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission
 - **sugar.h/cpp** - `transport_sugar()` — sugar production, gradient-based diffusion, maintenance consumption
 - **world_params.h** - `WorldParams` struct (light level, diffusion iterations) — non-genetic sim parameters
 - **plant.h/cpp** - `Plant` class owns all nodes/meristems, has root meristem cap (100)
-- **engine.h/cpp** - `Engine` orchestrates tick order: hormones, sugar, then meristems
+- **engine.h/cpp** - `Engine` orchestrates tick order: auxin → cytokinin → GA → sugar → ethylene → abscission → meristems → positions
 
 ### Renderer (`src/renderer/`)
 - OpenGL 4.1 core profile, GLFW window, orbit camera
 - Draws cylinders between parent-child nodes, leaves as quads
-- Color modes: default (brown), chemical heatmap (auxin/cytokinin/sugar), type (green=shoot, orange=root)
+- Color modes: default (brown), chemical heatmap (auxin/cytokinin/sugar/gibberellin/ethylene), type (green=shoot, orange=root)
 
 ### Apps
 - **app_realtime.cpp** - Interactive viewer with pause/speed controls
@@ -54,6 +62,32 @@ Hormones are **reset to zero every tick** then recomputed as a fresh signal snap
 - Flows toward seed via `cytokinin_collect`, then distributes to children via `cytokinin_distribute`
 - Root axillary buds sense **parent root node's** cytokinin level
 - Activate when `parent.cytokinin < cytokinin_threshold` (far from any active root tip)
+
+## Gibberellin Model
+
+GA is **reset to zero every tick** (signal model, same as auxin/cytokinin):
+
+- Produced by young LEAF nodes only (`leaf_age < ga_leaf_age_max`)
+- Applied locally — `ga_production_rate * leaf_size` is added to the leaf's parent and grandparent stem nodes
+- Not transported through the rest of the tree; effect is purely local to the internode being elongated
+- **Effects:** boosts internode elongation rate (`* ga_elongation_sensitivity`) and max internode length (`* ga_length_sensitivity`) on nodes that receive GA
+
+## Ethylene Model
+
+Ethylene is **reset to zero every tick** (signal model). Four production triggers per leaf:
+
+1. **Sugar starvation** — leaf sugar below maintenance threshold
+2. **Shade** — leaf `light_exposure < ethylene_shade_threshold`
+3. **Old age** — leaf age exceeds species maximum
+4. **Crowding** — local node density above threshold
+
+**Spatial diffusion** — ethylene spreads as a gas through 3D space (NOT via the tree graph). Each emitting node contributes to all nodes within `diffusion_radius`, attenuated by distance.
+
+**Effects:**
+- **Leaf abscission** — if a leaf's ethylene exceeds `ethylene_abscission_threshold`, senescence begins; the leaf yellows and is removed after `senescence_duration` ticks
+- **Elongation inhibition** — high ethylene suppresses internode elongation in nearby stem nodes
+
+**Abscission lifecycle:** ethylene > threshold → senescence flag set → leaf gradually yellows (visual only) → removed from graph after `senescence_duration` ticks have elapsed
 
 ## Sugar Model
 
@@ -100,3 +134,10 @@ Sugar **persists across ticks** (NOT reset like hormones). Four phases per tick:
 - `auxin_transport_rate` / `cytokinin_transport_rate` (0.3) - how fast hormones flow per tick
 - `branch_angle` (0.785 rad / 45 deg) - angle of shoot branches from parent stem
 - `root_branch_angle` (0.35 rad / 20 deg) - angle of root branches
+- `ga_production_rate` (0.5) - GA per dm leaf_size per tick from young leaves
+- `ga_leaf_age_max` (168) - only leaves younger than 7 days produce GA
+- `ga_elongation_sensitivity` (2.0) - GA boost to elongation rate
+- `ga_length_sensitivity` (1.5) - GA boost to max internode length
+- `ethylene_abscission_threshold` (0.5) - triggers leaf senescence
+- `ethylene_shade_threshold` (0.3) - light_exposure below which shade-ethylene kicks in
+- `senescence_duration` (48) - ticks from senescence to leaf drop
