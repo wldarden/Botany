@@ -75,6 +75,25 @@ struct Genome {
     // Activation thresholds — parent node sugar needed for bud break (g glucose)
     float sugar_activation_shoot;     // parent sugar needed for shoot axillary activation
     float sugar_activation_root;      // parent sugar needed for root axillary activation
+
+    // Gibberellin — promotes internode elongation, produced by young leaves
+    float ga_production_rate;         // GA produced per dm of leaf_size per tick
+    uint32_t ga_leaf_age_max;         // ticks — only leaves younger than this produce GA
+    float ga_elongation_sensitivity;  // how strongly GA boosts elongation rate
+    float ga_length_sensitivity;      // how strongly GA boosts target internode length
+
+    // Ethylene — stress/crowding gas signal, triggers leaf abscission
+    float ethylene_starvation_rate;       // production when sugar = 0
+    float ethylene_shade_rate;            // production from low light
+    float ethylene_shade_threshold;       // light_exposure below which shade-ethylene kicks in
+    float ethylene_age_rate;              // production ramp from old age
+    uint32_t ethylene_age_onset;          // tick age when age-ethylene starts
+    float ethylene_crowding_rate;         // production per nearby node
+    float ethylene_crowding_radius;       // dm — radius for crowding density count
+    float ethylene_diffusion_radius;      // dm — gas cloud spread distance
+    float ethylene_abscission_threshold;  // ethylene level triggering leaf senescence
+    float ethylene_elongation_inhibition; // strength of elongation suppression
+    uint32_t senescence_duration;         // ticks from senescence start to leaf drop
 };
 
 inline Genome default_genome() {
@@ -136,6 +155,25 @@ inline Genome default_genome() {
 
         .sugar_activation_shoot = 0.5f,     // well-fed branch needed for shoot bud break
         .sugar_activation_root = 0.3f,      // roots branch with less sugar
+
+        // Gibberellin
+        .ga_production_rate = 0.5f,
+        .ga_leaf_age_max = 168,               // 7 days
+        .ga_elongation_sensitivity = 2.0f,
+        .ga_length_sensitivity = 1.5f,
+
+        // Ethylene
+        .ethylene_starvation_rate = 0.3f,
+        .ethylene_shade_rate = 0.2f,
+        .ethylene_shade_threshold = 0.3f,
+        .ethylene_age_rate = 0.05f,
+        .ethylene_age_onset = 720,            // 30 days
+        .ethylene_crowding_rate = 0.1f,
+        .ethylene_crowding_radius = 0.5f,     // dm
+        .ethylene_diffusion_radius = 1.0f,    // dm
+        .ethylene_abscission_threshold = 0.5f,
+        .ethylene_elongation_inhibition = 1.0f,
+        .senescence_duration = 48,            // 2 days
     };
 }
 
