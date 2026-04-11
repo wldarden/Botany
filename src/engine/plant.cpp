@@ -7,7 +7,6 @@
 #include "engine/node/meristems/shoot_axillary.h"
 #include "engine/node/meristems/root_apical.h"
 #include "engine/node/meristems/root_axillary.h"
-#include "engine/hormone.h"
 #include "engine/sugar.h"
 #include "engine/gibberellin.h"
 #include "engine/ethylene.h"
@@ -22,6 +21,7 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
 {
     // Seed node
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
+    seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
     seed->sugar = genome.seed_sugar;
 
     // Shoot apical meristem node (child of seed)

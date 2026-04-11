@@ -12,20 +12,18 @@ LeafNode::LeafNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::LEAF, position, radius)
 {}
 
-void LeafNode::tick(Plant& plant, const WorldParams& world) {
-    Node::tick(plant, world);
+void LeafNode::grow(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
-
     photosynthesize(g, world);
     phototropism(g, world);
-    grow(g, world);
+    grow_size(g, world);
 }
 
 void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
     if (leaf_size <= 1e-6f || senescence_ticks != 0) return;
 
     float cap = sugar_cap(*this, g);
-    if (sugar >= cap) return;
+    if (chemical(ChemicalID::Sugar) >= cap) return;
 
     float angle_efficiency = 1.0f;
     float offset_len = glm::length(offset);
@@ -34,10 +32,11 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
         angle_efficiency = std::max(0.0f, leaf_normal.y);
     }
 
-    sugar += light_exposure * angle_efficiency
+    chemical(ChemicalID::Sugar) += light_exposure * angle_efficiency
            * world.light_level * leaf_size
            * g.sugar_production_rate;
-    sugar = std::min(sugar, cap);
+    chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
+    sugar = chemical(ChemicalID::Sugar);
 }
 
 void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
@@ -60,9 +59,10 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     float turn = std::min(g.leaf_phototropism_rate, angle_to_up);
 
     float cost = turn * world.sugar_cost_phototropism;
-    if (sugar < cost) return;
+    if (chemical(ChemicalID::Sugar) < cost) return;
 
-    sugar -= cost;
+    chemical(ChemicalID::Sugar) -= cost;
+    sugar = chemical(ChemicalID::Sugar);
     float c = std::cos(turn);
     float s = std::sin(turn);
     glm::vec3 new_dir = dir * c
@@ -71,7 +71,7 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     offset = glm::normalize(new_dir) * offset_len;
 }
 
-void LeafNode::grow(const Genome& g, const WorldParams& world) {
+void LeafNode::grow_size(const Genome& g, const WorldParams& world) {
     if (leaf_size >= g.max_leaf_size) return;
 
     float max_growth = g.leaf_growth_rate;
@@ -79,14 +79,15 @@ void LeafNode::grow(const Genome& g, const WorldParams& world) {
     float growth = std::min(max_growth, remaining);
 
     float cost = growth * world.sugar_cost_leaf_growth;
-    if (sugar < cost) {
-        growth = sugar / world.sugar_cost_leaf_growth;
-        cost = sugar;
+    if (chemical(ChemicalID::Sugar) < cost) {
+        growth = chemical(ChemicalID::Sugar) / world.sugar_cost_leaf_growth;
+        cost = chemical(ChemicalID::Sugar);
     }
     if (growth < 1e-7f) return;
 
     leaf_size += growth;
-    sugar -= cost;
+    chemical(ChemicalID::Sugar) -= cost;
+    sugar = chemical(ChemicalID::Sugar);
 }
 
 float LeafNode::maintenance_cost(const Genome& g) const {

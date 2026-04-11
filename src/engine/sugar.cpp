@@ -3,12 +3,10 @@
 #include "engine/world_params.h"
 #include "engine/node/node.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
 #include <glm/geometric.hpp>
-#include <unordered_map>
 
 namespace botany {
 
@@ -88,25 +86,7 @@ void compute_light_exposure(Plant& plant, const WorldParams& world) {
     }
 }
 
-// Sugar consumption + cap clamp + starvation tracking now in Node::tick()
-
-void prune_starved_nodes(Plant& plant, const WorldParams& world) {
-    std::vector<Node*> to_prune;
-    plant.for_each_node_mut([&](Node& node) {
-        if (node.starvation_ticks >= world.starvation_ticks_max) {
-            // Only prune if parent is NOT also starved (prune from the top)
-            bool parent_starved = node.parent &&
-                node.parent->starvation_ticks >= world.starvation_ticks_max;
-            if (!parent_starved && node.parent != nullptr) {  // never prune seed (parent == nullptr)
-                to_prune.push_back(&node);
-            }
-        }
-    });
-
-    for (Node* n : to_prune) {
-        plant.remove_subtree(n);
-    }
-}
+// Sugar consumption + starvation + death now in Node::tick()
 
 void grow_leaves(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
@@ -131,8 +111,9 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
                         float turn = std::min(g.leaf_phototropism_rate, angle_to_up);
 
                         float cost = turn * world.sugar_cost_phototropism;
-                        if (node.sugar >= cost) {
-                            node.sugar -= cost;
+                        if (node.chemical(ChemicalID::Sugar) >= cost) {
+                            node.chemical(ChemicalID::Sugar) -= cost;
+                            node.sugar = node.chemical(ChemicalID::Sugar);
                             float c = std::cos(turn);
                             float s = std::sin(turn);
                             glm::vec3 new_dir = dir * c
@@ -153,14 +134,15 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
         float growth = std::min(max_growth, remaining);
 
         float cost = growth * world.sugar_cost_leaf_growth;
-        if (node.sugar < cost) {
-            growth = node.sugar / world.sugar_cost_leaf_growth;
-            cost = node.sugar;
+        if (node.chemical(ChemicalID::Sugar) < cost) {
+            growth = node.chemical(ChemicalID::Sugar) / world.sugar_cost_leaf_growth;
+            cost = node.chemical(ChemicalID::Sugar);
         }
         if (growth < 1e-7f) return;
 
         leaf->leaf_size += growth;
-        node.sugar -= cost;
+        node.chemical(ChemicalID::Sugar) -= cost;
+        node.sugar = node.chemical(ChemicalID::Sugar);
     });
 }
 
@@ -168,8 +150,7 @@ void transport_sugar(Plant& plant, const WorldParams& world) {
     compute_light_exposure(plant, world);
     // Sugar production: LeafNode::tick()
     // Sugar diffusion: Node::transport_chemicals()
-    // Sugar consumption: Node::tick() via maintenance_cost()
-    prune_starved_nodes(plant, world);
+    // Sugar consumption + starvation death: Node::tick()
 }
 
 } // namespace botany

@@ -24,7 +24,7 @@ TEST_CASE("Young leaf produces GA on parent node", "[gibberellin]") {
     compute_gibberellin(plant);
 
     float expected = leaf->as_leaf()->leaf_size * g.ga_production_rate;
-    REQUIRE_THAT(stem->gibberellin, WithinAbs(expected, 1e-6));
+    REQUIRE_THAT(stem->chemical(ChemicalID::Gibberellin), WithinAbs(expected, 1e-6));
 }
 
 TEST_CASE("Old leaf produces no GA", "[gibberellin]") {
@@ -41,7 +41,7 @@ TEST_CASE("Old leaf produces no GA", "[gibberellin]") {
 
     compute_gibberellin(plant);
 
-    REQUIRE(stem->gibberellin == 0.0f);
+    REQUIRE(stem->chemical(ChemicalID::Gibberellin) == 0.0f);
 }
 
 TEST_CASE("GA reaches grandparent at reduced fraction", "[gibberellin]") {
@@ -65,8 +65,8 @@ TEST_CASE("GA reaches grandparent at reduced fraction", "[gibberellin]") {
     float parent_expected = leaf->as_leaf()->leaf_size * g.ga_production_rate;
     float grandparent_expected = leaf->as_leaf()->leaf_size * g.ga_production_rate * 0.3f;
 
-    REQUIRE_THAT(parent->gibberellin, WithinAbs(parent_expected, 1e-6));
-    REQUIRE_THAT(grandparent->gibberellin, WithinAbs(grandparent_expected, 1e-6));
+    REQUIRE_THAT(parent->chemical(ChemicalID::Gibberellin), WithinAbs(parent_expected, 1e-6));
+    REQUIRE_THAT(grandparent->chemical(ChemicalID::Gibberellin), WithinAbs(grandparent_expected, 1e-6));
 }
 
 TEST_CASE("GA does not spread beyond grandparent", "[gibberellin]") {
@@ -91,8 +91,8 @@ TEST_CASE("GA does not spread beyond grandparent", "[gibberellin]") {
     compute_gibberellin(plant);
 
     // Great-grandparent and seed should have no GA
-    REQUIRE(ggp->gibberellin == 0.0f);
-    REQUIRE(plant.seed()->gibberellin == 0.0f);
+    REQUIRE(ggp->chemical(ChemicalID::Gibberellin) == 0.0f);
+    REQUIRE(plant.seed()->chemical(ChemicalID::Gibberellin) == 0.0f);
 }
 
 TEST_CASE("GA resets to zero before recomputing", "[gibberellin]") {
@@ -103,10 +103,10 @@ TEST_CASE("GA resets to zero before recomputing", "[gibberellin]") {
     plant.seed_mut()->add_child(stem);
 
     // Manually set GA to something nonzero
-    stem->gibberellin = 999.0f;
+    stem->chemical(ChemicalID::Gibberellin) = 999.0f; stem->gibberellin = 999.0f;
 
     // No leaves — compute should reset to 0
     compute_gibberellin(plant);
 
-    REQUIRE(stem->gibberellin == 0.0f);
+    REQUIRE(stem->chemical(ChemicalID::Gibberellin) == 0.0f);
 }

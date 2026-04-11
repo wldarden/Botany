@@ -31,7 +31,7 @@ TEST_CASE("Auxin: shoot apical produces auxin", "[hormone]") {
         if (c->type == NodeType::SHOOT_APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
-    REQUIRE(shoot->auxin > 0.0f);
+    REQUIRE(shoot->chemical(ChemicalID::Auxin) > 0.0f);
 }
 
 TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
@@ -44,7 +44,7 @@ TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
     tick_n(plant, world, 1);
 
     // Seed should have received auxin from shoot apical child
-    REQUIRE(plant.seed()->auxin > 0.0f);
+    REQUIRE(plant.seed()->chemical(ChemicalID::Auxin) > 0.0f);
 }
 
 TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
@@ -65,7 +65,7 @@ TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
     REQUIRE(root != nullptr);
     REQUIRE(shoot != nullptr);
     // Root should have much less auxin than shoot (only receives via seed spillover)
-    REQUIRE(root->auxin < shoot->auxin);
+    REQUIRE(root->chemical(ChemicalID::Auxin) < shoot->chemical(ChemicalID::Auxin));
 }
 
 TEST_CASE("Auxin: decays over time without production", "[hormone]") {
@@ -79,12 +79,12 @@ TEST_CASE("Auxin: decays over time without production", "[hormone]") {
     tick_n(plant, world, 5);
 
     const Node* seed = plant.seed();
-    float auxin_at_5 = seed->auxin;
+    float auxin_at_5 = seed->chemical(ChemicalID::Auxin);
 
     // Keep ticking — production continues but transport + decay should prevent
     // linear accumulation
     tick_n(plant, world, 20);
-    float auxin_at_25 = seed->auxin;
+    float auxin_at_25 = seed->chemical(ChemicalID::Auxin);
 
     // Should not be 5x the earlier amount (decay limits accumulation)
     REQUIRE(auxin_at_25 < 5.0f * auxin_at_5);
@@ -103,7 +103,7 @@ TEST_CASE("Cytokinin: root apical produces cytokinin", "[hormone]") {
         if (c->type == NodeType::ROOT_APICAL) { root = c; break; }
     }
     REQUIRE(root != nullptr);
-    REQUIRE(root->cytokinin > 0.0f);
+    REQUIRE(root->chemical(ChemicalID::Cytokinin) > 0.0f);
 }
 
 TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
@@ -120,5 +120,5 @@ TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
         if (c->type == NodeType::SHOOT_APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
-    REQUIRE(shoot->cytokinin > 0.0f);
+    REQUIRE(shoot->chemical(ChemicalID::Cytokinin) > 0.0f);
 }

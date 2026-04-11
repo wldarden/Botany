@@ -55,14 +55,16 @@ void Node::tick(Plant& plant, const WorldParams& world) {
 
     // Maintenance sugar consumption
     float cost = maintenance_cost(g);
-    sugar = std::max(0.0f, sugar - cost);
+    chemical(ChemicalID::Sugar) = std::max(0.0f, chemical(ChemicalID::Sugar) - cost);
+    sugar = chemical(ChemicalID::Sugar);
 
     // Cap clamp
     float cap = sugar_cap(*this, g);
-    sugar = std::min(sugar, cap);
+    chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
+    sugar = chemical(ChemicalID::Sugar);
 
     // Starvation tracking + death
-    if (sugar <= 0.0f) starvation_ticks++;
+    if (chemical(ChemicalID::Sugar) <= 0.0f) starvation_ticks++;
     else starvation_ticks = 0;
 
     if (starvation_ticks >= world.starvation_ticks_max && parent) {
@@ -131,15 +133,19 @@ static void transport_chemical(float& my_val, float& parent_val,
 void Node::transport_chemicals(const Genome& g) {
     if (parent) {
         // Auxin: basipetal
-        transport_chemical(auxin, parent->auxin,
+        transport_chemical(chemical(ChemicalID::Auxin), parent->chemical(ChemicalID::Auxin),
             g.auxin_transport_rate, g.auxin_directional_bias, g.auxin_decay_rate);
+        auxin = chemical(ChemicalID::Auxin);
+        parent->auxin = parent->chemical(ChemicalID::Auxin);
         // Cytokinin: acropetal
-        transport_chemical(cytokinin, parent->cytokinin,
+        transport_chemical(chemical(ChemicalID::Cytokinin), parent->chemical(ChemicalID::Cytokinin),
             g.cytokinin_transport_rate, g.cytokinin_directional_bias, g.cytokinin_decay_rate);
+        cytokinin = chemical(ChemicalID::Cytokinin);
+        parent->cytokinin = parent->chemical(ChemicalID::Cytokinin);
         // Sugar: gradient-based, cap-aware, conductance scales with radius
         float my_cap = sugar_cap(*this, g);
         float parent_cap = sugar_cap(*parent, g);
-        float diff = sugar - parent->sugar;
+        float diff = chemical(ChemicalID::Sugar) - parent->chemical(ChemicalID::Sugar);
         float min_r = std::min(radius, parent->radius);
         if (type == NodeType::LEAF || is_meristem()
             || parent->type == NodeType::LEAF || parent->is_meristem())
@@ -147,18 +153,22 @@ void Node::transport_chemicals(const Genome& g) {
         float conductance = std::min(min_r * min_r * 3.14159f * g.sugar_transport_conductance, 0.25f);
         float flow = diff * conductance;
         if (flow > 0.0f) {
-            float headroom = std::max(0.0f, parent_cap - parent->sugar);
-            flow = std::min({flow, sugar, headroom});
+            float headroom = std::max(0.0f, parent_cap - parent->chemical(ChemicalID::Sugar));
+            flow = std::min({flow, chemical(ChemicalID::Sugar), headroom});
         } else {
-            float headroom = std::max(0.0f, my_cap - sugar);
-            flow = std::max({flow, -parent->sugar, -headroom});
+            float headroom = std::max(0.0f, my_cap - chemical(ChemicalID::Sugar));
+            flow = std::max({flow, -parent->chemical(ChemicalID::Sugar), -headroom});
         }
-        sugar -= flow;
-        parent->sugar += flow;
+        chemical(ChemicalID::Sugar) -= flow;
+        sugar = chemical(ChemicalID::Sugar);
+        parent->chemical(ChemicalID::Sugar) += flow;
+        parent->sugar = parent->chemical(ChemicalID::Sugar);
     } else {
         // Seed: no parent, just decay hormones
-        auxin *= (1.0f - g.auxin_decay_rate);
-        cytokinin *= (1.0f - g.cytokinin_decay_rate);
+        chemical(ChemicalID::Auxin) *= (1.0f - g.auxin_decay_rate);
+        auxin = chemical(ChemicalID::Auxin);
+        chemical(ChemicalID::Cytokinin) *= (1.0f - g.cytokinin_decay_rate);
+        cytokinin = chemical(ChemicalID::Cytokinin);
     }
 }
 

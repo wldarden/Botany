@@ -17,10 +17,10 @@ TEST_CASE("Node creation with default values", "[node]") {
     REQUIRE(node.parent == nullptr);
     REQUIRE(node.children.empty());
     REQUIRE(node.age == 0);
-    REQUIRE(node.auxin == 0.0f);
-    REQUIRE(node.cytokinin == 0.0f);
+    REQUIRE(node.chemical(ChemicalID::Auxin) == 0.0f);
+    REQUIRE(node.chemical(ChemicalID::Cytokinin) == 0.0f);
     REQUIRE(node.is_meristem() == false);
-    REQUIRE(node.sugar == 0.0f);
+    REQUIRE(node.chemical(ChemicalID::Sugar) == 0.0f);
 }
 
 TEST_CASE("add_child establishes parent-child relationship", "[node]") {
@@ -47,7 +47,7 @@ TEST_CASE("LEAF node stores leaf_size", "[node]") {
     node.leaf_size = 0.3f;
     REQUIRE(node.type == NodeType::LEAF);
     REQUIRE(node.leaf_size == 0.3f);
-    REQUIRE(node.sugar == 0.0f);
+    REQUIRE(node.chemical(ChemicalID::Sugar) == 0.0f);
 }
 
 TEST_CASE("NodeType covers all four meristem variants", "[node]") {

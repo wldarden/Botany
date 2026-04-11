@@ -113,15 +113,15 @@ int main(int argc, char* argv[]) {
         } else {
             ChemicalAccessor accessor;
             if (color_chemical == "auxin") {
-                accessor = [](const Node& n) { return n.auxin; };
+                accessor = [](const Node& n) { return n.chemical(ChemicalID::Auxin); };
             } else if (color_chemical == "cytokinin") {
-                accessor = [](const Node& n) { return n.cytokinin; };
+                accessor = [](const Node& n) { return n.chemical(ChemicalID::Cytokinin); };
             } else if (color_chemical == "sugar") {
-                accessor = [](const Node& n) { return n.sugar; };
+                accessor = [](const Node& n) { return n.chemical(ChemicalID::Sugar); };
             } else if (color_chemical == "gibberellin") {
-                accessor = [](const Node& n) { return n.gibberellin; };
+                accessor = [](const Node& n) { return n.chemical(ChemicalID::Gibberellin); };
             } else if (color_chemical == "ethylene") {
-                accessor = [](const Node& n) { return n.ethylene; };
+                accessor = [](const Node& n) { return n.chemical(ChemicalID::Ethylene); };
             } else {
                 std::cerr << "Unknown chemical: " << color_chemical
                           << " (available: auxin, cytokinin, sugar, gibberellin, ethylene, type)" << std::endl;
@@ -231,8 +231,8 @@ int main(int argc, char* argv[]) {
         int apical_count = 0, axillary_count = 0;
         int root_apical_count = 0, root_axillary_count = 0;
         engine.get_plant(plant_id).for_each_node([&](const Node& n) {
-            total_sugar += n.sugar;
-            if (n.sugar > max_sugar) max_sugar = n.sugar;
+            total_sugar += n.chemical(ChemicalID::Sugar);
+            if (n.chemical(ChemicalID::Sugar) > max_sugar) max_sugar = n.chemical(ChemicalID::Sugar);
             switch (n.type) {
                 case NodeType::STEM: stem_count++; break;
                 case NodeType::ROOT: root_count++; break;
@@ -299,19 +299,19 @@ int main(int argc, char* argv[]) {
             ImGui::SameLine();
             if (ImGui::Button("Auxin")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.auxin; });
+                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Auxin); });
                 active_overlay = Overlay::AUXIN;
             }
             ImGui::SameLine();
             if (ImGui::Button("Cytokinin")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.cytokinin; });
+                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Cytokinin); });
                 active_overlay = Overlay::CYTOKININ;
             }
             ImGui::SameLine();
             if (ImGui::Button("Sugar")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.sugar; });
+                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Sugar); });
                 active_overlay = Overlay::SUGAR;
             }
             ImGui::SameLine();
@@ -322,13 +322,13 @@ int main(int argc, char* argv[]) {
             }
             if (ImGui::Button("GA")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.gibberellin; });
+                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Gibberellin); });
                 active_overlay = Overlay::GIBBERELLIN;
             }
             ImGui::SameLine();
             if (ImGui::Button("Ethylene")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.ethylene; });
+                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Ethylene); });
                 active_overlay = Overlay::ETHYLENE;
             }
 
@@ -418,16 +418,16 @@ int main(int argc, char* argv[]) {
                 ImGui::Separator();
 
                 // Chemical levels table
-                float parent_sugar = sel.parent ? sel.parent->sugar : 0.0f;
-                float parent_auxin = sel.parent ? sel.parent->auxin : 0.0f;
-                float parent_cytokinin = sel.parent ? sel.parent->cytokinin : 0.0f;
+                float parent_sugar = sel.parent ? sel.parent->chemical(ChemicalID::Sugar) : 0.0f;
+                float parent_auxin = sel.parent ? sel.parent->chemical(ChemicalID::Auxin) : 0.0f;
+                float parent_cytokinin = sel.parent ? sel.parent->chemical(ChemicalID::Cytokinin) : 0.0f;
 
                 float child_sugar = 0.0f, child_auxin = 0.0f, child_cytokinin = 0.0f;
                 if (!sel.children.empty()) {
                     for (const Node* c : sel.children) {
-                        child_sugar += c->sugar;
-                        child_auxin += c->auxin;
-                        child_cytokinin += c->cytokinin;
+                        child_sugar += c->chemical(ChemicalID::Sugar);
+                        child_auxin += c->chemical(ChemicalID::Auxin);
+                        child_cytokinin += c->chemical(ChemicalID::Cytokinin);
                     }
                     float n = static_cast<float>(sel.children.size());
                     child_sugar /= n;
@@ -456,49 +456,49 @@ int main(int argc, char* argv[]) {
                     // Sugar
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Sugar (g)");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_sugar, sel.sugar).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.sugar);
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_sugar, sel.sugar).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_sugar, sel.chemical(ChemicalID::Sugar)).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.chemical(ChemicalID::Sugar));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_sugar, sel.chemical(ChemicalID::Sugar)).c_str());
 
                     // Auxin (dimensionless signaling units)
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Auxin (au)");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_auxin, sel.auxin).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.auxin);
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_auxin, sel.auxin).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_auxin, sel.chemical(ChemicalID::Auxin)).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.chemical(ChemicalID::Auxin));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_auxin, sel.chemical(ChemicalID::Auxin)).c_str());
 
                     // Cytokinin (dimensionless signaling units)
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Cyt (au)");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_cytokinin, sel.cytokinin).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.cytokinin);
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_cytokinin, sel.cytokinin).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_cytokinin, sel.chemical(ChemicalID::Cytokinin)).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.chemical(ChemicalID::Cytokinin));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_cytokinin, sel.chemical(ChemicalID::Cytokinin)).c_str());
 
                     // Gibberellin
-                    float parent_ga = sel.parent ? sel.parent->gibberellin : 0.0f;
+                    float parent_ga = sel.parent ? sel.parent->chemical(ChemicalID::Gibberellin) : 0.0f;
                     float child_ga = 0.0f;
                     if (!sel.children.empty()) {
-                        for (const Node* c : sel.children) child_ga += c->gibberellin;
+                        for (const Node* c : sel.children) child_ga += c->chemical(ChemicalID::Gibberellin);
                         child_ga /= static_cast<float>(sel.children.size());
                     }
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("GA (au)");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_ga, sel.gibberellin).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.gibberellin);
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_ga, sel.gibberellin).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_ga, sel.chemical(ChemicalID::Gibberellin)).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.chemical(ChemicalID::Gibberellin));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_ga, sel.chemical(ChemicalID::Gibberellin)).c_str());
 
                     // Ethylene
-                    float parent_eth = sel.parent ? sel.parent->ethylene : 0.0f;
+                    float parent_eth = sel.parent ? sel.parent->chemical(ChemicalID::Ethylene) : 0.0f;
                     float child_eth = 0.0f;
                     if (!sel.children.empty()) {
-                        for (const Node* c : sel.children) child_eth += c->ethylene;
+                        for (const Node* c : sel.children) child_eth += c->chemical(ChemicalID::Ethylene);
                         child_eth /= static_cast<float>(sel.children.size());
                     }
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Eth (au)");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_eth, sel.ethylene).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.ethylene);
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_eth, sel.ethylene).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_eth, sel.chemical(ChemicalID::Ethylene)).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.chemical(ChemicalID::Ethylene));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_eth, sel.chemical(ChemicalID::Ethylene)).c_str());
 
                     ImGui::EndTable();
                 }

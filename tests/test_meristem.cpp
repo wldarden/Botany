@@ -23,7 +23,7 @@ TEST_CASE("Shoot apical meristem extends node position upward", "[meristem]") {
     REQUIRE(shoot != nullptr);
     float y_before = shoot->position.y;
 
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
 
     REQUIRE(shoot->position.y > y_before);
@@ -43,7 +43,7 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     float seed_r_before = seed->radius;
     float shoot_r_before = shoot->radius;
 
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
 
     // Seed (interior node, no active meristem) should thicken
@@ -63,7 +63,7 @@ TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "
     // Tick until chain growth fires (distance exceeds max_internode_length)
     // Keep auxin high so axillary buds stay dormant
     for (int i = 0; i < 2; i++) {
-        plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; n.auxin = 1.0f; });
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.auxin = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -93,7 +93,7 @@ TEST_CASE("Interior STEM nodes have at most 3 children", "[meristem]") {
 
     // Run enough ticks to create several interior nodes
     for (int i = 0; i < 20; i++) {
-        plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
         plant.tick(default_world_params());
     }
 
@@ -117,7 +117,7 @@ TEST_CASE("Root apical meristem extends node position downward", "[meristem]") {
     REQUIRE(root != nullptr);
     float y_before = root->position.y;
 
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
 
     REQUIRE(root->position.y < y_before);
@@ -130,7 +130,7 @@ TEST_CASE("Root chain growth spawns root axillary on interior node", "[meristem]
     Plant plant(g, glm::vec3(0.0f));
 
     for (int i = 0; i < 3; i++) {
-        plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
         plant.tick(default_world_params());
     }
 
@@ -152,9 +152,9 @@ TEST_CASE("Chain growth: apical meristem transfers to new node when internode to
 
     // After 2 ticks the shoot moves 1.0 from its start, exceeding max_internode_length of 0.6
     // Keep auxin high so axillary buds stay dormant (don't spawn extra apicals)
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; n.auxin = 1.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.auxin = 1.0f; });
     plant.tick(default_world_params());
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; n.auxin = 1.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.auxin = 1.0f; });
     plant.tick(default_world_params());
 
     // Should still have exactly one active shoot apical meristem
@@ -181,7 +181,7 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
     Plant plant(g, glm::vec3(0.0f));
 
     // Tick once — chain growth fires, creating an interior node with axillary
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
 
     // Count shoot apicals before activation
@@ -195,8 +195,8 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
 
     // Set parent auxin low on all axillary nodes to trigger activation
     plant.for_each_node_mut([&](Node& n) {
-        n.auxin = 0.0f;  // clear all auxin (no production to interfere)
-        n.sugar = 100.0f;
+        n.chemical(ChemicalID::Auxin) = 0.0f; n.auxin = 0.0f;  // clear all auxin (no production to interfere)
+        n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f;
     });
 
     plant.tick(default_world_params());
@@ -216,7 +216,7 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     g.max_internode_length = 0.4f;
     Plant plant(g, glm::vec3(0.0f));
 
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
 
     Node* axillary_node = nullptr;
@@ -227,12 +227,12 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     });
     REQUIRE(axillary_node != nullptr);
     // Shoot axillaries sense auxin on their parent stem node
-    axillary_node->auxin = 5.0f; // way above threshold
+    axillary_node->chemical(ChemicalID::Auxin) = 5.0f; axillary_node->auxin = 5.0f; // way above threshold
     if (axillary_node->parent) {
-        axillary_node->parent->auxin = 5.0f;
+        axillary_node->parent->chemical(ChemicalID::Auxin) = 5.0f; axillary_node->parent->auxin = 5.0f;
     }
 
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
 
     REQUIRE(axillary_node->type == NodeType::SHOOT_AXILLARY);
@@ -243,9 +243,9 @@ TEST_CASE("Node age increments each tick", "[meristem]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
     plant.tick(default_world_params());
 
     const Node* seed = plant.seed();
@@ -266,7 +266,7 @@ TEST_CASE("Shoot apical meristem does not grow without sugar", "[meristem][sugar
     REQUIRE(shoot_tip != nullptr);
 
     // Zero sugar everywhere — should not grow
-    plant.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; n.sugar = 0.0f; });
     glm::vec3 pos_before = shoot_tip->position;
     plant.tick(default_world_params());
     REQUIRE(shoot_tip->position.y == pos_before.y);
@@ -284,10 +284,10 @@ TEST_CASE("Shoot apical meristem grows and deducts sugar", "[meristem][sugar]") 
     });
     REQUIRE(shoot_tip != nullptr);
 
-    shoot_tip->sugar = 100.0f;
-    float sugar_before = shoot_tip->sugar;
+    shoot_tip->chemical(ChemicalID::Sugar) = 100.0f; shoot_tip->sugar = 100.0f;
+    float sugar_before = shoot_tip->chemical(ChemicalID::Sugar);
     plant.tick(default_world_params());
-    REQUIRE(shoot_tip->sugar < sugar_before);
+    REQUIRE(shoot_tip->chemical(ChemicalID::Sugar) < sugar_before);
 }
 
 TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]") {
@@ -299,7 +299,7 @@ TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]")
     // Run until axillary buds exist
     // Give all nodes plenty of sugar for growth
     for (int i = 0; i < 5; i++) {
-        plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; });
         plant.tick(default_world_params());
     }
 
@@ -312,10 +312,10 @@ TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]")
     });
 
     if (axillary_node) {
-        axillary_node->sugar = 0.0f;
+        axillary_node->chemical(ChemicalID::Sugar) = 0.0f; axillary_node->sugar = 0.0f;
         // Set parent auxin low so hormone condition passes
         if (axillary_node->parent) {
-            axillary_node->parent->auxin = 0.0f;
+            axillary_node->parent->chemical(ChemicalID::Auxin) = 0.0f; axillary_node->parent->auxin = 0.0f;
         }
         plant.tick(default_world_params());
         // Should still be axillary (not enough sugar to activate)
@@ -330,7 +330,7 @@ TEST_CASE("Thickening does not occur without sugar", "[meristem][sugar]") {
 
     Node* seed = plant.seed_mut();
     float radius_before = seed->radius;
-    seed->sugar = 0.0f;
+    seed->chemical(ChemicalID::Sugar) = 0.0f; seed->sugar = 0.0f;
 
     plant.tick(default_world_params());
     REQUIRE(seed->radius == radius_before);
@@ -341,11 +341,11 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* seed = plant.seed_mut();
-    seed->sugar = 100.0f;
-    float sugar_before = seed->sugar;
+    seed->chemical(ChemicalID::Sugar) = 100.0f; seed->sugar = 100.0f;
+    float sugar_before = seed->chemical(ChemicalID::Sugar);
 
     plant.tick(default_world_params());
-    REQUIRE(seed->sugar < sugar_before);
+    REQUIRE(seed->chemical(ChemicalID::Sugar) < sugar_before);
     REQUIRE(seed->radius > g.initial_radius);
 }
 
@@ -369,14 +369,14 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     REQUIRE(tip2 != nullptr);
 
     // Zero all nodes so transport doesn't interfere with sugar setup
-    plant1.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
-    plant2.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
+    plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; n.sugar = 0.0f; });
+    plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; n.sugar = 0.0f; });
 
     // Low sugar = slow growth, high sugar = full growth
     WorldParams w = default_world_params();
     float max_cost = g.growth_rate * w.sugar_cost_shoot_growth;
-    tip1->sugar = g.sugar_save_shoot + max_cost * 0.5f; // half growth
-    tip2->sugar = g.sugar_save_shoot + max_cost * 2.0f; // full growth (capped at 1.0)
+    tip1->chemical(ChemicalID::Sugar) = g.sugar_save_shoot + max_cost * 0.5f; tip1->sugar = g.sugar_save_shoot + max_cost * 0.5f; // half growth
+    tip2->chemical(ChemicalID::Sugar) = g.sugar_save_shoot + max_cost * 2.0f; tip2->sugar = g.sugar_save_shoot + max_cost * 2.0f; // full growth (capped at 1.0)
 
     glm::vec3 pos1_before = tip1->position;
     glm::vec3 pos2_before = tip2->position;
@@ -406,8 +406,8 @@ TEST_CASE("Growth at save_threshold produces zero growth", "[meristem][sugar]") 
     REQUIRE(shoot_tip != nullptr);
 
     // Exactly at save threshold — no growth (zero all nodes so transport doesn't add sugar)
-    plant.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
-    shoot_tip->sugar = g.sugar_save_shoot;
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; n.sugar = 0.0f; });
+    shoot_tip->chemical(ChemicalID::Sugar) = g.sugar_save_shoot; shoot_tip->sugar = g.sugar_save_shoot;
     glm::vec3 pos_before = shoot_tip->position;
     plant.tick(default_world_params());
     REQUIRE(shoot_tip->position.y == pos_before.y);
@@ -420,11 +420,11 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem->age = 1;
-    stem->sugar = 5.0f;
+    stem->chemical(ChemicalID::Sugar) = 5.0f; stem->sugar = 5.0f;
     plant.seed_mut()->add_child(stem);
 
     // Run without GA
-    stem->gibberellin = 0.0f;
+    stem->chemical(ChemicalID::Gibberellin) = 0.0f; stem->gibberellin = 0.0f;
     float offset_before = glm::length(stem->offset);
     plant.tick(wp);
     float growth_no_ga = glm::length(stem->offset) - offset_before;
@@ -432,10 +432,10 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
     // Reset
     stem->offset = glm::vec3(0.0f, 0.5f, 0.0f);
     stem->age = 1;
-    stem->sugar = 5.0f;
+    stem->chemical(ChemicalID::Sugar) = 5.0f; stem->sugar = 5.0f;
 
     // Run with GA
-    stem->gibberellin = 1.0f;
+    stem->chemical(ChemicalID::Gibberellin) = 1.0f; stem->gibberellin = 1.0f;
     offset_before = glm::length(stem->offset);
     plant.tick(wp);
     float growth_with_ga = glm::length(stem->offset) - offset_before;
@@ -453,13 +453,13 @@ TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
 
     Node* stem1 = plant1.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem1->age = 1;
-    stem1->sugar = 5.0f;
+    stem1->chemical(ChemicalID::Sugar) = 5.0f; stem1->sugar = 5.0f;
     plant1.seed_mut()->add_child(stem1);
 
     // Add a starving leaf nearby to produce ethylene in both plants
     Node* leaf1 = plant1.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf1->as_leaf()->leaf_size = 1.0f;
-    leaf1->sugar = 0.0f;
+    leaf1->chemical(ChemicalID::Sugar) = 0.0f; leaf1->sugar = 0.0f;
     stem1->add_child(leaf1);
 
     // Plant 2: ethylene strongly inhibits elongation
@@ -469,12 +469,12 @@ TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
 
     Node* stem2 = plant2.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem2->age = 1;
-    stem2->sugar = 5.0f;
+    stem2->chemical(ChemicalID::Sugar) = 5.0f; stem2->sugar = 5.0f;
     plant2.seed_mut()->add_child(stem2);
 
     Node* leaf2 = plant2.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf2->as_leaf()->leaf_size = 1.0f;
-    leaf2->sugar = 0.0f;
+    leaf2->chemical(ChemicalID::Sugar) = 0.0f; leaf2->sugar = 0.0f;
     stem2->add_child(leaf2);
 
     float offset1_before = glm::length(stem1->offset);
@@ -500,18 +500,18 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
 
     WorldParams w = default_world_params();
     float max_cost = g.thickening_rate * w.sugar_cost_thickening;
-    seed1->sugar = g.sugar_save_stem + max_cost * 0.5f;
-    seed2->sugar = g.sugar_save_stem + max_cost * 2.0f;
+    seed1->chemical(ChemicalID::Sugar) = g.sugar_save_stem + max_cost * 0.5f; seed1->sugar = g.sugar_save_stem + max_cost * 0.5f;
+    seed2->chemical(ChemicalID::Sugar) = g.sugar_save_stem + max_cost * 2.0f; seed2->sugar = g.sugar_save_stem + max_cost * 2.0f;
 
     float r1_before = seed1->radius;
     float r2_before = seed2->radius;
 
     // Give meristem tips sugar so they don't interfere
     plant1.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) n.sugar = 100.0f;
+        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; }
     });
     plant2.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) n.sugar = 100.0f;
+        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) { n.chemical(ChemicalID::Sugar) = 100.0f; n.sugar = 100.0f; }
     });
 
     plant1.tick(default_world_params());

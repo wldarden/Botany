@@ -1,7 +1,6 @@
 #include "engine/node/meristems/shoot_axillary.h"
 #include "engine/plant.h"
 #include "engine/world_params.h"
-#include <algorithm>
 
 namespace botany {
 
@@ -19,28 +18,24 @@ void ShootAxillaryNode::tick(Plant& plant, const WorldParams& world) {
 }
 
 bool ShootAxillaryNode::can_activate(const Genome& g, const WorldParams& world) const {
-    float stem_auxin = parent ? parent->auxin : auxin;
+    float stem_auxin = parent ? parent->chemical(ChemicalID::Auxin) : chemical(ChemicalID::Auxin);
     if (stem_auxin >= g.auxin_threshold) return false;
 
-    float parent_sugar = parent ? parent->sugar : sugar;
-    if (parent_sugar < g.sugar_activation_shoot) return false;
-    if (sugar < world.sugar_cost_activation) return false;
+    float parent_sugar_val = parent ? parent->chemical(ChemicalID::Sugar) : chemical(ChemicalID::Sugar);
+    if (parent_sugar_val < g.sugar_activation_shoot) return false;
+    if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 
     return true;
 }
 
 void ShootAxillaryNode::activate(Plant& plant, const Genome& g, const WorldParams& world) {
     Node* apical = plant.create_node(NodeType::SHOOT_APICAL, offset, g.initial_radius);
-    apical->sugar = sugar - world.sugar_cost_activation;
+    apical->chemical(ChemicalID::Sugar) = chemical(ChemicalID::Sugar) - world.sugar_cost_activation;
+    apical->sugar = apical->chemical(ChemicalID::Sugar);
 
     if (parent) {
-        auto& siblings = parent->children;
-        auto it = std::find(siblings.begin(), siblings.end(), static_cast<Node*>(this));
-        if (it != siblings.end()) *it = apical;
-        apical->parent = parent;
+        parent->replace_child(this, apical);
     }
-
-    parent = nullptr;
     plant.queue_removal(this);
 }
 
