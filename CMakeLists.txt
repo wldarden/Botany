@@ -70,8 +70,13 @@ add_library(botany_engine STATIC
     src/engine/node.cpp
     src/engine/plant.cpp
     src/engine/hormone.cpp
-    src/engine/meristem.cpp
+    src/engine/meristems/meristem.cpp
+    src/engine/meristems/shoot_apical.cpp
+    src/engine/meristems/shoot_axillary.cpp
+    src/engine/meristems/root_apical.cpp
+    src/engine/meristems/root_axillary.cpp
     src/engine/sugar.cpp
+    src/engine/gibberellin.cpp
     src/engine/engine.cpp
     src/engine/world_params.cpp
 )
@@ -117,6 +122,7 @@ add_executable(botany_tests
     tests/test_meristem.cpp
     tests/test_engine.cpp
     tests/test_sugar.cpp
+    tests/test_gibberellin.cpp
     tests/test_serializer.cpp
 )
 target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization Catch2::Catch2WithMain)
