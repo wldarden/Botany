@@ -83,6 +83,9 @@ struct Genome {
     uint32_t ga_leaf_age_max;         // ticks — only leaves younger than this produce GA
     float ga_elongation_sensitivity;  // how strongly GA boosts elongation rate
     float ga_length_sensitivity;      // how strongly GA boosts target internode length
+    float ga_transport_rate;          // fraction transported per tick (biased transport)
+    float ga_directional_bias;        // -1=basipetal, 0=gradient, +1=acropetal
+    float ga_decay_rate;              // exponential decay per tick
 
     // Ethylene — stress/crowding gas signal, triggers leaf abscission
     float ethylene_starvation_rate;       // production when sugar = 0
@@ -165,6 +168,9 @@ inline Genome default_genome() {
         .ga_leaf_age_max = 168,               // 7 days
         .ga_elongation_sensitivity = 2.0f,
         .ga_length_sensitivity = 1.5f,
+        .ga_transport_rate = 0.2f,            // moderate transport
+        .ga_directional_bias = -0.7f,         // mostly basipetal (leaf -> parent -> trunk)
+        .ga_decay_rate = 0.15f,               // decays faster than auxin — short-range signal
 
         // Ethylene
         .ethylene_starvation_rate = 0.3f,
