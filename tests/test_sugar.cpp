@@ -16,7 +16,7 @@ TEST_CASE("LEAF nodes produce sugar proportional to light and leaf_size", "[suga
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.5f;
+    leaf->as_leaf()->leaf_size = 0.5f;
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();
@@ -24,7 +24,7 @@ TEST_CASE("LEAF nodes produce sugar proportional to light and leaf_size", "[suga
 
     produce_sugar(plant, wp);
 
-    float expected = wp.light_level * leaf->leaf_size * g.sugar_production_rate;
+    float expected = wp.light_level * leaf->as_leaf()->leaf_size * g.sugar_production_rate;
     REQUIRE_THAT(leaf->sugar, WithinAbs(expected, 1e-6));
 }
 
@@ -33,7 +33,7 @@ TEST_CASE("Zero light produces zero sugar", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.5f;
+    leaf->as_leaf()->leaf_size = 0.5f;
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();
@@ -92,7 +92,7 @@ TEST_CASE("LEAF maintenance cost uses leaf area", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.5f;
+    leaf->as_leaf()->leaf_size = 0.5f;
     plant.seed_mut()->add_child(leaf);
 
     // Set sugar within cap so safety clamp doesn't interfere
@@ -356,7 +356,7 @@ TEST_CASE("transport_sugar runs full produce-diffuse-consume cycle", "[sugar]") 
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 1.0f;
+    leaf->as_leaf()->leaf_size = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();
@@ -389,7 +389,7 @@ TEST_CASE("sugar_cap scales with leaf area", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.5f;  // large enough that area cap exceeds minimum
+    leaf->as_leaf()->leaf_size = 0.5f;  // large enough that area cap exceeds minimum
     plant.seed_mut()->add_child(leaf);
 
     float area = 0.5f * 0.5f;
@@ -436,7 +436,7 @@ TEST_CASE("Production skipped when leaf sugar is at cap", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.3f;
+    leaf->as_leaf()->leaf_size = 0.3f;
     plant.seed_mut()->add_child(leaf);
 
     // Fill leaf to its cap
@@ -455,7 +455,7 @@ TEST_CASE("Production works normally when leaf is below cap", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.5f;
+    leaf->as_leaf()->leaf_size = 0.5f;
     leaf->sugar = 0.0f;
     plant.seed_mut()->add_child(leaf);
 
@@ -510,8 +510,8 @@ TEST_CASE("Senescing leaf produces no sugar", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.5f;
-    leaf->senescence_ticks = 1; // senescing
+    leaf->as_leaf()->leaf_size = 0.5f;
+    leaf->as_leaf()->senescence_ticks = 1; // senescing
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();

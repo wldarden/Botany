@@ -19,6 +19,7 @@ public:
 
     PlantID create_plant(const Genome& genome, glm::vec3 position);
     void tick();
+    void reset();
 
     const Plant& get_plant(PlantID id) const;
     Plant& get_plant_mut(PlantID id);

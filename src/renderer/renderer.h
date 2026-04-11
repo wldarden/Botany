@@ -49,6 +49,7 @@ private:
     uint32_t ground_vbo_ = 0;
 
     void setup_ground();
+    void draw_grid();
     glm::vec3 heatmap(float t) const;
     void draw_cylinder(glm::vec3 start, glm::vec3 end,
                        float r_start, float r_end,

@@ -16,13 +16,13 @@ TEST_CASE("Young leaf produces GA on parent node", "[gibberellin]") {
     plant.seed_mut()->add_child(stem);
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = 10; // young
     stem->add_child(leaf);
 
     compute_gibberellin(plant);
 
-    float expected = leaf->leaf_size * g.ga_production_rate;
+    float expected = leaf->as_leaf()->leaf_size * g.ga_production_rate;
     REQUIRE_THAT(stem->gibberellin, WithinAbs(expected, 1e-6));
 }
 
@@ -34,7 +34,7 @@ TEST_CASE("Old leaf produces no GA", "[gibberellin]") {
     plant.seed_mut()->add_child(stem);
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = g.ga_leaf_age_max + 1; // too old
     stem->add_child(leaf);
 
@@ -55,14 +55,14 @@ TEST_CASE("GA reaches grandparent at reduced fraction", "[gibberellin]") {
     grandparent->add_child(parent);
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = 10;
     parent->add_child(leaf);
 
     compute_gibberellin(plant);
 
-    float parent_expected = leaf->leaf_size * g.ga_production_rate;
-    float grandparent_expected = leaf->leaf_size * g.ga_production_rate * 0.3f;
+    float parent_expected = leaf->as_leaf()->leaf_size * g.ga_production_rate;
+    float grandparent_expected = leaf->as_leaf()->leaf_size * g.ga_production_rate * 0.3f;
 
     REQUIRE_THAT(parent->gibberellin, WithinAbs(parent_expected, 1e-6));
     REQUIRE_THAT(grandparent->gibberellin, WithinAbs(grandparent_expected, 1e-6));
@@ -83,7 +83,7 @@ TEST_CASE("GA does not spread beyond grandparent", "[gibberellin]") {
     gp->add_child(parent);
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = 10;
     parent->add_child(leaf);
 

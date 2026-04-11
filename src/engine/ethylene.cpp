@@ -32,9 +32,10 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
         }
 
         // Trigger 2: Low light (LEAF only)
-        if (node.type == NodeType::LEAF &&
-            node.light_exposure < g.ethylene_shade_threshold) {
-            node.ethylene += g.ethylene_shade_rate * (1.0f - node.light_exposure);
+        if (auto* leaf = node.as_leaf()) {
+            if (leaf->light_exposure < g.ethylene_shade_threshold) {
+                node.ethylene += g.ethylene_shade_rate * (1.0f - leaf->light_exposure);
+            }
         }
 
         // Trigger 3: Old age (LEAF only)
@@ -87,18 +88,19 @@ void process_abscission(Plant& plant) {
     // Increment senescence on senescing leaves, collect leaves to remove
     std::vector<Node*> to_remove;
     plant.for_each_node_mut([&](Node& node) {
-        if (node.type != NodeType::LEAF) return;
+        auto* leaf = node.as_leaf();
+        if (!leaf) return;
 
         // Start senescence if ethylene exceeds threshold and not yet senescing
-        if (node.senescence_ticks == 0 &&
+        if (leaf->senescence_ticks == 0 &&
             node.ethylene > g.ethylene_abscission_threshold) {
-            node.senescence_ticks = 1;
+            leaf->senescence_ticks = 1;
         }
 
         // Advance senescence
-        if (node.senescence_ticks > 0) {
-            node.senescence_ticks++;
-            if (node.senescence_ticks >= g.senescence_duration) {
+        if (leaf->senescence_ticks > 0) {
+            leaf->senescence_ticks++;
+            if (leaf->senescence_ticks >= g.senescence_duration) {
                 to_remove.push_back(&node);
             }
         }

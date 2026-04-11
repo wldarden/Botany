@@ -15,7 +15,8 @@ float sugar_cap(const Node& node, const Genome& g) {
 
     switch (node.type) {
         case NodeType::LEAF: {
-            float area = node.leaf_size * node.leaf_size;
+            float ls = node.as_leaf()->leaf_size;
+            float area = ls * ls;
             return std::max(g.sugar_cap_minimum, area * g.sugar_storage_density_leaf);
         }
         case NodeType::STEM:
@@ -43,18 +44,23 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
     std::vector<LeafTarget> leaves;
 
     plant.for_each_node_mut([&](Node& node) {
-        node.light_exposure = 1.0f;  // reset
         // Only above-ground nodes cast shadows (roots are underground)
         if (node.type != NodeType::ROOT) {
-            float sr = (node.type == NodeType::LEAF) ? node.leaf_size : node.radius;
+            float sr = node.radius;
+            if (auto* leaf = node.as_leaf()) {
+                leaf->light_exposure = 1.0f;  // reset
+                sr = leaf->leaf_size;
+            }
             if (sr > 1e-6f) {
                 casters.push_back({node.position.x, node.position.y,
                                    node.position.z, sr});
             }
         }
-        if (node.type == NodeType::LEAF && node.leaf_size > 1e-6f && node.senescence_ticks == 0) {
-            leaves.push_back({&node, node.position.x, node.position.y,
-                              node.position.z, node.leaf_size});
+        if (auto* leaf = node.as_leaf()) {
+            if (leaf->leaf_size > 1e-6f && leaf->senescence_ticks == 0) {
+                leaves.push_back({&node, node.position.x, node.position.y,
+                                  node.position.z, leaf->leaf_size});
+            }
         }
     });
 
@@ -73,7 +79,7 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
             float overlap = 1.0f - std::sqrt(horiz2) / reach;
             shade += c.shadow_radius * overlap;
         }
-        leaf.node->light_exposure = std::exp(-k * shade);
+        leaf.node->as_leaf()->light_exposure = std::exp(-k * shade);
 
         // Leaf angle efficiency: a leaf facing straight up captures full light,
         // one edge-on captures very little. Use dot product of leaf normal
@@ -89,8 +95,9 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
         float cap = sugar_cap(*leaf.node, g);
         if (leaf.node->sugar >= cap) continue;
 
-        leaf.node->sugar += leaf.node->light_exposure * angle_efficiency
-                          * world.light_level * leaf.node->leaf_size
+        auto* lf = leaf.node->as_leaf();
+        leaf.node->sugar += lf->light_exposure * angle_efficiency
+                          * world.light_level * lf->leaf_size
                           * g.sugar_production_rate;
     }
 }
@@ -102,9 +109,11 @@ void consume_sugar(Plant& plant) {
         float length = std::max(glm::length(node.offset), 0.01f);
 
         switch (node.type) {
-            case NodeType::LEAF:
-                cost = g.sugar_maintenance_leaf * node.leaf_size * node.leaf_size;
+            case NodeType::LEAF: {
+                float ls = node.as_leaf()->leaf_size;
+                cost = g.sugar_maintenance_leaf * ls * ls;
                 break;
+            }
             case NodeType::STEM: {
                 float volume = 3.14159f * node.radius * node.radius * length;
                 cost = g.sugar_maintenance_stem * volume;
@@ -212,7 +221,8 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
     glm::vec3 up(0.0f, 1.0f, 0.0f);
 
     plant.for_each_node_mut([&](Node& node) {
-        if (node.type != NodeType::LEAF) return;
+        auto* leaf = node.as_leaf();
+        if (!leaf) return;
 
         // Phototropism: rotate leaf offset toward sky
         if (g.leaf_phototropism_rate > 1e-8f) {
@@ -221,7 +231,6 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
                 glm::vec3 dir = node.offset / offset_len;
                 float cos_angle = glm::dot(dir, up);
                 if (cos_angle < 0.999f) { // not already pointing up
-                    // Rotation axis: cross(dir, up), then rotate by rate
                     glm::vec3 axis = glm::cross(dir, up);
                     float axis_len = glm::length(axis);
                     if (axis_len > 1e-6f) {
@@ -232,7 +241,6 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
                         float cost = turn * world.sugar_cost_phototropism;
                         if (node.sugar >= cost) {
                             node.sugar -= cost;
-                            // Rodrigues rotation
                             float c = std::cos(turn);
                             float s = std::sin(turn);
                             glm::vec3 new_dir = dir * c
@@ -246,21 +254,20 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
         }
 
         // Size growth
-        if (node.leaf_size >= g.max_leaf_size) return;
+        if (leaf->leaf_size >= g.max_leaf_size) return;
 
         float max_growth = g.leaf_growth_rate;
-        float remaining = g.max_leaf_size - node.leaf_size;
+        float remaining = g.max_leaf_size - leaf->leaf_size;
         float growth = std::min(max_growth, remaining);
 
         float cost = growth * world.sugar_cost_leaf_growth;
         if (node.sugar < cost) {
-            // Grow what we can afford
             growth = node.sugar / world.sugar_cost_leaf_growth;
             cost = node.sugar;
         }
         if (growth < 1e-7f) return;
 
-        node.leaf_size += growth;
+        leaf->leaf_size += growth;
         node.sugar -= cost;
     });
 }
@@ -268,7 +275,7 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
 void transport_sugar(Plant& plant, const WorldParams& world) {
     produce_sugar(plant, world);
     diffuse_sugar(plant, world);
-    grow_leaves(plant, world);
+    // Leaf growth now happens in LeafNode::tick()
     consume_sugar(plant);
     prune_starved_nodes(plant, world);
 }

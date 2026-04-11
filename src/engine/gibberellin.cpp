@@ -14,11 +14,12 @@ void compute_gibberellin(Plant& plant) {
 
     // Phase 2: Young leaves produce GA on their parent (and grandparent)
     plant.for_each_node_mut([&](Node& node) {
-        if (node.type != NodeType::LEAF) return;
+        auto* leaf = node.as_leaf();
+        if (!leaf) return;
         if (node.age >= g.ga_leaf_age_max) return;
-        if (node.leaf_size < 1e-6f) return;
+        if (leaf->leaf_size < 1e-6f) return;
 
-        float production = node.leaf_size * g.ga_production_rate;
+        float production = leaf->leaf_size * g.ga_production_rate;
 
         // Apply to parent
         if (node.parent) {

@@ -109,7 +109,7 @@ void Renderer::draw_plant(const Plant& plant) {
     plant.for_each_node([&](const Node& node) {
         if (!node.parent) return;
 
-        if (node.type == NodeType::LEAF) {
+        if (auto* leaf = node.as_leaf()) {
             glm::vec3 dir = glm::normalize(node.position - node.parent->position);
             glm::vec3 leaf_color;
             if (chemical_accessor_) {
@@ -119,7 +119,7 @@ void Renderer::draw_plant(const Plant& plant) {
                 // Sunlit leaves are bright green, shaded leaves darken
                 glm::vec3 sun_color(0.2f, 0.6f, 0.15f);
                 glm::vec3 shade_color(0.08f, 0.25f, 0.06f);
-                leaf_color = glm::mix(shade_color, sun_color, node.light_exposure);
+                leaf_color = glm::mix(shade_color, sun_color, leaf->light_exposure);
                 if (node.starvation_ticks > 0) {
                     float stress = static_cast<float>(node.starvation_ticks) / 50.0f;
                     stress = glm::clamp(stress, 0.0f, 1.0f);
@@ -128,15 +128,15 @@ void Renderer::draw_plant(const Plant& plant) {
                 }
             }
             // Senescence: green -> yellow -> brown (overrides other coloring)
-            if (node.senescence_ticks > 0) {
-                float progress = static_cast<float>(node.senescence_ticks) / 48.0f;
+            if (leaf->senescence_ticks > 0) {
+                float progress = static_cast<float>(leaf->senescence_ticks) / 48.0f;
                 progress = glm::clamp(progress, 0.0f, 1.0f);
                 glm::vec3 yellow(0.8f, 0.7f, 0.1f);
                 glm::vec3 brown(0.4f, 0.25f, 0.05f);
                 glm::vec3 senesce_color = glm::mix(yellow, brown, progress);
                 leaf_color = glm::mix(leaf_color, senesce_color, progress);
             }
-            draw_leaf(node.position, dir, node.leaf_size, leaf_color);
+            draw_leaf(node.position, dir, leaf->leaf_size, leaf_color);
             return;
         }
 

@@ -19,9 +19,9 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 
 ### Engine (`src/engine/`)
 - **genome.h** - `Genome` struct with all tunable parameters + `default_genome()`
-- **node.h** - `Node` (position, radius, parent/children, hormone levels, sugar, leaf_size), `Meristem` base class, `MeristemType` enum. `NodeType`: STEM, ROOT, LEAF
+- **node.h/cpp** - `Node` base class (position, radius, parent/children, hormones, sugar) with virtual `tick()`. Subclasses: `StemNode` (thickening, elongation), `RootNode` (same with root params), `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; phototropism + size growth). `Meristem` base class, `MeristemType` enum. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`.
 - **meristems/** - Meristem subfolder:
-  - `meristem.h/cpp` — `tick_meristems()` dispatch + secondary/intercalary growth
+  - `meristem.h/cpp` — `tick_meristems()` calls `node.tick()` on every node, then dispatches meristems
   - `meristem_types.h` — convenience umbrella, includes all 4 type headers
   - `shoot_apical.h/cpp` — `ShootApicalMeristem` (chain growth, phyllotaxis)
   - `shoot_axillary.h/cpp` — `ShootAxillaryMeristem` (auxin-gated activation)
@@ -31,10 +31,10 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 - **hormone.cpp** - `transport_auxin()` and `transport_cytokinin()` - per-tick hormone reset + transport
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission
-- **sugar.h/cpp** - `transport_sugar()` — sugar production, gradient-based diffusion, maintenance consumption
+- **sugar.h/cpp** - `transport_sugar()` — sugar production, gradient-based diffusion, maintenance consumption (leaf growth moved to `LeafNode::tick()`)
 - **world_params.h** - `WorldParams` struct (light level, diffusion iterations) — non-genetic sim parameters
-- **plant.h/cpp** - `Plant` class owns all nodes/meristems, has root meristem cap (100)
-- **engine.h/cpp** - `Engine` orchestrates tick order: auxin → cytokinin → GA → sugar → ethylene → abscission → meristems → positions
+- **plant.h/cpp** - `Plant` class owns all nodes/meristems, has root meristem cap (100). `Plant::tick()` orchestrates per-plant tick order.
+- **engine.h/cpp** - `Engine` iterates plants and calls `plant.tick(world_params)`
 
 ### Renderer (`src/renderer/`)
 - OpenGL 4.1 core profile, GLFW window, orbit camera
@@ -91,7 +91,7 @@ Ethylene is **reset to zero every tick** (signal model). Four production trigger
 
 ## Sugar Model
 
-Sugar **persists across ticks** (NOT reset like hormones). Four phases per tick:
+Sugar **persists across ticks** (NOT reset like hormones). Three phases in `transport_sugar()`, plus leaf growth in `LeafNode::tick()`:
 
 1. **Production** — LEAF nodes produce: `sugar += light_level * leaf_size * sugar_production_rate`
    - Feedback inhibition: production skipped if node sugar >= storage cap
@@ -100,8 +100,7 @@ Sugar **persists across ticks** (NOT reset like hormones). Four phases per tick:
    - LEAF connections use baseline capacity (leaf radius is 0)
    - Runs `sugar_diffusion_iterations` passes per tick (WorldParams, default 5)
    - Cap-aware: transfers clamped by receiver's available headroom
-3. **Leaf growth** — Growing leaves spend sugar to expand toward max_leaf_size
-4. **Consumption** — Every node deducts volume-based maintenance cost:
+3. **Consumption** — Every node deducts volume-based maintenance cost:
    - LEAF: `sugar_maintenance_leaf * leaf_size²` (scales with leaf area)
    - STEM: `sugar_maintenance_stem * π * r² * internode_length` (scales with tissue volume)
    - ROOT: `sugar_maintenance_root * π * r² * internode_length` (scales with tissue volume)
@@ -119,7 +118,8 @@ Sugar **persists across ticks** (NOT reset like hormones). Four phases per tick:
 - `sugar_diffusion_iterations` (5) — simulation quality for diffusion smoothing
 
 ## Key Design Decisions
-- Leaves are real LEAF graph nodes (NodeType::LEAF), not struct properties — they have position, sugar, leaf_size
+- **Node class hierarchy** — `Node` base class with `StemNode`, `RootNode`, `LeafNode` subclasses. Each subclass owns its type-specific fields and growth behavior via `virtual tick()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()` (fast `static_cast` gated on `NodeType` enum, no RTTI).
+- Leaves are real `LeafNode` graph nodes, not struct properties — they own `leaf_size`, `light_exposure`, `senescence_ticks`
 - Chain growth creates 3 children on interior STEM nodes: continuation tip, axillary meristem, and LEAF node
 - Axillary buds check their **parent's** hormone level, not their own node (hormones flow through the stem, not into side branches)
 - Root meristems are hard-capped at 100 (`Plant::max_root_meristems`) to prevent runaway root growth

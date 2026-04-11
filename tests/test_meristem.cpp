@@ -76,7 +76,7 @@ TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "
         }
         if (n.type == NodeType::LEAF) {
             found_leaf = true;
-            REQUIRE(n.leaf_size == g.leaf_bud_size);
+            REQUIRE(n.as_leaf()->leaf_size == g.leaf_bud_size);
         }
     });
     REQUIRE(found_axillary);

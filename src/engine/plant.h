@@ -42,7 +42,9 @@ public:
         return root_meristem_count_ >= max_root_meristems;
     }
 
+    void tick(const struct WorldParams& world);
     void remove_subtree(Node* node);
+    void recompute_world_positions();
 
     void for_each_node(std::function<void(const Node&)> fn) const;
     void for_each_node_mut(std::function<void(Node&)> fn);

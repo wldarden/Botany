@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
-#include "engine/meristem_types.h"
+#include "engine/meristems/meristem_types.h"
 
 using namespace botany;
 
@@ -88,9 +88,9 @@ TEST_CASE("Plant can create LEAF nodes", "[plant]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 1.0f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.3f;
+    leaf->as_leaf()->leaf_size = 0.3f;
     REQUIRE(leaf->type == NodeType::LEAF);
-    REQUIRE(leaf->leaf_size == 0.3f);
+    REQUIRE(leaf->as_leaf()->leaf_size == 0.3f);
 }
 
 TEST_CASE("Plant::remove_subtree removes node and descendants", "[plant]") {

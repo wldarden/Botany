@@ -57,9 +57,10 @@ static const Node* pick_node(const Plant& plant, const OrbitCamera& camera,
 
         // Use a pick radius that scales with node radius (but has a minimum)
         // For leaf nodes, use leaf_size since their radius is tiny
-        float effective_radius = (node.type == NodeType::LEAF && node.leaf_size > 0.0f)
-            ? node.leaf_size * 0.5f
-            : node.radius;
+        float effective_radius = node.radius;
+        if (auto* leaf = node.as_leaf()) {
+            if (leaf->leaf_size > 0.0f) effective_radius = leaf->leaf_size * 0.5f;
+        }
         float pick_radius = std::max(effective_radius * 3.0f, max_pick_dist);
 
         if (dist < pick_radius && t < closest_dist) {
@@ -320,7 +321,7 @@ int main(int argc, char* argv[]) {
             ImGui::SameLine();
             if (ImGui::Button("Light")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.light_exposure; });
+                renderer.set_color_mode([](const Node& n) { auto* l = n.as_leaf(); return l ? l->light_exposure : 0.0f; });
                 active_overlay = Overlay::LIGHT;
             }
             if (ImGui::Button("GA")) {
@@ -408,13 +409,13 @@ int main(int argc, char* argv[]) {
 
                 ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);
                 ImGui::Text("Radius: %.4f", sel.radius);
-                if (sel.type == NodeType::LEAF) {
-                    ImGui::Text("Leaf Size: %.3f", sel.leaf_size);
+                if (auto* leaf = sel.as_leaf()) {
+                    ImGui::Text("Leaf Size: %.3f", leaf->leaf_size);
+                    if (leaf->senescence_ticks > 0) {
+                        ImGui::Text("Senescence: %u ticks", leaf->senescence_ticks);
+                    }
                 }
                 ImGui::Text("Starvation: %u ticks", sel.starvation_ticks);
-                if (sel.senescence_ticks > 0) {
-                    ImGui::Text("Senescence: %u ticks", sel.senescence_ticks);
-                }
                 ImGui::Text("Children: %d", static_cast<int>(sel.children.size()));
 
                 ImGui::Separator();

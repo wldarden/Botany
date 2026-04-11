@@ -45,9 +45,9 @@ TEST_CASE("Shaded leaf produces ethylene", "[ethylene]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->sugar = 1.0f;
-    leaf->light_exposure = 0.1f;
+    leaf->as_leaf()->light_exposure = 0.1f;
     leaf->position = glm::vec3(100.0f, 100.0f, 100.0f);
     plant.seed_mut()->add_child(leaf);
 
@@ -63,9 +63,9 @@ TEST_CASE("Well-lit leaf produces no shade ethylene", "[ethylene]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->sugar = 1.0f;
-    leaf->light_exposure = 0.8f;
+    leaf->as_leaf()->light_exposure = 0.8f;
     leaf->position = glm::vec3(100.0f, 100.0f, 100.0f);
     plant.seed_mut()->add_child(leaf);
 
@@ -80,9 +80,9 @@ TEST_CASE("Old leaf produces age ethylene", "[ethylene]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->sugar = 1.0f;
-    leaf->light_exposure = 1.0f;
+    leaf->as_leaf()->light_exposure = 1.0f;
     leaf->age = g.ethylene_age_onset + 360;
     leaf->position = glm::vec3(100.0f, 100.0f, 100.0f);
     plant.seed_mut()->add_child(leaf);
@@ -168,13 +168,13 @@ TEST_CASE("Leaf above ethylene threshold begins senescence", "[ethylene][absciss
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->ethylene = g.ethylene_abscission_threshold + 0.1f;
     plant.seed_mut()->add_child(leaf);
 
     process_abscission(plant);
 
-    REQUIRE(leaf->senescence_ticks > 0);
+    REQUIRE(leaf->as_leaf()->senescence_ticks > 0);
 }
 
 TEST_CASE("Leaf below ethylene threshold stays healthy", "[ethylene][abscission]") {
@@ -182,13 +182,13 @@ TEST_CASE("Leaf below ethylene threshold stays healthy", "[ethylene][abscission]
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->ethylene = g.ethylene_abscission_threshold * 0.5f;
     plant.seed_mut()->add_child(leaf);
 
     process_abscission(plant);
 
-    REQUIRE(leaf->senescence_ticks == 0);
+    REQUIRE(leaf->as_leaf()->senescence_ticks == 0);
 }
 
 TEST_CASE("Senescing leaf is removed after senescence_duration", "[ethylene][abscission]") {
@@ -196,9 +196,9 @@ TEST_CASE("Senescing leaf is removed after senescence_duration", "[ethylene][abs
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.2f;
+    leaf->as_leaf()->leaf_size = 0.2f;
     leaf->ethylene = g.ethylene_abscission_threshold + 0.1f;
-    leaf->senescence_ticks = g.senescence_duration - 1; // almost done
+    leaf->as_leaf()->senescence_ticks = g.senescence_duration - 1; // almost done
     plant.seed_mut()->add_child(leaf);
 
     uint32_t count_before = plant.node_count();
@@ -218,7 +218,7 @@ TEST_CASE("Non-leaf nodes do not senesce", "[ethylene][abscission]") {
     uint32_t count_before = plant.node_count();
     process_abscission(plant);
 
-    REQUIRE(stem->senescence_ticks == 0);
+    // senescence_ticks only exists on LeafNode, so stem nodes can't senesce
     REQUIRE(plant.node_count() == count_before);
 }
 
@@ -242,15 +242,15 @@ TEST_CASE("Self-thinning cascade prunes shaded interior leaves", "[ethylene][int
     plant.seed_mut()->sugar = 100.0f; // plenty of sugar
 
     Node* inner_leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
-    inner_leaf->leaf_size = 0.2f;
-    inner_leaf->light_exposure = 0.1f; // heavily shaded
+    inner_leaf->as_leaf()->leaf_size = 0.2f;
+    inner_leaf->as_leaf()->light_exposure = 0.1f; // heavily shaded
     inner_leaf->position = glm::vec3(0.1f, 1.1f, 0.0f);
     inner_leaf->sugar = 1.0f; // fed — only shade triggers ethylene
     stem->add_child(inner_leaf);
 
     Node* outer_leaf = plant.create_node(NodeType::LEAF, glm::vec3(-0.1f, 0.1f, 0.0f), 0.0f);
-    outer_leaf->leaf_size = 0.2f;
-    outer_leaf->light_exposure = 0.9f; // well-lit
+    outer_leaf->as_leaf()->leaf_size = 0.2f;
+    outer_leaf->as_leaf()->light_exposure = 0.9f; // well-lit
     outer_leaf->position = glm::vec3(-0.1f, 1.1f, 0.0f);
     outer_leaf->sugar = 1.0f; // fed — no starvation ethylene
     stem->add_child(outer_leaf);
@@ -264,8 +264,8 @@ TEST_CASE("Self-thinning cascade prunes shaded interior leaves", "[ethylene][int
     for (int i = 0; i < 20; i++) {
         // Keep light_exposure fixed (simulate persistent shade)
         plant.for_each_node_mut([&](Node& n) {
-            if (n.id == inner_id) n.light_exposure = 0.1f;
-            if (n.id == outer_id) n.light_exposure = 0.9f;
+            if (n.id == inner_id) n.as_leaf()->light_exposure = 0.1f;
+            if (n.id == outer_id) n.as_leaf()->light_exposure = 0.9f;
         });
         compute_ethylene(plant, wp);
         process_abscission(plant);

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/genome.h"
+#include "engine/world_params.h"
 
 using namespace botany;
 
@@ -44,10 +45,11 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
         REQUIRE(g.sugar_maintenance_stem > 0.0f);
         REQUIRE(g.sugar_maintenance_root > 0.0f);
         REQUIRE(g.sugar_maintenance_meristem > 0.0f);
-        REQUIRE(g.sugar_cost_activation > 0.0f);
-        REQUIRE(g.sugar_cost_shoot_growth > 0.0f);
-        REQUIRE(g.sugar_cost_root_growth > 0.0f);
-        REQUIRE(g.sugar_cost_thickening > 0.0f);
+        WorldParams w = default_world_params();
+        REQUIRE(w.sugar_cost_activation > 0.0f);
+        REQUIRE(w.sugar_cost_shoot_growth > 0.0f);
+        REQUIRE(w.sugar_cost_root_growth > 0.0f);
+        REQUIRE(w.sugar_cost_thickening > 0.0f);
         REQUIRE(g.sugar_save_shoot >= 0.0f);
         REQUIRE(g.sugar_save_root >= 0.0f);
         REQUIRE(g.sugar_save_stem >= 0.0f);

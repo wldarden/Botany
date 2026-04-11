@@ -45,7 +45,8 @@ void save_tick(std::ostream& out, const Engine& engine, uint32_t plant_id) {
         write_val(out, node.auxin);
         write_val(out, node.cytokinin);
         write_val(out, node.sugar);
-        write_val(out, node.leaf_size);
+        float ls = node.as_leaf() ? node.as_leaf()->leaf_size : 0.0f;
+        write_val(out, ls);
     });
 }
 

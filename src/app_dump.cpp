@@ -47,7 +47,7 @@ static void print_genome(const Genome& g) {
     std::cout << "  root_growth_rate:         " << g.root_growth_rate << std::endl;
     std::cout << "  root_max_internode_length:" << g.root_max_internode_length << std::endl;
     std::cout << "  root_branch_angle:        " << g.root_branch_angle << " rad (" << (g.root_branch_angle * 180.0f / 3.14159f) << " deg)" << std::endl;
-    std::cout << "  leaf_size:                " << g.leaf_size << std::endl;
+    std::cout << "  max_leaf_size:            " << g.max_leaf_size << std::endl;
     std::cout << "  initial_radius:           " << g.initial_radius << std::endl;
     std::cout << std::endl;
 }
