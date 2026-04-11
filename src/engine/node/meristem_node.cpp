@@ -1,4 +1,5 @@
 #include "engine/node/meristem_node.h"
+#include "engine/genome.h"
 
 namespace botany {
 
@@ -14,6 +15,10 @@ bool MeristemNode::is_tip() const {
 void MeristemNode::tick(Plant& plant, const WorldParams& world) {
     Node::tick(plant, world);
     ticks_since_last_node++;
+}
+
+float MeristemNode::maintenance_cost(const Genome& g) const {
+    return (is_tip() && active) ? g.sugar_maintenance_meristem : 0.0f;
 }
 
 } // namespace botany

@@ -46,6 +46,7 @@ public:
 
     void add_child(Node* child);
     virtual void tick(Plant& plant, const WorldParams& world);
+    virtual float maintenance_cost(const struct Genome& g) const;
     void transport_chemicals(const struct Genome& g);
 
     bool is_meristem() const;

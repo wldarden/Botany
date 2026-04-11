@@ -35,7 +35,7 @@ float sugar_cap(const Node& node, const Genome& g) {
         case NodeType::SHOOT_AXILLARY:
         case NodeType::ROOT_APICAL:
         case NodeType::ROOT_AXILLARY:
-            return g.sugar_cap_minimum;
+            return g.sugar_cap_meristem;
     }
     return g.sugar_cap_minimum;
 }
@@ -88,53 +88,7 @@ void compute_light_exposure(Plant& plant, const WorldParams& world) {
     }
 }
 
-void consume_sugar(Plant& plant) {
-    const Genome& g = plant.genome();
-    plant.for_each_node_mut([&](Node& node) {
-        float cost = 0.0f;
-        float length = std::max(glm::length(node.offset), 0.01f);
-
-        switch (node.type) {
-            case NodeType::LEAF: {
-                float ls = node.as_leaf()->leaf_size;
-                cost = g.sugar_maintenance_leaf * ls * ls;
-                break;
-            }
-            case NodeType::STEM: {
-                float volume = 3.14159f * node.radius * node.radius * length;
-                cost = g.sugar_maintenance_stem * volume;
-                break;
-            }
-            case NodeType::ROOT: {
-                float volume = 3.14159f * node.radius * node.radius * length;
-                cost = g.sugar_maintenance_root * volume;
-                break;
-            }
-            case NodeType::SHOOT_APICAL:
-            case NodeType::SHOOT_AXILLARY:
-            case NodeType::ROOT_APICAL:
-            case NodeType::ROOT_AXILLARY:
-                break; // meristem tip cost handled below
-        }
-        if (auto* m = node.as_meristem()) {
-            if (m->is_tip() && m->active) {
-                cost += g.sugar_maintenance_meristem;
-            }
-        }
-        node.sugar = std::max(0.0f, node.sugar - cost);
-
-        // Safety clamp: cap sugar to node's storage capacity
-        float cap = sugar_cap(node, g);
-        node.sugar = std::min(node.sugar, cap);
-
-        // Track starvation
-        if (node.sugar <= 0.0f) {
-            node.starvation_ticks++;
-        } else {
-            node.starvation_ticks = 0;
-        }
-    });
-}
+// Sugar consumption + cap clamp + starvation tracking now in Node::tick()
 
 void prune_starved_nodes(Plant& plant, const WorldParams& world) {
     std::vector<Node*> to_prune;
@@ -212,9 +166,9 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
 
 void transport_sugar(Plant& plant, const WorldParams& world) {
     compute_light_exposure(plant, world);
-    // Sugar production now happens locally in LeafNode::tick()
-    // Sugar diffusion now happens locally in Node::transport_chemicals()
-    consume_sugar(plant);
+    // Sugar production: LeafNode::tick()
+    // Sugar diffusion: Node::transport_chemicals()
+    // Sugar consumption: Node::tick() via maintenance_cost()
     prune_starved_nodes(plant, world);
 }
 

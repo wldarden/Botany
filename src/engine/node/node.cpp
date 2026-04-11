@@ -33,7 +33,25 @@ void Node::add_child(Node* child) {
 
 void Node::tick(Plant& plant, const WorldParams& /*world*/) {
     age++;
-    transport_chemicals(plant.genome());
+    const Genome& g = plant.genome();
+
+    // Maintenance sugar consumption
+    float cost = maintenance_cost(g);
+    sugar = std::max(0.0f, sugar - cost);
+
+    // Cap clamp
+    float cap = sugar_cap(*this, g);
+    sugar = std::min(sugar, cap);
+
+    // Starvation tracking
+    if (sugar <= 0.0f) starvation_ticks++;
+    else starvation_ticks = 0;
+
+    transport_chemicals(g);
+}
+
+float Node::maintenance_cost(const Genome& /*g*/) const {
+    return 0.0f;
 }
 
 // Generic biased transport: blend of gradient diffusion and directional push.

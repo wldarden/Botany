@@ -64,7 +64,8 @@ struct Genome {
     // Prevents unbounded accumulation; represents finite starch storage capacity.
     float sugar_storage_density_wood; // g glucose max / dm³ of stem/root tissue
     float sugar_storage_density_leaf; // g glucose max / dm² of leaf area
-    float sugar_cap_minimum;          // g glucose — floor for tiny/new nodes
+    float sugar_cap_minimum;          // g glucose — floor for tiny/new stem/root/leaf nodes
+    float sugar_cap_meristem;         // g glucose — cap for meristem nodes (must hold growth sugar)
 
     // Sugar save thresholds — minimum reserve before growth occurs (g glucose)
     float sugar_save_shoot;           // reserve for shoot apical meristems
@@ -147,7 +148,8 @@ inline Genome default_genome() {
 
         .sugar_storage_density_wood = 50.0f,  // g glucose max / dm³ — ~5% of dry mass as starch
         .sugar_storage_density_leaf = 0.5f,   // g glucose max / dm² — thin tissue, less storage
-        .sugar_cap_minimum = 0.05f,           // floor for meristem tips (must exceed sugar_save_shoot)
+        .sugar_cap_minimum = 0.05f,           // floor for tiny/new nodes
+        .sugar_cap_meristem = 2.0f,           // meristem tips — must hold enough sugar for active growth
 
         .sugar_save_shoot = 0.01f,          // buffer before growth
         .sugar_save_root = 0.005f,

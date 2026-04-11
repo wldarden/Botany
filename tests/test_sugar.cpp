@@ -75,84 +75,50 @@ TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
 
 // === Consumption tests ===
 
-TEST_CASE("consume_sugar deducts volume-based maintenance cost", "[sugar]") {
+TEST_CASE("Stem maintenance_cost is volume-based", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    // Create a stem with known dimensions for predictable cost
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
-    plant.seed_mut()->add_child(stem);
-
-    // Set sugar within cap so safety clamp doesn't interfere
-    float cap = sugar_cap(*stem, g);
-    float initial_sugar = cap * 0.9f;
-    stem->sugar = initial_sugar;
-
-    // Zero out other nodes' sugar so we only check our stem
-    plant.seed_mut()->sugar = sugar_cap(*plant.seed_mut(), g);
-
-    consume_sugar(plant);
-
-    float length = glm::length(stem->offset);  // 1.0
+    float length = glm::length(stem->offset);
     float volume = 3.14159f * 0.1f * 0.1f * length;
-    float expected_cost = g.sugar_maintenance_stem * volume;
-    REQUIRE_THAT(stem->sugar, WithinAbs(initial_sugar - expected_cost, 1e-5));
+    float expected = g.sugar_maintenance_stem * volume;
+    REQUIRE_THAT(stem->maintenance_cost(g), WithinAbs(expected, 1e-6));
 }
 
-TEST_CASE("LEAF maintenance cost uses leaf area", "[sugar]") {
+TEST_CASE("Leaf maintenance_cost uses leaf area", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.5f;
-    plant.seed_mut()->add_child(leaf);
-
-    // Set sugar within cap so safety clamp doesn't interfere
-    float cap = sugar_cap(*leaf, g);
-    float initial_sugar = cap * 0.9f;
-    leaf->sugar = initial_sugar;
-
-    consume_sugar(plant);
-
-    float expected_cost = g.sugar_maintenance_leaf * 0.5f * 0.5f;
-    REQUIRE_THAT(leaf->sugar, WithinAbs(initial_sugar - expected_cost, 1e-6));
+    float expected = g.sugar_maintenance_leaf * 0.5f * 0.5f;
+    REQUIRE_THAT(leaf->maintenance_cost(g), WithinAbs(expected, 1e-6));
 }
 
-TEST_CASE("Sugar cannot go below zero after consumption", "[sugar]") {
+TEST_CASE("Sugar cannot go below zero after maintenance", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    Node* seed = plant.seed_mut();
-    seed->sugar = 0.0001f;
+    // Zero all sugar, tick — sugar should stay >= 0
+    plant.for_each_node_mut([](Node& n) { n.sugar = 0.0001f; });
+    plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
 
-    consume_sugar(plant);
-
-    REQUIRE(seed->sugar >= 0.0f);
+    plant.for_each_node([](const Node& n) {
+        REQUIRE(n.sugar >= 0.0f);
+    });
 }
 
-TEST_CASE("Active meristem tips have additional maintenance cost", "[sugar]") {
+TEST_CASE("Active meristem tip maintenance_cost", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
     Node* shoot_tip = nullptr;
     plant.for_each_node_mut([&](Node& n) {
-        if (n.is_meristem() && n.as_meristem()->is_tip() && n.as_meristem()->active &&
-            n.type == NodeType::SHOOT_APICAL) {
-            shoot_tip = &n;
-        }
+        if (n.type == NodeType::SHOOT_APICAL) shoot_tip = &n;
     });
     REQUIRE(shoot_tip != nullptr);
-
-    // Set sugar within cap so safety clamp doesn't interfere
-    float cap = sugar_cap(*shoot_tip, g);
-    float initial_sugar = cap * 0.9f;
-    shoot_tip->sugar = initial_sugar;
-
-    consume_sugar(plant);
-
-    // Meristem nodes have no volume-based maintenance, only the per-tip cost
-    float expected_cost = g.sugar_maintenance_meristem;
-    REQUIRE_THAT(shoot_tip->sugar, WithinAbs(initial_sugar - expected_cost, 1e-5));
+    REQUIRE_THAT(shoot_tip->maintenance_cost(g), WithinAbs(g.sugar_maintenance_meristem, 1e-6));
 }
 
 // === Diffusion tests ===
@@ -281,7 +247,7 @@ TEST_CASE("Starvation ticks increment when sugar is zero", "[sugar]") {
     Node* seed = plant.seed_mut();
     seed->sugar = 0.0f;
 
-    consume_sugar(plant);
+    plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
 
     REQUIRE(seed->starvation_ticks > 0);
 }
@@ -294,7 +260,7 @@ TEST_CASE("Starvation ticks reset when sugar is available", "[sugar]") {
     seed->starvation_ticks = 10;
     seed->sugar = 100.0f;
 
-    consume_sugar(plant);
+    plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
 
     REQUIRE(seed->starvation_ticks == 0);
 }
@@ -519,7 +485,7 @@ TEST_CASE("Safety clamp caps sugar after consumption", "[sugar]") {
     // Set sugar way above cap (simulating an edge case)
     stem->sugar = cap * 10.0f;
 
-    consume_sugar(plant);
+    plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
 
     REQUIRE(stem->sugar <= cap + 1e-6f);
 }

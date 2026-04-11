@@ -175,9 +175,11 @@ TEST_CASE("Chain growth: apical meristem transfers to new node when internode to
 TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[meristem]") {
     Genome g = default_genome();
     g.auxin_threshold = 1.0f;
-    g.cytokinin_threshold = 0.0f; // cytokinin just needs to be > 0
+    g.auxin_production_rate = 0.0f; // disable auxin production so manual values stick
+    g.cytokinin_threshold = 0.0f;
+    g.sugar_activation_shoot = 0.01f; // low threshold so small internode caps don't block
     g.growth_rate = 0.5f;
-    g.max_internode_length = 0.4f; // chain growth fires quickly to create axillary
+    g.max_internode_length = 0.4f;
     Plant plant(g, glm::vec3(0.0f));
 
     // Tick once — chain growth fires, creating an interior node with axillary
@@ -195,12 +197,10 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
 
     // Set parent auxin low on all axillary nodes to trigger activation
     plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_AXILLARY && n.parent) {
-            n.parent->auxin = 0.1f; // below threshold of 1.0
-        }
+        n.auxin = 0.0f;  // clear all auxin (no production to interfere)
+        n.sugar = 100.0f;
     });
 
-    plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
     tick_meristems(plant, default_world_params());
 
     // Activation replaces SHOOT_AXILLARY with a new SHOOT_APICAL, so apical count should increase

@@ -12,6 +12,7 @@ public:
     bool is_tip() const;
 
     void tick(Plant& plant, const WorldParams& world) override;
+    float maintenance_cost(const Genome& g) const override;
 
 protected:
     MeristemNode(uint32_t id, NodeType type, glm::vec3 position, float radius, bool active);
