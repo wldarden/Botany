@@ -24,11 +24,29 @@ Node::Node(uint32_t id, NodeType type, glm::vec3 position, float radius)
     , age(0)
     , auxin(0.0f)
     , cytokinin(0.0f)
-{}
+{
+    // Initialize all chemical map entries to zero
+    chemicals[ChemicalID::Auxin] = 0.0f;
+    chemicals[ChemicalID::Cytokinin] = 0.0f;
+    chemicals[ChemicalID::Gibberellin] = 0.0f;
+    chemicals[ChemicalID::Sugar] = 0.0f;
+    chemicals[ChemicalID::Ethylene] = 0.0f;
+}
 
 void Node::add_child(Node* child) {
     children.push_back(child);
     child->parent = this;
+}
+
+void Node::replace_child(Node* old_child, Node* new_child) {
+    for (auto& c : children) {
+        if (c == old_child) {
+            c = new_child;
+            new_child->parent = this;
+            old_child->parent = nullptr;
+            return;
+        }
+    }
 }
 
 void Node::tick(Plant& plant, const WorldParams& world) {
@@ -53,7 +71,10 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     }
 
     transport_chemicals(g);
+    grow(plant, world);
 }
+
+void Node::grow(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
 void Node::die(Plant& plant) {
     // Detach from parent
