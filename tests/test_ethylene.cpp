@@ -221,3 +221,64 @@ TEST_CASE("Non-leaf nodes do not senesce", "[ethylene][abscission]") {
     REQUIRE(stem->senescence_ticks == 0);
     REQUIRE(plant.node_count() == count_before);
 }
+
+TEST_CASE("Self-thinning cascade prunes shaded interior leaves", "[ethylene][integration]") {
+    Genome g = default_genome();
+    // Make abscission fast for test
+    g.senescence_duration = 5;
+    g.ethylene_shade_rate = 1.0f;      // strong shade response
+    g.ethylene_shade_threshold = 0.5f;
+    g.ethylene_abscission_threshold = 0.3f; // easy to trigger
+    // Disable crowding and diffusion so only direct shade signal matters
+    g.ethylene_crowding_rate = 0.0f;
+    g.ethylene_diffusion_radius = 0.05f; // very short-range — no cross-leaf spread
+
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Build a small branch with shaded interior leaves and sunlit outer leaves.
+    // seed -> stem -> inner_leaf (shaded) + outer_leaf (sunlit)
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(stem);
+    plant.seed_mut()->sugar = 100.0f; // plenty of sugar
+
+    Node* inner_leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
+    inner_leaf->leaf_size = 0.2f;
+    inner_leaf->light_exposure = 0.1f; // heavily shaded
+    inner_leaf->position = glm::vec3(0.1f, 1.1f, 0.0f);
+    inner_leaf->sugar = 1.0f; // fed — only shade triggers ethylene
+    stem->add_child(inner_leaf);
+
+    Node* outer_leaf = plant.create_node(NodeType::LEAF, glm::vec3(-0.1f, 0.1f, 0.0f), 0.0f);
+    outer_leaf->leaf_size = 0.2f;
+    outer_leaf->light_exposure = 0.9f; // well-lit
+    outer_leaf->position = glm::vec3(-0.1f, 1.1f, 0.0f);
+    outer_leaf->sugar = 1.0f; // fed — no starvation ethylene
+    stem->add_child(outer_leaf);
+
+    uint32_t inner_id = inner_leaf->id;
+    uint32_t outer_id = outer_leaf->id;
+
+    WorldParams wp = default_world_params();
+
+    // Run ethylene + abscission for enough ticks to trigger senescence and removal
+    for (int i = 0; i < 20; i++) {
+        // Keep light_exposure fixed (simulate persistent shade)
+        plant.for_each_node_mut([&](Node& n) {
+            if (n.id == inner_id) n.light_exposure = 0.1f;
+            if (n.id == outer_id) n.light_exposure = 0.9f;
+        });
+        compute_ethylene(plant, wp);
+        process_abscission(plant);
+    }
+
+    // Inner (shaded) leaf should have been removed
+    bool inner_exists = false;
+    bool outer_exists = false;
+    plant.for_each_node([&](const Node& n) {
+        if (n.id == inner_id) inner_exists = true;
+        if (n.id == outer_id) outer_exists = true;
+    });
+
+    REQUIRE_FALSE(inner_exists); // shaded leaf pruned
+    REQUIRE(outer_exists);       // sunlit leaf survived
+}
