@@ -40,19 +40,16 @@ float sugar_cap(const Node& node, const Genome& g) {
     return g.sugar_cap_minimum;
 }
 
-void produce_sugar(Plant& plant, const WorldParams& world) {
-    const Genome& g = plant.genome();
-
+void compute_light_exposure(Plant& plant, const WorldParams& world) {
     // Collect all above-ground nodes as shadow casters, and leaves as targets.
     struct Caster { float x, y, z, shadow_radius; };
-    struct LeafTarget { Node* node; float x, y, z, size; };
+    struct LeafTarget { LeafNode* leaf; float x, y, z, size; };
 
     std::vector<Caster> casters;
     std::vector<LeafTarget> leaves;
 
     plant.for_each_node_mut([&](Node& node) {
         // Only above-ground physical nodes cast shadows
-        // (roots are underground, meristems are virtual growth points)
         if (node.type != NodeType::ROOT && !node.is_meristem()) {
             float sr = node.radius;
             if (auto* leaf = node.as_leaf()) {
@@ -66,7 +63,7 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
         }
         if (auto* leaf = node.as_leaf()) {
             if (leaf->leaf_size > 1e-6f && leaf->senescence_ticks == 0) {
-                leaves.push_back({&node, node.position.x, node.position.y,
+                leaves.push_back({leaf, node.position.x, node.position.y,
                                   node.position.z, leaf->leaf_size});
             }
         }
@@ -75,38 +72,19 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
     // For each leaf, accumulate shade from all nodes above it.
     // Beer-Lambert: exposure = exp(-k * accumulated_shade_area)
     float k = world.light_extinction_coeff;
-    for (auto& leaf : leaves) {
+    for (auto& lt : leaves) {
         float shade = 0.0f;
         for (const auto& c : casters) {
-            if (c.y <= leaf.y) continue;  // only shaded by things above
-            float dx = c.x - leaf.x;
-            float dz = c.z - leaf.z;
+            if (c.y <= lt.y) continue;
+            float dx = c.x - lt.x;
+            float dz = c.z - lt.z;
             float horiz2 = dx * dx + dz * dz;
-            float reach = c.shadow_radius + leaf.size;
+            float reach = c.shadow_radius + lt.size;
             if (horiz2 >= reach * reach) continue;
             float overlap = 1.0f - std::sqrt(horiz2) / reach;
             shade += c.shadow_radius * overlap;
         }
-        leaf.node->as_leaf()->light_exposure = std::exp(-k * shade);
-
-        // Leaf angle efficiency: a leaf facing straight up captures full light,
-        // one edge-on captures very little. Use dot product of leaf normal
-        // with sky direction, clamped to [0,1].
-        float angle_efficiency = 1.0f;
-        float offset_len = glm::length(leaf.node->offset);
-        if (offset_len > 1e-4f) {
-            glm::vec3 leaf_normal = leaf.node->offset / offset_len;
-            angle_efficiency = std::max(0.0f, leaf_normal.y); // dot with (0,1,0)
-        }
-
-        // Feedback inhibition: full storage stops photosynthesis
-        float cap = sugar_cap(*leaf.node, g);
-        if (leaf.node->sugar >= cap) continue;
-
-        auto* lf = leaf.node->as_leaf();
-        leaf.node->sugar += lf->light_exposure * angle_efficiency
-                          * world.light_level * lf->leaf_size
-                          * g.sugar_production_rate;
+        lt.leaf->light_exposure = std::exp(-k * shade);
     }
 }
 
@@ -233,7 +211,8 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
 }
 
 void transport_sugar(Plant& plant, const WorldParams& world) {
-    produce_sugar(plant, world);
+    compute_light_exposure(plant, world);
+    // Sugar production now happens locally in LeafNode::tick()
     // Sugar diffusion now happens locally in Node::transport_chemicals()
     consume_sugar(plant);
     prune_starved_nodes(plant, world);

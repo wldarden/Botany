@@ -1,5 +1,6 @@
 #include "engine/node/leaf_node.h"
 #include "engine/plant.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 #include <algorithm>
 #include <cmath>
@@ -15,6 +16,23 @@ void LeafNode::tick(Plant& plant, const WorldParams& world) {
     Node::tick(plant, world);
     const Genome& g = plant.genome();
     glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+    // Sugar production: photosynthesis based on light exposure
+    if (leaf_size > 1e-6f && senescence_ticks == 0) {
+        float cap = sugar_cap(*this, g);
+        if (sugar < cap) {
+            float angle_efficiency = 1.0f;
+            float offset_len = glm::length(offset);
+            if (offset_len > 1e-4f) {
+                glm::vec3 leaf_normal = offset / offset_len;
+                angle_efficiency = std::max(0.0f, leaf_normal.y);
+            }
+            sugar += light_exposure * angle_efficiency
+                   * world.light_level * leaf_size
+                   * g.sugar_production_rate;
+            sugar = std::min(sugar, cap);
+        }
+    }
 
     // Phototropism: rotate leaf offset toward sky
     if (g.leaf_phototropism_rate > 1e-8f) {
