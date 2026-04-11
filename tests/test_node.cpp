@@ -3,7 +3,6 @@
 #include "engine/node/node.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
 #include "engine/node/meristems/shoot_apical.h"
 
 using namespace botany;
@@ -40,7 +39,7 @@ TEST_CASE("ShootApicalNode has correct meristem properties", "[node]") {
 
     REQUIRE(node.type == NodeType::SHOOT_APICAL);
     REQUIRE(node.is_meristem() == true);
-    REQUIRE(node.as_meristem()->active == true);
+    REQUIRE(node.as_shoot_apical() != nullptr);
 }
 
 TEST_CASE("LEAF node stores leaf_size", "[node]") {

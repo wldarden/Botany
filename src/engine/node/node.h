@@ -16,7 +16,6 @@ struct WorldParams;
 class StemNode;
 class RootNode;
 class LeafNode;
-class MeristemNode;
 class ShootApicalNode;
 class ShootAxillaryNode;
 class RootApicalNode;
@@ -48,6 +47,7 @@ public:
     virtual void tick(Plant& plant, const WorldParams& world);
     virtual float maintenance_cost(const struct Genome& g) const;
     void transport_chemicals(const struct Genome& g);
+    void die(Plant& plant);
 
     bool is_meristem() const;
 
@@ -58,8 +58,6 @@ public:
     const RootNode* as_root() const;
     LeafNode*       as_leaf();
     const LeafNode* as_leaf() const;
-    MeristemNode*       as_meristem();
-    const MeristemNode* as_meristem() const;
     ShootApicalNode*       as_shoot_apical();
     const ShootApicalNode* as_shoot_apical() const;
     ShootAxillaryNode*       as_shoot_axillary();

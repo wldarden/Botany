@@ -3,7 +3,6 @@
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
 #include "engine/node/meristems/shoot_apical.h"
 #include "engine/node/meristems/shoot_axillary.h"
 #include "engine/node/meristems/root_apical.h"
@@ -12,7 +11,6 @@
 #include "engine/sugar.h"
 #include "engine/gibberellin.h"
 #include "engine/ethylene.h"
-#include "engine/node/meristems/meristem.h"
 #include "engine/world_params.h"
 #include <algorithm>
 #include <unordered_set>
@@ -44,7 +42,7 @@ void Plant::tick(const WorldParams& world) {
     transport_sugar(*this, world);
     compute_ethylene(*this, world);
     process_abscission(*this);
-    tick_meristems(*this, world);
+    tick_tree(world);
     recompute_world_positions();
 }
 
@@ -114,6 +112,21 @@ void Plant::flush_removals() {
         nodes_.end()
     );
     pending_removals_.clear();
+}
+
+static void tick_recursive(Node& node, Plant& plant, const WorldParams& world) {
+    node.tick(plant, world);
+
+    // Snapshot children: meristem ticks may reparent or add siblings
+    auto children = node.children;
+    for (Node* child : children) {
+        tick_recursive(*child, plant, world);
+    }
+}
+
+void Plant::tick_tree(const WorldParams& world) {
+    tick_recursive(*nodes_[0], *this, world);
+    flush_removals();
 }
 
 static void recompute_recursive(Node& node) {

@@ -10,15 +10,14 @@ namespace botany {
 using namespace meristem_helpers;
 
 ShootApicalNode::ShootApicalNode(uint32_t id, glm::vec3 position, float radius)
-    : MeristemNode(id, NodeType::SHOOT_APICAL, position, radius, true)
+    : Node(id, NodeType::SHOOT_APICAL, position, radius)
 {}
 
 void ShootApicalNode::tick(Plant& plant, const WorldParams& world) {
-    // Produce auxin before base tick (so transport moves it this frame)
-    if (active) auxin += plant.genome().auxin_production_rate;
+    auxin += plant.genome().auxin_production_rate;
 
-    MeristemNode::tick(plant, world);
-    if (!active) return;
+    Node::tick(plant, world);
+    ticks_since_last_node++;
 
     const Genome& g = plant.genome();
     glm::vec3 dir = perturb(growth_direction(*this), g.growth_noise);
@@ -82,6 +81,10 @@ void ShootApicalNode::split_internode(Plant& plant, const Genome& g, const glm::
     phyllotaxis_index++;
     target_internode_length = 0.0f;
     ticks_since_last_node = 0;
+}
+
+float ShootApicalNode::maintenance_cost(const Genome& g) const {
+    return g.sugar_maintenance_meristem;
 }
 
 } // namespace botany

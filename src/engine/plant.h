@@ -44,6 +44,7 @@ public:
     uint32_t next_id() { return next_id_++; }
 
 private:
+    void tick_tree(const WorldParams& world);
     Genome genome_;
     uint32_t next_id_ = 0;
     uint32_t root_meristem_count_ = 0;

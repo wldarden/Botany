@@ -71,8 +71,6 @@ add_library(botany_engine STATIC
     src/engine/node/stem_node.cpp
     src/engine/node/root_node.cpp
     src/engine/node/leaf_node.cpp
-    src/engine/node/meristem_node.cpp
-    src/engine/node/meristems/meristem.cpp
     src/engine/node/meristems/shoot_apical.cpp
     src/engine/node/meristems/shoot_axillary.cpp
     src/engine/node/meristems/root_apical.cpp

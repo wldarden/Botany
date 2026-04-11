@@ -21,25 +21,23 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 ### Engine (`src/engine/`)
 - **genome.h** - `Genome` struct with all tunable parameters + `default_genome()`
 - **node/** - Node subfolder:
-  - `node.h/cpp` — `Node` base class (position, radius, parent/children, hormones, sugar) with virtual `tick()`, `transport_chemicals()`. `NodeType` enum: `STEM, ROOT, LEAF, SHOOT_APICAL, SHOOT_AXILLARY, ROOT_APICAL, ROOT_AXILLARY`. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`, `as_meristem()`, `as_shoot_apical()`, etc.
+  - `node.h/cpp` — `Node` base class (position, radius, parent/children, hormones, sugar) with virtual `tick()`, `transport_chemicals()`. `NodeType` enum: `STEM, ROOT, LEAF, SHOOT_APICAL, SHOOT_AXILLARY, ROOT_APICAL, ROOT_AXILLARY`. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`, `as_shoot_apical()`, `as_shoot_axillary()`, `as_root_apical()`, `as_root_axillary()`. `is_meristem()` type-group check.
   - `stem_node.h/cpp` — `StemNode` (thickening, intercalary elongation)
   - `root_node.h/cpp` — `RootNode` (same with root params)
   - `leaf_node.h/cpp` — `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; phototropism + size growth)
-  - `meristem_node.h/cpp` — `MeristemNode` base class (owns `active`, `ticks_since_last_node`; `is_tip()`)
   - **meristems/** — Meristem node subfolder:
-    - `meristem.h/cpp` — `tick_meristems()` recursively walks the tree from seed, calling `node.tick()` on each; snapshots children before iterating (meristems may reparent). Calls `plant.flush_removals()` after.
     - `meristem_types.h` — convenience umbrella, includes all 4 type headers
-    - `shoot_apical.h/cpp` — `ShootApicalNode` extends `MeristemNode` (chain growth via self-reparenting, phyllotaxis, auxin production)
-    - `shoot_axillary.h/cpp` — `ShootAxillaryNode` extends `MeristemNode` (auxin-gated activation, replaces self with apical)
-    - `root_apical.h/cpp` — `RootApicalNode` extends `MeristemNode` (gravitropism, root chain growth, cytokinin production)
-    - `root_axillary.h/cpp` — `RootAxillaryNode` extends `MeristemNode` (cytokinin-gated activation)
+    - `shoot_apical.h/cpp` — `ShootApicalNode` extends `Node` (chain growth via self-reparenting, phyllotaxis, auxin production; owns `ticks_since_last_node`)
+    - `shoot_axillary.h/cpp` — `ShootAxillaryNode` extends `Node` (auxin-gated activation, replaces self with apical; owns `active`)
+    - `root_apical.h/cpp` — `RootApicalNode` extends `Node` (gravitropism, root chain growth, cytokinin production; owns `ticks_since_last_node`)
+    - `root_axillary.h/cpp` — `RootAxillaryNode` extends `Node` (cytokinin-gated activation; owns `active`)
     - `helpers.h` — shared helper functions (growth_direction, branch_direction, perturb, sugar_growth_fraction, etc.)
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
 - **sugar.h/cpp** - `transport_sugar()` — sugar production (leaves), maintenance consumption, starvation pruning. Diffusion moved to `Node::transport_chemicals()`.
 - **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
 - **world_params.h** - `WorldParams` struct (light level, construction costs) — non-genetic sim parameters
-- **plant.h/cpp** - `Plant` class owns all nodes, has root meristem cap (100). `Plant::tick()` orchestrates per-plant tick order. `queue_removal()` / `flush_removals()` for deferred node cleanup.
+- **plant.h/cpp** - `Plant` class owns all nodes, has root meristem cap (100). `Plant::tick()` orchestrates per-plant tick order: global chemical passes, then `tick_tree()` (recursive DFS walk from seed, snapshots children for safe reparenting, flushes removals). `queue_removal()` / `flush_removals()` for deferred node cleanup.
 - **engine.h/cpp** - `Engine` iterates plants and calls `plant.tick(world_params)`
 
 ### Node Class Hierarchy
@@ -48,14 +46,13 @@ Node (base — position, chemicals, tick, transport_chemicals)
 ├── StemNode (thickening, intercalary elongation)
 ├── RootNode (same with root params)
 ├── LeafNode (leaf_size, light_exposure, phototropism, growth)
-└── MeristemNode (active, ticks_since_last_node, is_tip)
-    ├── ShootApicalNode (chain growth, phyllotaxis, auxin production)
-    ├── ShootAxillaryNode (auxin-gated activation)
-    ├── RootApicalNode (gravitropism, chain growth, cytokinin production)
-    └── RootAxillaryNode (cytokinin-gated activation)
+├── ShootApicalNode (chain growth, phyllotaxis, auxin production)
+├── ShootAxillaryNode (auxin-gated activation, owns `active`)
+├── RootApicalNode (gravitropism, chain growth, cytokinin production)
+└── RootAxillaryNode (cytokinin-gated activation, owns `active`)
 ```
 
-Meristems are real nodes in the tree graph, not separate objects. They participate in chemical transport naturally.
+All 7 node types extend `Node` directly — flat hierarchy, no intermediate classes. Meristems are real nodes in the tree graph, participating in chemical transport naturally.
 
 ### Renderer (`src/renderer/`)
 - OpenGL 4.1 core profile, GLFW window, orbit camera
@@ -140,10 +137,10 @@ The recursive tick walks the tree from seed outward. Each node:
 Meristem chain growth: the meristem node inserts an internode above itself (self-reparenting). Axillary activation: the node replaces itself in the parent's children with a new apical node, queues itself for deferred removal.
 
 ## Key Design Decisions
-- **Meristems are nodes** — `MeristemNode` base with 4 subclasses. Real children in the tree graph, participate in chemical diffusion naturally. No separate `Meristem` objects.
+- **Meristems are nodes** — 4 meristem types extend `Node` directly (flat hierarchy). Real children in the tree graph, participate in chemical diffusion naturally. No intermediate `MeristemNode` class.
 - **Local chemical transport** — each node handles its own transport during `tick()` via `transport_chemicals()`. No global tree passes for auxin/cytokinin/sugar diffusion.
 - **Directional bias** — generic transport function blends gradient diffusion with directional push. Allows same code for basipetal (auxin), acropetal (cytokinin), and bidirectional (sugar).
-- **Node class hierarchy** — `Node` base class with `StemNode`, `RootNode`, `LeafNode`, `MeristemNode` subclasses. Each subclass owns its type-specific fields and growth behavior via `virtual tick()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_meristem()` (fast `static_cast` gated on `NodeType` enum, no RTTI).
+- **Flat node hierarchy** — `Node` base class with 7 direct subclasses (`StemNode`, `RootNode`, `LeafNode`, `ShootApicalNode`, `ShootAxillaryNode`, `RootApicalNode`, `RootAxillaryNode`). Each subclass owns its type-specific fields and growth behavior via `virtual tick()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_shoot_apical()`/etc. (fast `static_cast` gated on `NodeType` enum, no RTTI).
 - Leaves are real `LeafNode` graph nodes — they own `leaf_size`, `light_exposure`, `senescence_ticks`
 - Chain growth inserts an internode above the meristem: parent → new_internode → [meristem, axillary, leaf]
 - Axillary buds check their **parent's** hormone level, not their own node

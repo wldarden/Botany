@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 #include "engine/plant.h"
-#include "engine/node/meristem_node.h"
 #include "engine/world_params.h"
 
 using namespace botany;

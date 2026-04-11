@@ -4,8 +4,8 @@
 #include <glm/geometric.hpp>
 #include "engine/plant.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
-#include "engine/node/meristems/meristem.h"
+#include "engine/node/meristems/shoot_axillary.h"
+#include "engine/node/meristems/root_axillary.h"
 #include "engine/world_params.h"
 
 using namespace botany;
@@ -24,8 +24,7 @@ TEST_CASE("Shoot apical meristem extends node position upward", "[meristem]") {
     float y_before = shoot->position.y;
 
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
-    plant.recompute_world_positions();
+    plant.tick(default_world_params());
 
     REQUIRE(shoot->position.y > y_before);
     REQUIRE_THAT(shoot->position.y - y_before, WithinAbs(g.growth_rate, 0.001f));
@@ -45,7 +44,7 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     float shoot_r_before = shoot->radius;
 
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
 
     // Seed (interior node, no active meristem) should thicken
     REQUIRE(seed->radius > seed_r_before);
@@ -65,7 +64,7 @@ TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "
     // Keep auxin high so axillary buds stay dormant
     for (int i = 0; i < 2; i++) {
         plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; n.auxin = 1.0f; });
-        tick_meristems(plant, default_world_params());
+        plant.tick(default_world_params());
     }
 
     // Should have spawned an axillary node with a dormant meristem and a LEAF node
@@ -76,7 +75,7 @@ TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "
     plant.for_each_node([&](const Node& n) {
         if (n.type == NodeType::SHOOT_AXILLARY) {
             found_axillary = true;
-            REQUIRE(n.as_meristem()->active == false);
+            REQUIRE(n.as_shoot_axillary()->active == false);
         }
         if (n.type == NodeType::LEAF) {
             found_leaf = true;
@@ -95,7 +94,7 @@ TEST_CASE("Interior STEM nodes have at most 3 children", "[meristem]") {
     // Run enough ticks to create several interior nodes
     for (int i = 0; i < 20; i++) {
         plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-        tick_meristems(plant, default_world_params());
+        plant.tick(default_world_params());
     }
 
     // Every STEM node should have at most 3 children: continuation tip + axillary + LEAF
@@ -119,8 +118,7 @@ TEST_CASE("Root apical meristem extends node position downward", "[meristem]") {
     float y_before = root->position.y;
 
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
-    plant.recompute_world_positions();
+    plant.tick(default_world_params());
 
     REQUIRE(root->position.y < y_before);
 }
@@ -133,14 +131,14 @@ TEST_CASE("Root chain growth spawns root axillary on interior node", "[meristem]
 
     for (int i = 0; i < 3; i++) {
         plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-        tick_meristems(plant, default_world_params());
+        plant.tick(default_world_params());
     }
 
     bool found_root_axillary = false;
     plant.for_each_node([&](const Node& n) {
         if (n.type == NodeType::ROOT_AXILLARY) {
             found_root_axillary = true;
-            REQUIRE(n.as_meristem()->active == false);
+            REQUIRE(n.as_root_axillary()->active == false);
         }
     });
     REQUIRE(found_root_axillary);
@@ -155,14 +153,14 @@ TEST_CASE("Chain growth: apical meristem transfers to new node when internode to
     // After 2 ticks the shoot moves 1.0 from its start, exceeding max_internode_length of 0.6
     // Keep auxin high so axillary buds stay dormant (don't spawn extra apicals)
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; n.auxin = 1.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; n.auxin = 1.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
 
     // Should still have exactly one active shoot apical meristem
     int apical_count = 0;
     plant.for_each_node([&](const Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL && n.as_meristem()->active) {
+        if (n.type == NodeType::SHOOT_APICAL) {
             apical_count++;
         }
     });
@@ -184,7 +182,7 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
 
     // Tick once — chain growth fires, creating an interior node with axillary
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
 
     // Count shoot apicals before activation
     int apical_before = 0;
@@ -201,7 +199,7 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
         n.sugar = 100.0f;
     });
 
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
 
     // Activation replaces SHOOT_AXILLARY with a new SHOOT_APICAL, so apical count should increase
     int apical_after = 0;
@@ -219,7 +217,7 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     Plant plant(g, glm::vec3(0.0f));
 
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
 
     Node* axillary_node = nullptr;
     plant.for_each_node_mut([&](Node& n) {
@@ -235,10 +233,10 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     }
 
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
 
     REQUIRE(axillary_node->type == NodeType::SHOOT_AXILLARY);
-    REQUIRE(axillary_node->as_meristem()->active == false);
+    REQUIRE(axillary_node->as_shoot_axillary()->active == false);
 }
 
 TEST_CASE("Node age increments each tick", "[meristem]") {
@@ -246,9 +244,9 @@ TEST_CASE("Node age increments each tick", "[meristem]") {
     Plant plant(g, glm::vec3(0.0f));
 
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
     plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
 
     const Node* seed = plant.seed();
     REQUIRE(seed->age == 2);
@@ -261,7 +259,7 @@ TEST_CASE("Shoot apical meristem does not grow without sugar", "[meristem][sugar
     // Find shoot tip and record position
     Node* shoot_tip = nullptr;
     plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL && n.as_meristem()->active) {
+        if (n.type == NodeType::SHOOT_APICAL) {
             shoot_tip = &n;
         }
     });
@@ -270,8 +268,7 @@ TEST_CASE("Shoot apical meristem does not grow without sugar", "[meristem][sugar
     // Zero sugar everywhere — should not grow
     plant.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
     glm::vec3 pos_before = shoot_tip->position;
-    tick_meristems(plant, default_world_params());
-    plant.recompute_world_positions();
+    plant.tick(default_world_params());
     REQUIRE(shoot_tip->position.y == pos_before.y);
 }
 
@@ -281,7 +278,7 @@ TEST_CASE("Shoot apical meristem grows and deducts sugar", "[meristem][sugar]") 
 
     Node* shoot_tip = nullptr;
     plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL && n.as_meristem()->active) {
+        if (n.type == NodeType::SHOOT_APICAL) {
             shoot_tip = &n;
         }
     });
@@ -289,7 +286,7 @@ TEST_CASE("Shoot apical meristem grows and deducts sugar", "[meristem][sugar]") 
 
     shoot_tip->sugar = 100.0f;
     float sugar_before = shoot_tip->sugar;
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
     REQUIRE(shoot_tip->sugar < sugar_before);
 }
 
@@ -303,7 +300,7 @@ TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]")
     // Give all nodes plenty of sugar for growth
     for (int i = 0; i < 5; i++) {
         plant.for_each_node_mut([](Node& n) { n.sugar = 100.0f; });
-        tick_meristems(plant, default_world_params());
+        plant.tick(default_world_params());
     }
 
     // Find a dormant axillary and zero its sugar
@@ -320,10 +317,10 @@ TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]")
         if (axillary_node->parent) {
             axillary_node->parent->auxin = 0.0f;
         }
-        tick_meristems(plant, default_world_params());
+        plant.tick(default_world_params());
         // Should still be axillary (not enough sugar to activate)
         REQUIRE(axillary_node->type == NodeType::SHOOT_AXILLARY);
-        REQUIRE(axillary_node->as_meristem()->active == false);
+        REQUIRE(axillary_node->as_shoot_axillary()->active == false);
     }
 }
 
@@ -335,7 +332,7 @@ TEST_CASE("Thickening does not occur without sugar", "[meristem][sugar]") {
     float radius_before = seed->radius;
     seed->sugar = 0.0f;
 
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
     REQUIRE(seed->radius == radius_before);
 }
 
@@ -347,7 +344,7 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
     seed->sugar = 100.0f;
     float sugar_before = seed->sugar;
 
-    tick_meristems(plant, default_world_params());
+    plant.tick(default_world_params());
     REQUIRE(seed->sugar < sugar_before);
     REQUIRE(seed->radius > g.initial_radius);
 }
@@ -361,11 +358,11 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     Node* tip1 = nullptr;
     Node* tip2 = nullptr;
     plant1.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL && n.as_meristem()->active)
+        if (n.type == NodeType::SHOOT_APICAL)
             tip1 = &n;
     });
     plant2.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL && n.as_meristem()->active)
+        if (n.type == NodeType::SHOOT_APICAL)
             tip2 = &n;
     });
     REQUIRE(tip1 != nullptr);
@@ -384,9 +381,9 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     glm::vec3 pos1_before = tip1->position;
     glm::vec3 pos2_before = tip2->position;
 
-    tick_meristems(plant1, default_world_params());
+    plant1.tick(default_world_params());
     plant1.recompute_world_positions();
-    tick_meristems(plant2, default_world_params());
+    plant2.tick(default_world_params());
     plant2.recompute_world_positions();
 
     float dist1 = glm::length(tip1->position - pos1_before);
@@ -403,7 +400,7 @@ TEST_CASE("Growth at save_threshold produces zero growth", "[meristem][sugar]") 
 
     Node* shoot_tip = nullptr;
     plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL && n.as_meristem()->active)
+        if (n.type == NodeType::SHOOT_APICAL)
             shoot_tip = &n;
     });
     REQUIRE(shoot_tip != nullptr);
@@ -412,8 +409,7 @@ TEST_CASE("Growth at save_threshold produces zero growth", "[meristem][sugar]") 
     plant.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
     shoot_tip->sugar = g.sugar_save_shoot;
     glm::vec3 pos_before = shoot_tip->position;
-    tick_meristems(plant, default_world_params());
-    plant.recompute_world_positions();
+    plant.tick(default_world_params());
     REQUIRE(shoot_tip->position.y == pos_before.y);
 }
 
@@ -430,7 +426,7 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
     // Run without GA
     stem->gibberellin = 0.0f;
     float offset_before = glm::length(stem->offset);
-    tick_meristems(plant, wp);
+    plant.tick(wp);
     float growth_no_ga = glm::length(stem->offset) - offset_before;
 
     // Reset
@@ -441,40 +437,57 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
     // Run with GA
     stem->gibberellin = 1.0f;
     offset_before = glm::length(stem->offset);
-    tick_meristems(plant, wp);
+    plant.tick(wp);
     float growth_with_ga = glm::length(stem->offset) - offset_before;
 
     REQUIRE(growth_with_ga > growth_no_ga);
 }
 
 TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
     WorldParams wp = default_world_params();
 
-    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
-    stem->age = 1;
-    stem->sugar = 5.0f;
-    plant.seed_mut()->add_child(stem);
+    // Plant 1: ethylene has no effect (inhibition = 0)
+    Genome g1 = default_genome();
+    g1.ethylene_elongation_inhibition = 0.0f;
+    Plant plant1(g1, glm::vec3(0.0f));
 
-    // Run without ethylene
-    stem->ethylene = 0.0f;
-    float offset_before = glm::length(stem->offset);
-    tick_meristems(plant, wp);
-    float growth_no_eth = glm::length(stem->offset) - offset_before;
+    Node* stem1 = plant1.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
+    stem1->age = 1;
+    stem1->sugar = 5.0f;
+    plant1.seed_mut()->add_child(stem1);
 
-    // Reset
-    stem->offset = glm::vec3(0.0f, 0.5f, 0.0f);
-    stem->age = 1;
-    stem->sugar = 5.0f;
+    // Add a starving leaf nearby to produce ethylene in both plants
+    Node* leaf1 = plant1.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf1->as_leaf()->leaf_size = 1.0f;
+    leaf1->sugar = 0.0f;
+    stem1->add_child(leaf1);
 
-    // Run with high ethylene
-    stem->ethylene = 2.0f;
-    offset_before = glm::length(stem->offset);
-    tick_meristems(plant, wp);
-    float growth_with_eth = glm::length(stem->offset) - offset_before;
+    // Plant 2: ethylene strongly inhibits elongation
+    Genome g2 = default_genome();
+    g2.ethylene_elongation_inhibition = 5.0f;
+    Plant plant2(g2, glm::vec3(0.0f));
 
-    REQUIRE(growth_with_eth < growth_no_eth);
+    Node* stem2 = plant2.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
+    stem2->age = 1;
+    stem2->sugar = 5.0f;
+    plant2.seed_mut()->add_child(stem2);
+
+    Node* leaf2 = plant2.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf2->as_leaf()->leaf_size = 1.0f;
+    leaf2->sugar = 0.0f;
+    stem2->add_child(leaf2);
+
+    float offset1_before = glm::length(stem1->offset);
+    float offset2_before = glm::length(stem2->offset);
+
+    plant1.tick(wp);
+    plant2.tick(wp);
+
+    float growth1 = glm::length(stem1->offset) - offset1_before;
+    float growth2 = glm::length(stem2->offset) - offset2_before;
+
+    REQUIRE(growth1 > 0.0f);
+    REQUIRE(growth2 < growth1);
 }
 
 TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
@@ -495,14 +508,14 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
 
     // Give meristem tips sugar so they don't interfere
     plant1.for_each_node_mut([&](Node& n) {
-        if (n.is_meristem() && n.as_meristem()->is_tip()) n.sugar = 100.0f;
+        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) n.sugar = 100.0f;
     });
     plant2.for_each_node_mut([&](Node& n) {
-        if (n.is_meristem() && n.as_meristem()->is_tip()) n.sugar = 100.0f;
+        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) n.sugar = 100.0f;
     });
 
-    tick_meristems(plant1, default_world_params());
-    tick_meristems(plant2, default_world_params());
+    plant1.tick(default_world_params());
+    plant2.tick(default_world_params());
 
     float thicken1 = seed1->radius - r1_before;
     float thicken2 = seed2->radius - r2_before;

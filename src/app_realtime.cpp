@@ -13,7 +13,8 @@
 #include "engine/engine.h"
 #include "engine/node/node.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
+#include "engine/node/meristems/shoot_axillary.h"
+#include "engine/node/meristems/root_axillary.h"
 #include "engine/world_params.h"
 #include "renderer/renderer.h"
 
@@ -395,8 +396,12 @@ int main(int argc, char* argv[]) {
                 ImGui::Text("Type: %s", type_str);
 
                 // Meristem info
-                if (auto* mer = sel.as_meristem()) {
-                    ImGui::Text("Meristem: %s", mer->active ? "active" : "dormant");
+                if (auto* ax = sel.as_shoot_axillary()) {
+                    ImGui::Text("Meristem: %s", ax->active ? "active" : "dormant");
+                } else if (auto* ax = sel.as_root_axillary()) {
+                    ImGui::Text("Meristem: %s", ax->active ? "active" : "dormant");
+                } else if (sel.is_meristem()) {
+                    ImGui::Text("Meristem: active");
                 }
 
                 ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);

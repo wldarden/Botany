@@ -3,7 +3,6 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
 
 using namespace botany;
 
@@ -29,7 +28,7 @@ TEST_CASE("Plant seed initialization creates correct graph", "[plant]") {
         for (const Node* child : seed->children) {
             if (child->type == NodeType::SHOOT_APICAL) {
                 found_shoot = true;
-                REQUIRE(child->as_meristem()->active == true);
+                REQUIRE(child->is_meristem());
                 REQUIRE(child->position.y >= 0.0f);
             }
         }
@@ -42,7 +41,7 @@ TEST_CASE("Plant seed initialization creates correct graph", "[plant]") {
         for (const Node* child : seed->children) {
             if (child->type == NodeType::ROOT_APICAL) {
                 found_root = true;
-                REQUIRE(child->as_meristem()->active == true);
+                REQUIRE(child->is_meristem());
                 REQUIRE(child->position.y <= 0.0f);
             }
         }

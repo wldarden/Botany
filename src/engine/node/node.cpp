@@ -1,10 +1,10 @@
 #include "engine/node/node.h"
 #include "engine/plant.h"
 #include "engine/sugar.h"
+#include "engine/world_params.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
 #include "engine/node/meristems/shoot_apical.h"
 #include "engine/node/meristems/shoot_axillary.h"
 #include "engine/node/meristems/root_apical.h"
@@ -31,7 +31,7 @@ void Node::add_child(Node* child) {
     child->parent = this;
 }
 
-void Node::tick(Plant& plant, const WorldParams& /*world*/) {
+void Node::tick(Plant& plant, const WorldParams& world) {
     age++;
     const Genome& g = plant.genome();
 
@@ -43,11 +43,42 @@ void Node::tick(Plant& plant, const WorldParams& /*world*/) {
     float cap = sugar_cap(*this, g);
     sugar = std::min(sugar, cap);
 
-    // Starvation tracking
+    // Starvation tracking + death
     if (sugar <= 0.0f) starvation_ticks++;
     else starvation_ticks = 0;
 
+    if (starvation_ticks >= world.starvation_ticks_max && parent) {
+        die(plant);
+        return;
+    }
+
     transport_chemicals(g);
+}
+
+void Node::die(Plant& plant) {
+    // Detach from parent
+    if (parent) {
+        auto& siblings = parent->children;
+        siblings.erase(std::remove(siblings.begin(), siblings.end(), this), siblings.end());
+        parent = nullptr;
+    }
+
+    // Collect self + all descendants, queue for deferred removal
+    std::vector<Node*> to_die = {this};
+    size_t i = 0;
+    while (i < to_die.size()) {
+        for (Node* child : to_die[i]->children) {
+            to_die.push_back(child);
+        }
+        i++;
+    }
+
+    // Clear children so recursive tick snapshot is empty
+    children.clear();
+
+    for (Node* n : to_die) {
+        plant.queue_removal(n);
+    }
 }
 
 float Node::maintenance_cost(const Genome& /*g*/) const {
@@ -122,9 +153,6 @@ RootNode*       Node::as_root()       { return type == NodeType::ROOT ? static_c
 const RootNode* Node::as_root() const { return type == NodeType::ROOT ? static_cast<const RootNode*>(this) : nullptr; }
 LeafNode*       Node::as_leaf()       { return type == NodeType::LEAF ? static_cast<LeafNode*>(this) : nullptr; }
 const LeafNode* Node::as_leaf() const { return type == NodeType::LEAF ? static_cast<const LeafNode*>(this) : nullptr; }
-
-MeristemNode*       Node::as_meristem()       { return is_meristem() ? static_cast<MeristemNode*>(this) : nullptr; }
-const MeristemNode* Node::as_meristem() const { return is_meristem() ? static_cast<const MeristemNode*>(this) : nullptr; }
 
 ShootApicalNode*       Node::as_shoot_apical()       { return type == NodeType::SHOOT_APICAL ? static_cast<ShootApicalNode*>(this) : nullptr; }
 const ShootApicalNode* Node::as_shoot_apical() const { return type == NodeType::SHOOT_APICAL ? static_cast<const ShootApicalNode*>(this) : nullptr; }

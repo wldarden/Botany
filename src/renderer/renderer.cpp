@@ -9,7 +9,6 @@
 #include <iostream>
 #include "engine/plant.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristem_node.h"
 #include "engine/node/node.h"
 #include "serialization/serializer.h"
 
