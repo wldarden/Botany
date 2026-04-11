@@ -2,7 +2,7 @@
 // Shared helper functions used by meristem tick() implementations.
 #pragma once
 
-#include "engine/node.h"
+#include "engine/node/node.h"
 #include <glm/vec3.hpp>
 #include <glm/geometric.hpp>
 #include <cmath>
@@ -24,8 +24,10 @@ inline glm::vec3 growth_direction(const Node& node) {
             return node.offset / len;
         }
     }
-    return (node.type == NodeType::STEM) ? glm::vec3(0.0f, 1.0f, 0.0f)
-                                          : glm::vec3(0.0f, -1.0f, 0.0f);
+    bool root_type = node.type == NodeType::ROOT
+                  || node.type == NodeType::ROOT_APICAL
+                  || node.type == NodeType::ROOT_AXILLARY;
+    return root_type ? glm::vec3(0.0f, -1.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
 }
 
 // Compute a branch direction in the node's local reference frame.

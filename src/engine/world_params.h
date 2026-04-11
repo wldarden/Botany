@@ -14,7 +14,6 @@ namespace botany {
 
 struct WorldParams {
     float light_level = 1.0f;                   // fraction of full sun
-    int sugar_diffusion_iterations = 5;
     uint32_t starvation_ticks_max = 1200;       // hours (~50 days) until starvation death
 
     // Construction costs — energy required per unit of biological growth.
@@ -34,7 +33,6 @@ struct WorldParams {
 inline WorldParams default_world_params() {
     return WorldParams{
         .light_level = 1.0f,
-        .sugar_diffusion_iterations = 5,
         .starvation_ticks_max = 1200,
         .sugar_cost_shoot_growth = 2.0f,
         .sugar_cost_root_growth  = 1.5f,

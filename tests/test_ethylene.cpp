@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
+#include "engine/node/leaf_node.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/ethylene.h"

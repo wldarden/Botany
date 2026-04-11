@@ -1,7 +1,9 @@
 #include "engine/sugar.h"
 #include "engine/plant.h"
 #include "engine/world_params.h"
-#include "engine/node.h"
+#include "engine/node/node.h"
+#include "engine/node/leaf_node.h"
+#include "engine/node/meristem_node.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -29,6 +31,11 @@ float sugar_cap(const Node& node, const Genome& g) {
             }
             return std::max(g.sugar_cap_minimum, cap);
         }
+        case NodeType::SHOOT_APICAL:
+        case NodeType::SHOOT_AXILLARY:
+        case NodeType::ROOT_APICAL:
+        case NodeType::ROOT_AXILLARY:
+            return g.sugar_cap_minimum;
     }
     return g.sugar_cap_minimum;
 }
@@ -44,8 +51,9 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
     std::vector<LeafTarget> leaves;
 
     plant.for_each_node_mut([&](Node& node) {
-        // Only above-ground nodes cast shadows (roots are underground)
-        if (node.type != NodeType::ROOT) {
+        // Only above-ground physical nodes cast shadows
+        // (roots are underground, meristems are virtual growth points)
+        if (node.type != NodeType::ROOT && !node.is_meristem()) {
             float sr = node.radius;
             if (auto* leaf = node.as_leaf()) {
                 leaf->light_exposure = 1.0f;  // reset
@@ -124,9 +132,16 @@ void consume_sugar(Plant& plant) {
                 cost = g.sugar_maintenance_root * volume;
                 break;
             }
+            case NodeType::SHOOT_APICAL:
+            case NodeType::SHOOT_AXILLARY:
+            case NodeType::ROOT_APICAL:
+            case NodeType::ROOT_AXILLARY:
+                break; // meristem tip cost handled below
         }
-        if (node.meristem && node.meristem->is_tip() && node.meristem->active) {
-            cost += g.sugar_maintenance_meristem;
+        if (auto* m = node.as_meristem()) {
+            if (m->is_tip() && m->active) {
+                cost += g.sugar_maintenance_meristem;
+            }
         }
         node.sugar = std::max(0.0f, node.sugar - cost);
 
@@ -141,61 +156,6 @@ void consume_sugar(Plant& plant) {
             node.starvation_ticks = 0;
         }
     });
-}
-
-void diffuse_sugar(Plant& plant, const WorldParams& world) {
-    const Genome& g = plant.genome();
-
-    // Build edge list — each parent-child connection is a pipe.
-    // Conductance controls what fraction of the difference moves per iteration.
-    // This must stay small (< 0.5) for stability: a value of 0.5 would instantly
-    // equalize two connected nodes, destroying any gradient.
-    struct Edge {
-        Node* a;
-        Node* b;
-        float conductance;
-        float a_cap;
-        float b_cap;
-    };
-    std::vector<Edge> edges;
-    plant.for_each_node_mut([&](Node& node) {
-        if (node.parent) {
-            float min_radius = std::min(node.radius, node.parent->radius);
-            if (node.type == NodeType::LEAF || node.parent->type == NodeType::LEAF) {
-                min_radius = std::max(min_radius, 0.01f);
-            }
-            // Cross-sectional area of the thinnest part of the connection
-            float area = min_radius * min_radius * 3.14159f;
-            // Conductance: fraction of gradient to move. Clamped to 0.25 max
-            // so that even thick stems don't equalize instantly.
-            float conductance = std::min(area * g.sugar_transport_conductance, 0.25f);
-            edges.push_back({&node, node.parent, conductance,
-                             sugar_cap(node, g), sugar_cap(*node.parent, g)});
-        }
-    });
-
-    // Gauss-Seidel diffusion: each edge moves conductance * (a - b) from
-    // the higher node to the lower, clamped so neither goes negative.
-    // Each transfer is exactly conservative: what leaves one node enters the other.
-    for (int iter = 0; iter < world.sugar_diffusion_iterations; iter++) {
-        for (Edge& e : edges) {
-            float diff = e.a->sugar - e.b->sugar;
-            float transfer = diff * e.conductance;
-
-            if (transfer > 0.0f) {
-                // a -> b: clamp by a's available sugar and b's headroom
-                float b_headroom = std::max(0.0f, e.b_cap - e.b->sugar);
-                transfer = std::min({transfer, e.a->sugar, b_headroom});
-            } else {
-                // b -> a: clamp by b's available sugar and a's headroom
-                float a_headroom = std::max(0.0f, e.a_cap - e.a->sugar);
-                transfer = std::max({transfer, -e.b->sugar, -a_headroom});
-            }
-
-            e.a->sugar -= transfer;
-            e.b->sugar += transfer;
-        }
-    }
 }
 
 void prune_starved_nodes(Plant& plant, const WorldParams& world) {
@@ -274,8 +234,7 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
 
 void transport_sugar(Plant& plant, const WorldParams& world) {
     produce_sugar(plant, world);
-    diffuse_sugar(plant, world);
-    // Leaf growth now happens in LeafNode::tick()
+    // Sugar diffusion now happens locally in Node::transport_chemicals()
     consume_sugar(plant);
     prune_starved_nodes(plant, world);
 }

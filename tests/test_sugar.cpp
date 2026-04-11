@@ -2,6 +2,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <glm/geometric.hpp>
 #include "engine/plant.h"
+#include "engine/node/leaf_node.h"
+#include "engine/node/meristem_node.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
@@ -124,8 +126,8 @@ TEST_CASE("Active meristem tips have additional maintenance cost", "[sugar]") {
 
     Node* shoot_tip = nullptr;
     plant.for_each_node_mut([&](Node& n) {
-        if (n.meristem && n.meristem->is_tip() && n.meristem->active &&
-            n.type == NodeType::STEM) {
+        if (n.is_meristem() && n.as_meristem()->is_tip() && n.as_meristem()->active &&
+            n.type == NodeType::SHOOT_APICAL) {
             shoot_tip = &n;
         }
     });
@@ -138,10 +140,8 @@ TEST_CASE("Active meristem tips have additional maintenance cost", "[sugar]") {
 
     consume_sugar(plant);
 
-    float length = std::max(glm::length(shoot_tip->offset), 0.01f);
-    float volume = 3.14159f * shoot_tip->radius * shoot_tip->radius * length;
-    float expected_cost = g.sugar_maintenance_stem * volume
-                        + g.sugar_maintenance_meristem;
+    // Meristem nodes have no volume-based maintenance, only the per-tip cost
+    float expected_cost = g.sugar_maintenance_meristem;
     REQUIRE_THAT(shoot_tip->sugar, WithinAbs(initial_sugar - expected_cost, 1e-5));
 }
 
@@ -154,11 +154,11 @@ TEST_CASE("Sugar diffuses from high to low concentration", "[sugar]") {
     Node* seed = plant.seed_mut();
     seed->sugar = 100.0f;
 
-    WorldParams wp = default_world_params();
-    wp.sugar_diffusion_iterations = 1;
-
     float seed_before = seed->sugar;
-    diffuse_sugar(plant, wp);
+    // Transport chemicals locally on each child (pulls sugar from seed)
+    for (Node* child : seed->children) {
+        child->transport_chemicals(g);
+    }
 
     REQUIRE(seed->sugar < seed_before);
     for (const Node* child : seed->children) {
@@ -175,9 +175,12 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
     float total_before = 0.0f;
     plant.for_each_node([&](const Node& n) { total_before += n.sugar; });
 
-    WorldParams wp = default_world_params();
-    wp.sugar_diffusion_iterations = 5;
-    diffuse_sugar(plant, wp);
+    // Run several rounds of local transport (one pass per round)
+    for (int i = 0; i < 5; i++) {
+        plant.for_each_node_mut([&](Node& n) {
+            n.transport_chemicals(g);
+        });
+    }
 
     float total_after = 0.0f;
     plant.for_each_node([&](const Node& n) { total_after += n.sugar; });
@@ -185,7 +188,7 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
     REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
 }
 
-TEST_CASE("Multiple diffusion iterations produce smoother distribution", "[sugar]") {
+TEST_CASE("More transport ticks produce smoother distribution", "[sugar]") {
     Genome g = default_genome();
 
     // Create plants with large-cap children so cap clamping doesn't interfere
@@ -195,9 +198,8 @@ TEST_CASE("Multiple diffusion iterations produce smoother distribution", "[sugar
         plant1.seed_mut()->add_child(c);
     }
     plant1.seed_mut()->sugar = 10.0f;
-    WorldParams wp1 = default_world_params();
-    wp1.sugar_diffusion_iterations = 1;
-    diffuse_sugar(plant1, wp1);
+    // 1 round of local transport
+    plant1.for_each_node_mut([&](Node& n) { n.transport_chemicals(g); });
 
     Plant plant2(g, glm::vec3(0.0f));
     for (int i = 0; i < 3; i++) {
@@ -205,19 +207,20 @@ TEST_CASE("Multiple diffusion iterations produce smoother distribution", "[sugar
         plant2.seed_mut()->add_child(c);
     }
     plant2.seed_mut()->sugar = 10.0f;
-    WorldParams wp2 = default_world_params();
-    wp2.sugar_diffusion_iterations = 10;
-    diffuse_sugar(plant2, wp2);
+    // 10 rounds of local transport
+    for (int i = 0; i < 10; i++) {
+        plant2.for_each_node_mut([&](Node& n) { n.transport_chemicals(g); });
+    }
 
-    float child_sugar_1iter = 0.0f;
-    float child_sugar_10iter = 0.0f;
-    for (const Node* c : plant1.seed()->children) { child_sugar_1iter += c->sugar; }
-    for (const Node* c : plant2.seed()->children) { child_sugar_10iter += c->sugar; }
+    float child_sugar_1tick = 0.0f;
+    float child_sugar_10tick = 0.0f;
+    for (const Node* c : plant1.seed()->children) { child_sugar_1tick += c->sugar; }
+    for (const Node* c : plant2.seed()->children) { child_sugar_10tick += c->sugar; }
 
-    REQUIRE(child_sugar_10iter > child_sugar_1iter);
+    REQUIRE(child_sugar_10tick > child_sugar_1tick);
 }
 
-TEST_CASE("Sugar diffusion conserves total across many iterations", "[sugar]") {
+TEST_CASE("Sugar diffusion conserves total across many ticks", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
@@ -239,16 +242,18 @@ TEST_CASE("Sugar diffusion conserves total across many iterations", "[sugar]") {
     float total_before = 0.0f;
     plant.for_each_node([&](const Node& n) { total_before += n.sugar; });
 
-    WorldParams wp = default_world_params();
-    for (int iters : {1, 5, 15, 50}) {
+    for (int ticks : {1, 5, 15, 50}) {
         // Reset to initial distribution
         plant.for_each_node_mut([](Node& n) { n.sugar = 0.0f; });
         plant.seed_mut()->sugar = 50.0f;
         plant.seed_mut()->children[0]->sugar = 20.0f;
         plant.seed_mut()->children[2]->sugar = 10.0f;
 
-        wp.sugar_diffusion_iterations = iters;
-        diffuse_sugar(plant, wp);
+        for (int t = 0; t < ticks; t++) {
+            plant.for_each_node_mut([&](Node& n) {
+                n.transport_chemicals(g);
+            });
+        }
 
         float total_after = 0.0f;
         plant.for_each_node([&](const Node& n) { total_after += n.sugar; });
@@ -361,7 +366,6 @@ TEST_CASE("transport_sugar runs full produce-diffuse-consume cycle", "[sugar]") 
 
     WorldParams wp = default_world_params();
     wp.light_level = 5.0f;
-    wp.sugar_diffusion_iterations = 20;
 
     transport_sugar(plant, wp);
 
@@ -481,9 +485,10 @@ TEST_CASE("Diffusion does not push sugar past receiver cap", "[sugar]") {
     plant.seed_mut()->sugar = 100.0f;
     child->sugar = child_cap;
 
-    WorldParams wp = default_world_params();
-    wp.sugar_diffusion_iterations = 10;
-    diffuse_sugar(plant, wp);
+    // Run several rounds of local transport
+    for (int i = 0; i < 10; i++) {
+        child->transport_chemicals(g);
+    }
 
     // Child should not exceed its cap
     REQUIRE(child->sugar <= child_cap + 1e-6f);
@@ -540,9 +545,12 @@ TEST_CASE("Diffusion still conserves sugar when caps are not hit", "[sugar]") {
     float total_before = 0.0f;
     plant.for_each_node([&](const Node& n) { total_before += n.sugar; });
 
-    WorldParams wp = default_world_params();
-    wp.sugar_diffusion_iterations = 10;
-    diffuse_sugar(plant, wp);
+    // Run several rounds of local transport
+    for (int i = 0; i < 10; i++) {
+        plant.for_each_node_mut([&](Node& n) {
+            n.transport_chemicals(g);
+        });
+    }
 
     float total_after = 0.0f;
     plant.for_each_node([&](const Node& n) { total_after += n.sugar; });

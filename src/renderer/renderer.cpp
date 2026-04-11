@@ -8,7 +8,9 @@
 #include <unordered_map>
 #include <iostream>
 #include "engine/plant.h"
-#include "engine/node.h"
+#include "engine/node/leaf_node.h"
+#include "engine/node/meristem_node.h"
+#include "engine/node/node.h"
 #include "serialization/serializer.h"
 
 namespace botany {
@@ -145,13 +147,14 @@ void Renderer::draw_plant(const Plant& plant) {
             float v = chemical_accessor_(node);
             color = heatmap(v / max_val);
         } else if (color_by_type_) {
-            if (node.meristem) {
-                switch (node.meristem->type()) {
-                    case MeristemType::APICAL:        color = glm::vec3(1.0f, 0.2f, 0.2f); break;  // red
-                    case MeristemType::AXILLARY:      color = glm::vec3(1.0f, 0.6f, 0.0f); break;  // orange
-                    case MeristemType::ROOT_APICAL:   color = glm::vec3(0.2f, 0.4f, 1.0f); break;  // blue
-                    case MeristemType::ROOT_AXILLARY: color = glm::vec3(0.6f, 0.2f, 0.8f); break;  // purple
-                }
+            if (node.type == NodeType::SHOOT_APICAL) {
+                color = glm::vec3(1.0f, 0.2f, 0.2f);   // red
+            } else if (node.type == NodeType::SHOOT_AXILLARY) {
+                color = glm::vec3(1.0f, 0.6f, 0.0f);   // orange
+            } else if (node.type == NodeType::ROOT_APICAL) {
+                color = glm::vec3(0.2f, 0.4f, 1.0f);   // blue
+            } else if (node.type == NodeType::ROOT_AXILLARY) {
+                color = glm::vec3(0.6f, 0.2f, 0.8f);   // purple
             } else if (node.type == NodeType::STEM) {
                 glm::vec3 green(0.2f, 0.8f, 0.2f);
                 glm::vec3 brown(0.5f, 0.35f, 0.15f);

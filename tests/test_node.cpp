@@ -1,7 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
-#include "engine/node.h"
-#include "engine/meristems/meristem_types.h"
+#include "engine/node/node.h"
+#include "engine/node/stem_node.h"
+#include "engine/node/leaf_node.h"
+#include "engine/node/meristem_node.h"
+#include "engine/node/meristems/shoot_apical.h"
 
 using namespace botany;
 
@@ -17,7 +20,7 @@ TEST_CASE("Node creation with default values", "[node]") {
     REQUIRE(node.age == 0);
     REQUIRE(node.auxin == 0.0f);
     REQUIRE(node.cytokinin == 0.0f);
-    REQUIRE(node.meristem == nullptr);
+    REQUIRE(node.is_meristem() == false);
     REQUIRE(node.sugar == 0.0f);
 }
 
@@ -32,14 +35,12 @@ TEST_CASE("add_child establishes parent-child relationship", "[node]") {
     REQUIRE(child.parent == &parent);
 }
 
-TEST_CASE("Node can have a meristem attached", "[node]") {
-    StemNode node(1, glm::vec3(0.0f), 0.05f);
-    ShootApicalMeristem m;
-    node.meristem = &m;
+TEST_CASE("ShootApicalNode has correct meristem properties", "[node]") {
+    ShootApicalNode node(1, glm::vec3(0.0f), 0.05f);
 
-    REQUIRE(node.meristem != nullptr);
-    REQUIRE(node.meristem->type() == MeristemType::APICAL);
-    REQUIRE(node.meristem->active == true);
+    REQUIRE(node.type == NodeType::SHOOT_APICAL);
+    REQUIRE(node.is_meristem() == true);
+    REQUIRE(node.as_meristem()->active == true);
 }
 
 TEST_CASE("LEAF node stores leaf_size", "[node]") {
@@ -50,7 +51,7 @@ TEST_CASE("LEAF node stores leaf_size", "[node]") {
     REQUIRE(node.sugar == 0.0f);
 }
 
-TEST_CASE("Meristem types cover all four variants", "[node]") {
-    REQUIRE(static_cast<int>(MeristemType::APICAL) != static_cast<int>(MeristemType::AXILLARY));
-    REQUIRE(static_cast<int>(MeristemType::ROOT_APICAL) != static_cast<int>(MeristemType::ROOT_AXILLARY));
+TEST_CASE("NodeType covers all four meristem variants", "[node]") {
+    REQUIRE(static_cast<int>(NodeType::SHOOT_APICAL) != static_cast<int>(NodeType::SHOOT_AXILLARY));
+    REQUIRE(static_cast<int>(NodeType::ROOT_APICAL) != static_cast<int>(NodeType::ROOT_AXILLARY));
 }

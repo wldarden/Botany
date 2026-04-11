@@ -12,8 +12,6 @@ float sugar_cap(const Node& node, const Genome& g);
 
 void produce_sugar(Plant& plant, const WorldParams& world);
 void consume_sugar(Plant& plant);
-void diffuse_sugar(Plant& plant, const WorldParams& world);
-void grow_leaves(Plant& plant, const WorldParams& world);
 void prune_starved_nodes(Plant& plant, const WorldParams& world);
 void transport_sugar(Plant& plant, const WorldParams& world);
 

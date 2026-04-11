@@ -1,5 +1,6 @@
 #include "serialization/serializer.h"
 #include "engine/engine.h"
+#include "engine/node/leaf_node.h"
 
 namespace botany {
 

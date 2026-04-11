@@ -7,7 +7,7 @@
 #include <vector>
 #include <glm/vec3.hpp>
 #include "engine/genome.h"
-#include "engine/node.h"
+#include "engine/node/node.h"
 
 namespace botany {
 
@@ -27,17 +27,6 @@ public:
 
     Node* create_node(NodeType type, glm::vec3 position, float radius);
 
-    template<typename T, typename... Args>
-    T* create_meristem(Args&&... args) {
-        auto m = std::make_unique<T>(std::forward<Args>(args)...);
-        T* ptr = m.get();
-        if (ptr->type() == MeristemType::ROOT_APICAL || ptr->type() == MeristemType::ROOT_AXILLARY) {
-            root_meristem_count_++;
-        }
-        meristems_.push_back(std::move(m));
-        return ptr;
-    }
-
     bool root_meristems_at_cap() const {
         return root_meristem_count_ >= max_root_meristems;
     }
@@ -45,6 +34,9 @@ public:
     void tick(const struct WorldParams& world);
     void remove_subtree(Node* node);
     void recompute_world_positions();
+
+    void queue_removal(Node* node);
+    void flush_removals();
 
     void for_each_node(std::function<void(const Node&)> fn) const;
     void for_each_node_mut(std::function<void(Node&)> fn);
@@ -56,7 +48,7 @@ private:
     uint32_t next_id_ = 0;
     uint32_t root_meristem_count_ = 0;
     std::vector<std::unique_ptr<Node>> nodes_;
-    std::vector<std::unique_ptr<Meristem>> meristems_;
+    std::vector<Node*> pending_removals_;
 };
 
 } // namespace botany

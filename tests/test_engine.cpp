@@ -36,7 +36,7 @@ TEST_CASE("Engine tick grows the plant", "[engine]") {
 
     const Node* shoot_before = nullptr;
     engine.get_plant(id).for_each_node([&](const Node& n) {
-        if (n.meristem && n.meristem->type() == MeristemType::APICAL) {
+        if (n.type == NodeType::SHOOT_APICAL) {
             shoot_before = &n;
         }
     });

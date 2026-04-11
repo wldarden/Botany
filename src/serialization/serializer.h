@@ -5,7 +5,7 @@
 #include <vector>
 #include <glm/vec3.hpp>
 #include "engine/genome.h"
-#include "engine/node.h"
+#include "engine/node/node.h"
 
 namespace botany {
 

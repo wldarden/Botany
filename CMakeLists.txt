@@ -67,14 +67,18 @@ target_link_libraries(imgui PUBLIC glfw glad_gl)
 
 # Engine library (no graphics dependencies)
 add_library(botany_engine STATIC
-    src/engine/node.cpp
+    src/engine/node/node.cpp
+    src/engine/node/stem_node.cpp
+    src/engine/node/root_node.cpp
+    src/engine/node/leaf_node.cpp
+    src/engine/node/meristem_node.cpp
+    src/engine/node/meristems/meristem.cpp
+    src/engine/node/meristems/shoot_apical.cpp
+    src/engine/node/meristems/shoot_axillary.cpp
+    src/engine/node/meristems/root_apical.cpp
+    src/engine/node/meristems/root_axillary.cpp
     src/engine/plant.cpp
     src/engine/hormone.cpp
-    src/engine/meristems/meristem.cpp
-    src/engine/meristems/shoot_apical.cpp
-    src/engine/meristems/shoot_axillary.cpp
-    src/engine/meristems/root_apical.cpp
-    src/engine/meristems/root_axillary.cpp
     src/engine/sugar.cpp
     src/engine/gibberellin.cpp
     src/engine/ethylene.cpp

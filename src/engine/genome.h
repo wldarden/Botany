@@ -12,12 +12,13 @@ struct Genome {
     // Hormone production & sensitivity (dimensionless signaling units)
     float auxin_production_rate;
     float auxin_transport_rate;
-    float auxin_spillback_rate;       // fraction of junction auxin spilling back into branches
+    float auxin_directional_bias;     // -1=basipetal only, 0=gradient, +1=acropetal only
     float auxin_decay_rate;
     float auxin_threshold;
 
     float cytokinin_production_rate;
     float cytokinin_transport_rate;
+    float cytokinin_directional_bias; // -1=basipetal only, 0=gradient, +1=acropetal only
     float cytokinin_decay_rate;
     float cytokinin_threshold;
 
@@ -100,12 +101,13 @@ inline Genome default_genome() {
     return Genome{
         .auxin_production_rate = 1.0f,
         .auxin_transport_rate = 0.3f,
-        .auxin_spillback_rate = 0.1f,
+        .auxin_directional_bias = -0.9f,
         .auxin_decay_rate = 0.05f,
         .auxin_threshold = 0.15f,
 
         .cytokinin_production_rate = 1.0f,
         .cytokinin_transport_rate = 0.3f,
+        .cytokinin_directional_bias = 0.9f,
         .cytokinin_decay_rate = 0.05f,
         .cytokinin_threshold = 0.15f,
 

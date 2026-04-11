@@ -1,6 +1,7 @@
 #include "engine/ethylene.h"
 #include "engine/plant.h"
-#include "engine/node.h"
+#include "engine/node/node.h"
+#include "engine/node/leaf_node.h"
 #include "engine/world_params.h"
 #include <cmath>
 #include <vector>

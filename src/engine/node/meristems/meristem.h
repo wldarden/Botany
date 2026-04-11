@@ -1,6 +1,6 @@
 // src/engine/meristems/meristem.h
 #pragma once
-#include "engine/meristems/meristem_types.h"
+#include "engine/node/meristems/meristem_types.h"
 
 namespace botany {
 

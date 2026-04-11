@@ -2,7 +2,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
-#include "engine/meristems/meristem_types.h"
+#include "engine/node/leaf_node.h"
+#include "engine/node/meristem_node.h"
 
 using namespace botany;
 
@@ -22,28 +23,26 @@ TEST_CASE("Plant seed initialization creates correct graph", "[plant]") {
         REQUIRE(seed->children.size() == 2);
     }
 
-    SECTION("one child is a STEM with apical meristem") {
+    SECTION("one child is a SHOOT_APICAL meristem node") {
         const Node* seed = plant.seed();
         bool found_shoot = false;
         for (const Node* child : seed->children) {
-            if (child->type == NodeType::STEM && child->meristem &&
-                child->meristem->type() == MeristemType::APICAL) {
+            if (child->type == NodeType::SHOOT_APICAL) {
                 found_shoot = true;
-                REQUIRE(child->meristem->active == true);
+                REQUIRE(child->as_meristem()->active == true);
                 REQUIRE(child->position.y >= 0.0f);
             }
         }
         REQUIRE(found_shoot);
     }
 
-    SECTION("one child is a ROOT with root apical meristem") {
+    SECTION("one child is a ROOT_APICAL meristem node") {
         const Node* seed = plant.seed();
         bool found_root = false;
         for (const Node* child : seed->children) {
-            if (child->type == NodeType::ROOT && child->meristem &&
-                child->meristem->type() == MeristemType::ROOT_APICAL) {
+            if (child->type == NodeType::ROOT_APICAL) {
                 found_root = true;
-                REQUIRE(child->meristem->active == true);
+                REQUIRE(child->as_meristem()->active == true);
                 REQUIRE(child->position.y <= 0.0f);
             }
         }

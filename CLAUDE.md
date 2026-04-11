@@ -6,6 +6,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 
 ```bash
 # Build (cmake is at /usr/local/bin/cmake)
+# IMPORTANT: always rebuild before running tests — LSP diagnostics can be stale
 /usr/local/bin/cmake --build build
 
 # Run realtime viewer (must run from project root for shader path)
@@ -19,53 +20,92 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 
 ### Engine (`src/engine/`)
 - **genome.h** - `Genome` struct with all tunable parameters + `default_genome()`
-- **node.h/cpp** - `Node` base class (position, radius, parent/children, hormones, sugar) with virtual `tick()`. Subclasses: `StemNode` (thickening, elongation), `RootNode` (same with root params), `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; phototropism + size growth). `Meristem` base class, `MeristemType` enum. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`.
-- **meristems/** - Meristem subfolder:
-  - `meristem.h/cpp` — `tick_meristems()` calls `node.tick()` on every node, then dispatches meristems
-  - `meristem_types.h` — convenience umbrella, includes all 4 type headers
-  - `shoot_apical.h/cpp` — `ShootApicalMeristem` (chain growth, phyllotaxis)
-  - `shoot_axillary.h/cpp` — `ShootAxillaryMeristem` (auxin-gated activation)
-  - `root_apical.h/cpp` — `RootApicalMeristem` (gravitropism, root chain growth)
-  - `root_axillary.h/cpp` — `RootAxillaryMeristem` (cytokinin-gated activation)
-  - `helpers.h` — shared helper functions (growth_direction, branch_direction, perturb, etc.)
-- **hormone.cpp** - `transport_auxin()` and `transport_cytokinin()` - per-tick hormone reset + transport
-- **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves
-- **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission
-- **sugar.h/cpp** - `transport_sugar()` — sugar production, gradient-based diffusion, maintenance consumption (leaf growth moved to `LeafNode::tick()`)
-- **world_params.h** - `WorldParams` struct (light level, diffusion iterations) — non-genetic sim parameters
-- **plant.h/cpp** - `Plant` class owns all nodes/meristems, has root meristem cap (100). `Plant::tick()` orchestrates per-plant tick order.
+- **node/** - Node subfolder:
+  - `node.h/cpp` — `Node` base class (position, radius, parent/children, hormones, sugar) with virtual `tick()`, `transport_chemicals()`. `NodeType` enum: `STEM, ROOT, LEAF, SHOOT_APICAL, SHOOT_AXILLARY, ROOT_APICAL, ROOT_AXILLARY`. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`, `as_meristem()`, `as_shoot_apical()`, etc.
+  - `stem_node.h/cpp` — `StemNode` (thickening, intercalary elongation)
+  - `root_node.h/cpp` — `RootNode` (same with root params)
+  - `leaf_node.h/cpp` — `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; phototropism + size growth)
+  - `meristem_node.h/cpp` — `MeristemNode` base class (owns `active`, `ticks_since_last_node`; `is_tip()`)
+  - **meristems/** — Meristem node subfolder:
+    - `meristem.h/cpp` — `tick_meristems()` recursively walks the tree from seed, calling `node.tick()` on each; snapshots children before iterating (meristems may reparent). Calls `plant.flush_removals()` after.
+    - `meristem_types.h` — convenience umbrella, includes all 4 type headers
+    - `shoot_apical.h/cpp` — `ShootApicalNode` extends `MeristemNode` (chain growth via self-reparenting, phyllotaxis, auxin production)
+    - `shoot_axillary.h/cpp` — `ShootAxillaryNode` extends `MeristemNode` (auxin-gated activation, replaces self with apical)
+    - `root_apical.h/cpp` — `RootApicalNode` extends `MeristemNode` (gravitropism, root chain growth, cytokinin production)
+    - `root_axillary.h/cpp` — `RootAxillaryNode` extends `MeristemNode` (cytokinin-gated activation)
+    - `helpers.h` — shared helper functions (growth_direction, branch_direction, perturb, sugar_growth_fraction, etc.)
+- **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
+- **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
+- **sugar.h/cpp** - `transport_sugar()` — sugar production (leaves), maintenance consumption, starvation pruning. Diffusion moved to `Node::transport_chemicals()`.
+- **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
+- **world_params.h** - `WorldParams` struct (light level, construction costs) — non-genetic sim parameters
+- **plant.h/cpp** - `Plant` class owns all nodes, has root meristem cap (100). `Plant::tick()` orchestrates per-plant tick order. `queue_removal()` / `flush_removals()` for deferred node cleanup.
 - **engine.h/cpp** - `Engine` iterates plants and calls `plant.tick(world_params)`
+
+### Node Class Hierarchy
+```
+Node (base — position, chemicals, tick, transport_chemicals)
+├── StemNode (thickening, intercalary elongation)
+├── RootNode (same with root params)
+├── LeafNode (leaf_size, light_exposure, phototropism, growth)
+└── MeristemNode (active, ticks_since_last_node, is_tip)
+    ├── ShootApicalNode (chain growth, phyllotaxis, auxin production)
+    ├── ShootAxillaryNode (auxin-gated activation)
+    ├── RootApicalNode (gravitropism, chain growth, cytokinin production)
+    └── RootAxillaryNode (cytokinin-gated activation)
+```
+
+Meristems are real nodes in the tree graph, not separate objects. They participate in chemical transport naturally.
 
 ### Renderer (`src/renderer/`)
 - OpenGL 4.1 core profile, GLFW window, orbit camera
 - Draws cylinders between parent-child nodes, leaves as quads
-- Color modes: default (brown), chemical heatmap (auxin/cytokinin/sugar/gibberellin/ethylene), type (green=shoot, orange=root)
+- Color modes: default (brown), chemical heatmap (auxin/cytokinin/sugar/gibberellin/ethylene), type (green=shoot, orange=root, red/blue=meristems)
 
 ### Apps
 - **app_realtime.cpp** - Interactive viewer with pause/speed controls
 - **app_headless.cpp** - Headless precompute, saves binary recording
 - **app_playback.cpp** - Playback viewer with ImGui scrubbing
 
-## Hormone Model
+## Chemical Transport Model
 
-Hormones are **reset to zero every tick** then recomputed as a fresh signal snapshot:
+All chemicals are transported **locally** by each node during `Node::transport_chemicals()`, called from `Node::tick()`. The recursive tick walks the tree from seed outward (DFS pre-order), so each node handles its own transport with its parent.
 
-**Auxin** (shoot branching control):
-- Produced by active shoot apical meristems only
-- Flows basipetally (child -> parent, toward seed) via `auxin_collect`
-- Small spillback fraction redistributes from junctions back into branches (`auxin_spillback`)
-- Shoot axillary buds sense **parent stem node's** auxin level (not their own)
-- Activate when `parent.auxin < auxin_threshold` (far from any active shoot tip)
+### Generic Transport with Directional Bias
 
-**Cytokinin** (root branching control):
-- Produced by active root apical meristems only
-- Flows toward seed via `cytokinin_collect`, then distributes to children via `cytokinin_distribute`
-- Root axillary buds sense **parent root node's** cytokinin level
-- Activate when `parent.cytokinin < cytokinin_threshold` (far from any active root tip)
+Each chemical uses a blend of gradient diffusion and directional push, controlled by `directional_bias` (-1 to +1):
+
+```
+gradient_weight = 1 - |bias|
+directional_weight = |bias|
+gradient_flow = (my_val - parent_val) * gradient_weight * rate
+directional_flow = bias < 0 ? my_val * dw * rate : -parent_val * dw * rate
+flow = gradient_flow + directional_flow  (clamped to available supply)
+```
+
+**Auxin** (bias -0.9, basipetal):
+- **Persistent** across ticks (not reset)
+- Produced by active `ShootApicalNode` during its `tick()`
+- 90% directional push toward parent (seed-ward), 10% gradient
+- Decays by `auxin_decay_rate` per tick
+- Shoot axillary buds sense **parent's** auxin level; activate when low
+
+**Cytokinin** (bias +0.9, acropetal):
+- **Persistent** across ticks (not reset)
+- Produced by active `RootApicalNode` during its `tick()`
+- 90% directional pull from parent (shoot-ward), 10% gradient
+- Decays by `cytokinin_decay_rate` per tick
+- Root axillary buds sense **parent's** cytokinin level; activate when low
+
+**Sugar** (bias 0, gradient):
+- **Persistent** across ticks
+- Produced by leaf nodes (global `produce_sugar()` pass — involves shadow casting)
+- 100% gradient diffusion with radius-based conductance and cap clamping
+- Consumed by all nodes (global `consume_sugar()` pass)
 
 ## Gibberellin Model
 
-GA is **reset to zero every tick** (signal model, same as auxin/cytokinin):
+GA is **reset to zero every tick** (signal model):
 
 - Produced by young LEAF nodes only (`leaf_age < ga_leaf_age_max`)
 - Applied locally — `ga_production_rate * leaf_size` is added to the leaf's parent and grandparent stem nodes
@@ -89,48 +129,33 @@ Ethylene is **reset to zero every tick** (signal model). Four production trigger
 
 **Abscission lifecycle:** ethylene > threshold → senescence flag set → leaf gradually yellows (visual only) → removed from graph after `senescence_duration` ticks have elapsed
 
-## Sugar Model
+## Tick Control Flow
 
-Sugar **persists across ticks** (NOT reset like hormones). Three phases in `transport_sugar()`, plus leaf growth in `LeafNode::tick()`:
+The recursive tick walks the tree from seed outward. Each node:
+1. Produces chemicals if applicable (meristem nodes produce auxin/cytokinin)
+2. Calls base `Node::tick()` → `age++`, `transport_chemicals()`
+3. Does type-specific work (growth, activation, etc.)
+4. Children are ticked recursively (snapshot of children list for safety)
 
-1. **Production** — LEAF nodes produce: `sugar += light_level * leaf_size * sugar_production_rate`
-   - Feedback inhibition: production skipped if node sugar >= storage cap
-2. **Diffusion** — Gradient-based bidirectional flow through all node connections:
-   - Transport capacity = `min_radius^2 * PI * sugar_transport_conductance` (thicker = more)
-   - LEAF connections use baseline capacity (leaf radius is 0)
-   - Runs `sugar_diffusion_iterations` passes per tick (WorldParams, default 5)
-   - Cap-aware: transfers clamped by receiver's available headroom
-3. **Consumption** — Every node deducts volume-based maintenance cost:
-   - LEAF: `sugar_maintenance_leaf * leaf_size²` (scales with leaf area)
-   - STEM: `sugar_maintenance_stem * π * r² * internode_length` (scales with tissue volume)
-   - ROOT: `sugar_maintenance_root * π * r² * internode_length` (scales with tissue volume)
-   - Active meristem tips: `+ sugar_maintenance_meristem` (flat per-tip)
-   - Safety clamp: sugar capped to node storage limit after consumption
-
-**Storage caps** — Each node has a maximum sugar capacity proportional to its tissue volume:
-- STEM/ROOT: `π * r² * internode_length * sugar_storage_density_wood`
-- LEAF: `leaf_size² * sugar_storage_density_leaf`
-- Minimum cap of `sugar_cap_minimum` for tiny/new nodes
-- Seed node cap is at least `seed_sugar` to hold initial reserves
-
-**WorldParams** (non-genetic, on Engine):
-- `light_level` (1.0) — global light intensity, controls sugar production
-- `sugar_diffusion_iterations` (5) — simulation quality for diffusion smoothing
+Meristem chain growth: the meristem node inserts an internode above itself (self-reparenting). Axillary activation: the node replaces itself in the parent's children with a new apical node, queues itself for deferred removal.
 
 ## Key Design Decisions
-- **Node class hierarchy** — `Node` base class with `StemNode`, `RootNode`, `LeafNode` subclasses. Each subclass owns its type-specific fields and growth behavior via `virtual tick()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()` (fast `static_cast` gated on `NodeType` enum, no RTTI).
-- Leaves are real `LeafNode` graph nodes, not struct properties — they own `leaf_size`, `light_exposure`, `senescence_ticks`
-- Chain growth creates 3 children on interior STEM nodes: continuation tip, axillary meristem, and LEAF node
-- Axillary buds check their **parent's** hormone level, not their own node (hormones flow through the stem, not into side branches)
+- **Meristems are nodes** — `MeristemNode` base with 4 subclasses. Real children in the tree graph, participate in chemical diffusion naturally. No separate `Meristem` objects.
+- **Local chemical transport** — each node handles its own transport during `tick()` via `transport_chemicals()`. No global tree passes for auxin/cytokinin/sugar diffusion.
+- **Directional bias** — generic transport function blends gradient diffusion with directional push. Allows same code for basipetal (auxin), acropetal (cytokinin), and bidirectional (sugar).
+- **Node class hierarchy** — `Node` base class with `StemNode`, `RootNode`, `LeafNode`, `MeristemNode` subclasses. Each subclass owns its type-specific fields and growth behavior via `virtual tick()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_meristem()` (fast `static_cast` gated on `NodeType` enum, no RTTI).
+- Leaves are real `LeafNode` graph nodes — they own `leaf_size`, `light_exposure`, `senescence_ticks`
+- Chain growth inserts an internode above the meristem: parent → new_internode → [meristem, axillary, leaf]
+- Axillary buds check their **parent's** hormone level, not their own node
 - Root meristems are hard-capped at 100 (`Plant::max_root_meristems`) to prevent runaway root growth
-- The cap only gates creation of new axillary buds during chain growth, not activation of existing ones
-- Hormone reset each tick prevents accumulation artifacts (base of trunk having more auxin than tip)
-- Sugar persists across ticks (resource model, not signal model like hormones)
+- Sugar persists across ticks (resource model); auxin/cytokinin persist too (not reset each tick)
+- Gibberellin and ethylene still use reset-each-tick signal model (global passes)
 
 ## Tuning Parameters (genome.h)
 - `auxin_threshold` (0.15) - lower = fewer shoot branches, higher = more
 - `cytokinin_threshold` (0.15) - lower = fewer root branches, higher = more
-- `auxin_spillback_rate` (0.1) - how much junction auxin spills back into branches
+- `auxin_directional_bias` (-0.9) - basipetal bias strength
+- `cytokinin_directional_bias` (0.9) - acropetal bias strength
 - `auxin_transport_rate` / `cytokinin_transport_rate` (0.3) - how fast hormones flow per tick
 - `branch_angle` (0.785 rad / 45 deg) - angle of shoot branches from parent stem
 - `root_branch_angle` (0.35 rad / 20 deg) - angle of root branches

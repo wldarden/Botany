@@ -1,6 +1,7 @@
 #include "engine/gibberellin.h"
 #include "engine/plant.h"
-#include "engine/node.h"
+#include "engine/node/node.h"
+#include "engine/node/leaf_node.h"
 
 namespace botany {
 

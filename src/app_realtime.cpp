@@ -11,7 +11,9 @@
 #include <cstring>
 #include <string>
 #include "engine/engine.h"
-#include "engine/node.h"
+#include "engine/node/node.h"
+#include "engine/node/leaf_node.h"
+#include "engine/node/meristem_node.h"
 #include "engine/world_params.h"
 #include "renderer/renderer.h"
 
@@ -234,14 +236,10 @@ int main(int argc, char* argv[]) {
                 case NodeType::STEM: stem_count++; break;
                 case NodeType::ROOT: root_count++; break;
                 case NodeType::LEAF: leaf_count++; break;
-            }
-            if (n.meristem) {
-                switch (n.meristem->type()) {
-                    case MeristemType::APICAL:        apical_count++; break;
-                    case MeristemType::AXILLARY:      axillary_count++; break;
-                    case MeristemType::ROOT_APICAL:   root_apical_count++; break;
-                    case MeristemType::ROOT_AXILLARY: root_axillary_count++; break;
-                }
+                case NodeType::SHOOT_APICAL:   apical_count++; break;
+                case NodeType::SHOOT_AXILLARY: axillary_count++; break;
+                case NodeType::ROOT_APICAL:    root_apical_count++; break;
+                case NodeType::ROOT_AXILLARY:  root_axillary_count++; break;
             }
         });
         ImGui::Text("Stem: %d  Root: %d  Leaf: %d", stem_count, root_count, leaf_count);
@@ -250,9 +248,6 @@ int main(int argc, char* argv[]) {
         ImGui::Text("Sugar: total=%.2fg  max=%.4fg", total_sugar, max_sugar);
         ImGui::Separator();
         ImGui::SliderFloat("Light Level", &engine.world_params_mut().light_level, 0.0f, 2.0f);
-        ImGui::SliderInt("Diffusion Iters",
-            &engine.world_params_mut().sugar_diffusion_iterations, 1, 20);
-
         ImGui::SeparatorText("Time");
         if (ImGui::Button("Step 1")) {
             playing = false;
@@ -389,22 +384,19 @@ int main(int argc, char* argv[]) {
                 // Node type
                 const char* type_str = "?";
                 switch (sel.type) {
-                    case NodeType::STEM: type_str = "STEM"; break;
-                    case NodeType::ROOT: type_str = "ROOT"; break;
-                    case NodeType::LEAF: type_str = "LEAF"; break;
+                    case NodeType::STEM:           type_str = "STEM"; break;
+                    case NodeType::ROOT:           type_str = "ROOT"; break;
+                    case NodeType::LEAF:           type_str = "LEAF"; break;
+                    case NodeType::SHOOT_APICAL:   type_str = "SHOOT_APICAL"; break;
+                    case NodeType::SHOOT_AXILLARY: type_str = "SHOOT_AXILLARY"; break;
+                    case NodeType::ROOT_APICAL:    type_str = "ROOT_APICAL"; break;
+                    case NodeType::ROOT_AXILLARY:  type_str = "ROOT_AXILLARY"; break;
                 }
                 ImGui::Text("Type: %s", type_str);
 
                 // Meristem info
-                if (sel.meristem) {
-                    const char* mer_str = "?";
-                    switch (sel.meristem->type()) {
-                        case MeristemType::APICAL:        mer_str = "Shoot Apical"; break;
-                        case MeristemType::AXILLARY:      mer_str = "Shoot Axillary"; break;
-                        case MeristemType::ROOT_APICAL:   mer_str = "Root Apical"; break;
-                        case MeristemType::ROOT_AXILLARY: mer_str = "Root Axillary"; break;
-                    }
-                    ImGui::Text("Meristem: %s (%s)", mer_str, sel.meristem->active ? "active" : "dormant");
+                if (auto* mer = sel.as_meristem()) {
+                    ImGui::Text("Meristem: %s", mer->active ? "active" : "dormant");
                 }
 
                 ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);

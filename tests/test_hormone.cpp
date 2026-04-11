@@ -1,121 +1,125 @@
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
-#include "engine/hormone.h"
+#include "engine/node/meristem_node.h"
+#include "engine/world_params.h"
 
 using namespace botany;
-using Catch::Matchers::WithinAbs;
 
-// Helper: build a simple 3-node linear stem (seed -> mid -> tip_with_apical)
-static Plant make_linear_stem() {
-    Genome g = default_genome();
-    g.auxin_production_rate = 1.0f;
-    g.auxin_transport_rate = 0.5f;
-    g.auxin_decay_rate = 0.1f;
-    Plant plant(g, glm::vec3(0.0f));
-    // Plant already has: seed(0) -> shoot(1), seed(0) -> root(2)
-    // shoot(1) has an APICAL meristem
-    return plant;
+static WorldParams default_world() {
+    WorldParams w;
+    return w;
 }
 
-TEST_CASE("transport_auxin: apical meristem produces auxin at its node", "[hormone]") {
-    Plant plant = make_linear_stem();
-    const Genome& g = plant.genome();
+// Helper: tick just enough for auxin to propagate (no chain growth)
+static void tick_n(Plant& plant, const WorldParams& world, int n) {
+    for (int i = 0; i < n; i++) {
+        plant.tick(world);
+    }
+}
 
-    transport_auxin(plant);
+TEST_CASE("Auxin: shoot apical produces auxin", "[hormone]") {
+    Genome g = default_genome();
+    g.auxin_production_rate = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
 
-    // The shoot node (child 0 of seed, which is STEM type) should have auxin
+    tick_n(plant, world, 1);
+
+    // The shoot apical node should have auxin (produced - transported fraction)
     const Node* seed = plant.seed();
     const Node* shoot = nullptr;
     for (const Node* c : seed->children) {
-        if (c->type == NodeType::STEM) { shoot = c; break; }
+        if (c->type == NodeType::SHOOT_APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
     REQUIRE(shoot->auxin > 0.0f);
 }
 
-TEST_CASE("transport_auxin: auxin flows from child to parent", "[hormone]") {
-    Plant plant = make_linear_stem();
+TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
+    Genome g = default_genome();
+    g.auxin_production_rate = 1.0f;
+    g.auxin_transport_rate = 0.5f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
 
-    transport_auxin(plant);
+    tick_n(plant, world, 1);
 
-    const Node* seed = plant.seed();
-    // Seed should have received auxin from the shoot child
-    REQUIRE(seed->auxin > 0.0f);
+    // Seed should have received auxin from shoot apical child
+    REQUIRE(plant.seed()->auxin > 0.0f);
 }
 
-TEST_CASE("transport_auxin: non-meristem nodes don't produce auxin", "[hormone]") {
+TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
     Genome g = default_genome();
+    g.auxin_production_rate = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
 
-    // Root node has ROOT_APICAL, not APICAL — should not produce auxin
-    transport_auxin(plant);
+    tick_n(plant, world, 3);
 
     const Node* seed = plant.seed();
     const Node* root = nullptr;
-    for (const Node* c : seed->children) {
-        if (c->type == NodeType::ROOT) { root = c; break; }
-    }
-    REQUIRE(root != nullptr);
-    // Root doesn't produce auxin, but may receive a small amount via
-    // spillback from the seed node. Verify it's much less than what
-    // the shoot tip's side of the tree gets.
     const Node* shoot = nullptr;
     for (const Node* c : seed->children) {
-        if (c->type == NodeType::STEM) { shoot = c; break; }
+        if (c->type == NodeType::ROOT_APICAL) root = c;
+        if (c->type == NodeType::SHOOT_APICAL) shoot = c;
     }
+    REQUIRE(root != nullptr);
+    REQUIRE(shoot != nullptr);
+    // Root should have much less auxin than shoot (only receives via seed spillover)
     REQUIRE(root->auxin < shoot->auxin);
 }
 
-TEST_CASE("transport_cytokinin: root apical produces cytokinin", "[hormone]") {
-    Plant plant = make_linear_stem();
+TEST_CASE("Auxin: decays over time without production", "[hormone]") {
+    Genome g = default_genome();
+    g.auxin_production_rate = 1.0f;
+    g.auxin_decay_rate = 0.1f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
 
-    transport_cytokinin(plant);
+    // Produce for a few ticks
+    tick_n(plant, world, 5);
+
+    const Node* seed = plant.seed();
+    float auxin_at_5 = seed->auxin;
+
+    // Keep ticking — production continues but transport + decay should prevent
+    // linear accumulation
+    tick_n(plant, world, 20);
+    float auxin_at_25 = seed->auxin;
+
+    // Should not be 5x the earlier amount (decay limits accumulation)
+    REQUIRE(auxin_at_25 < 5.0f * auxin_at_5);
+}
+
+TEST_CASE("Cytokinin: root apical produces cytokinin", "[hormone]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
+
+    tick_n(plant, world, 1);
 
     const Node* seed = plant.seed();
     const Node* root = nullptr;
     for (const Node* c : seed->children) {
-        if (c->type == NodeType::ROOT) { root = c; break; }
+        if (c->type == NodeType::ROOT_APICAL) { root = c; break; }
     }
     REQUIRE(root != nullptr);
     REQUIRE(root->cytokinin > 0.0f);
 }
 
-TEST_CASE("transport_cytokinin: cytokinin flows from parent to children", "[hormone]") {
+TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
     Genome g = default_genome();
     g.cytokinin_production_rate = 2.0f;
     Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
 
-    // Run multiple passes so cytokinin propagates from root through seed to shoot
-    for (int i = 0; i < 5; i++) {
-        transport_cytokinin(plant);
-    }
+    tick_n(plant, world, 5);
 
     const Node* seed = plant.seed();
     const Node* shoot = nullptr;
     for (const Node* c : seed->children) {
-        if (c->type == NodeType::STEM) { shoot = c; break; }
+        if (c->type == NodeType::SHOOT_APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
     REQUIRE(shoot->cytokinin > 0.0f);
-}
-
-TEST_CASE("transport_auxin: auxin decays each pass", "[hormone]") {
-    Plant plant = make_linear_stem();
-
-    transport_auxin(plant);
-    const Node* seed = plant.seed();
-    const Node* shoot = nullptr;
-    for (const Node* c : seed->children) {
-        if (c->type == NodeType::STEM) { shoot = c; break; }
-    }
-
-    float after_one = shoot->auxin;
-
-    transport_auxin(plant);
-    transport_auxin(plant);
-    transport_auxin(plant);
-
-    float after_four = shoot->auxin;
-    REQUIRE(after_four < 4.0f * after_one);  // Not linear growth
 }
