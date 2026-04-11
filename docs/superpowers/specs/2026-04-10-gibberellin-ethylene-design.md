@@ -2,6 +2,8 @@
 
 Two new hormones that add realistic internode variation and canopy self-pruning to the plant growth simulator.
 
+**Codebase context:** Meristems are organized in `src/engine/meristems/` with per-type files (shoot_apical, shoot_axillary, root_apical, root_axillary) plus helpers.h and a dispatch file (meristem.cpp). Sugar has dedicated functions in sugar.h/cpp (produce, diffuse, consume, grow_leaves, prune). Hormones (auxin/cytokinin) live in hormone.h/cpp. Construction costs are in WorldParams, not Genome.
+
 ## Gibberellin (GA)
 
 ### Biology
@@ -33,7 +35,7 @@ Reset-and-recompute each tick (no persistence):
 
 ### Effect on Internode Elongation
 
-Modifies the existing intercalary growth in `tick_meristems()`:
+Modifies the existing intercalary growth in `src/engine/meristems/meristem.cpp` (`tick_meristems()`):
 
 ```
 ga_boost = 1.0 + node.gibberellin * ga_elongation_sensitivity
@@ -140,12 +142,14 @@ Follows the existing pattern of one header/source pair per system (hormone.h/cpp
 
 ## Modifications to Existing Files
 
-- `node.h` — add `gibberellin`, `ethylene`, `senescence_ticks` fields
-- `genome.h` — add GA and ethylene parameters to `Genome` + `default_genome()`
-- `engine.h/cpp` — add GA, ethylene, and abscission calls to tick loop
-- `meristem.cpp` — modify intercalary elongation to apply `ga_boost * ethylene_inhibition`
-- `sugar.cpp` — senescing leaves (`senescence_ticks > 0`) produce zero sugar
-- `renderer.cpp` — new `gibberellin` and `ethylene` color modes; senescence leaf coloring in all modes
+- `src/engine/node.h` — add `gibberellin`, `ethylene`, `senescence_ticks` fields to `Node`
+- `src/engine/genome.h` — add GA and ethylene parameters to `Genome` + `default_genome()`
+- `src/engine/engine.h/cpp` — add GA, ethylene, and abscission calls to tick loop
+- `src/engine/meristems/meristem.cpp` — modify intercalary elongation to apply `ga_boost * ethylene_inhibition`
+- `src/engine/sugar.cpp` — senescing leaves (`senescence_ticks > 0`) produce zero sugar in `produce_sugar()`
+- `src/renderer/renderer.cpp` — new `gibberellin` and `ethylene` color modes; senescence leaf coloring in all modes
+- `CMakeLists.txt` — add `gibberellin.cpp` and `ethylene.cpp` to `botany_engine` library sources
+- `tests/` — new `test_gibberellin.cpp` and `test_ethylene.cpp` files; add to CMakeLists test sources
 
 ## Renderer Changes
 
