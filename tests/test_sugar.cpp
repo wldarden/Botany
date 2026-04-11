@@ -389,11 +389,12 @@ TEST_CASE("sugar_cap scales with leaf area", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf->leaf_size = 0.3f;
+    leaf->leaf_size = 0.5f;  // large enough that area cap exceeds minimum
     plant.seed_mut()->add_child(leaf);
 
-    float area = 0.3f * 0.3f;
+    float area = 0.5f * 0.5f;
     float expected = area * g.sugar_storage_density_leaf;
+    REQUIRE(expected > g.sugar_cap_minimum);  // precondition: area cap wins over floor
     REQUIRE_THAT(sugar_cap(*leaf, g), WithinAbs(expected, 1e-6));
 }
 

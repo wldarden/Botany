@@ -122,11 +122,11 @@ inline Genome default_genome() {
         .sugar_maintenance_root = 0.135f,   // g / (dm³ · hr) — fine roots expensive (high turnover)
         .sugar_maintenance_meristem = 0.001f, // high per mass, small organ
 
-        .seed_sugar = 8.0f,                 // ~15 days heterotrophic growth
+        .seed_sugar = 28.0f,                 // ~15 days heterotrophic growth
 
         .sugar_storage_density_wood = 50.0f,  // g glucose max / dm³ — ~5% of dry mass as starch
         .sugar_storage_density_leaf = 0.5f,   // g glucose max / dm² — thin tissue, less storage
-        .sugar_cap_minimum = 0.01f,           // floor for new/tiny nodes
+        .sugar_cap_minimum = 0.05f,           // floor for meristem tips (must exceed sugar_save_shoot)
 
         .sugar_save_shoot = 0.01f,          // buffer before growth
         .sugar_save_root = 0.005f,
