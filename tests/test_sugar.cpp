@@ -505,6 +505,23 @@ TEST_CASE("Safety clamp caps sugar after consumption", "[sugar]") {
     REQUIRE(stem->sugar <= cap + 1e-6f);
 }
 
+TEST_CASE("Senescing leaf produces no sugar", "[sugar]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->leaf_size = 0.5f;
+    leaf->senescence_ticks = 1; // senescing
+    plant.seed_mut()->add_child(leaf);
+
+    WorldParams wp = default_world_params();
+    wp.light_level = 2.0f;
+
+    produce_sugar(plant, wp);
+
+    REQUIRE(leaf->sugar == 0.0f);
+}
+
 TEST_CASE("Diffusion still conserves sugar when caps are not hit", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));

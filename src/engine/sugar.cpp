@@ -52,7 +52,7 @@ void produce_sugar(Plant& plant, const WorldParams& world) {
                                    node.position.z, sr});
             }
         }
-        if (node.type == NodeType::LEAF && node.leaf_size > 1e-6f) {
+        if (node.type == NodeType::LEAF && node.leaf_size > 1e-6f && node.senescence_ticks == 0) {
             leaves.push_back({&node, node.position.x, node.position.y,
                               node.position.z, node.leaf_size});
         }
