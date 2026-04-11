@@ -111,12 +111,30 @@ void Renderer::draw_plant(const Plant& plant) {
 
         if (node.type == NodeType::LEAF) {
             glm::vec3 dir = glm::normalize(node.position - node.parent->position);
-            glm::vec3 leaf_color(0.2f, 0.6f, 0.15f);
-            if (node.starvation_ticks > 0) {
-                float stress = static_cast<float>(node.starvation_ticks) / 50.0f;
-                stress = glm::clamp(stress, 0.0f, 1.0f);
-                glm::vec3 dead_color(0.4f, 0.3f, 0.1f);
-                leaf_color = glm::mix(leaf_color, dead_color, stress);
+            glm::vec3 leaf_color;
+            if (chemical_accessor_) {
+                float v = chemical_accessor_(node);
+                leaf_color = heatmap(v / max_val);
+            } else {
+                // Sunlit leaves are bright green, shaded leaves darken
+                glm::vec3 sun_color(0.2f, 0.6f, 0.15f);
+                glm::vec3 shade_color(0.08f, 0.25f, 0.06f);
+                leaf_color = glm::mix(shade_color, sun_color, node.light_exposure);
+                if (node.starvation_ticks > 0) {
+                    float stress = static_cast<float>(node.starvation_ticks) / 50.0f;
+                    stress = glm::clamp(stress, 0.0f, 1.0f);
+                    glm::vec3 dead_color(0.4f, 0.3f, 0.1f);
+                    leaf_color = glm::mix(leaf_color, dead_color, stress);
+                }
+            }
+            // Senescence: green -> yellow -> brown (overrides other coloring)
+            if (node.senescence_ticks > 0) {
+                float progress = static_cast<float>(node.senescence_ticks) / 48.0f;
+                progress = glm::clamp(progress, 0.0f, 1.0f);
+                glm::vec3 yellow(0.8f, 0.7f, 0.1f);
+                glm::vec3 brown(0.4f, 0.25f, 0.05f);
+                glm::vec3 senesce_color = glm::mix(yellow, brown, progress);
+                leaf_color = glm::mix(leaf_color, senesce_color, progress);
             }
             draw_leaf(node.position, dir, node.leaf_size, leaf_color);
             return;
@@ -135,14 +153,25 @@ void Renderer::draw_plant(const Plant& plant) {
                     case MeristemType::ROOT_AXILLARY: color = glm::vec3(0.6f, 0.2f, 0.8f); break;  // purple
                 }
             } else if (node.type == NodeType::STEM) {
-                color = glm::vec3(0.2f, 0.8f, 0.2f);   // green
+                glm::vec3 green(0.2f, 0.8f, 0.2f);
+                glm::vec3 brown(0.5f, 0.35f, 0.15f);
+                float radius_mat = (node.radius - 0.05f) / 0.10f;
+                float age_mat = static_cast<float>(node.age) / 360.0f; // 15 days
+                float maturity = glm::clamp(std::max(radius_mat, age_mat), 0.0f, 1.0f);
+                color = glm::mix(green, brown, maturity);
             } else if (node.type == NodeType::ROOT) {
                 color = glm::vec3(0.8f, 0.6f, 0.2f);   // yellow-brown
             } else {
                 color = glm::vec3(0.2f, 0.8f, 0.2f);   // green (leaf drawn separately, but fallback)
             }
         } else if (node.type == NodeType::STEM) {
-            color = glm::vec3(0.45f, 0.3f, 0.15f);
+            // Young stems are green, maturing to brown as they thicken or age
+            glm::vec3 green(0.25f, 0.55f, 0.15f);
+            glm::vec3 brown(0.45f, 0.3f, 0.15f);
+            float radius_mat = (node.radius - 0.05f) / 0.10f;
+            float age_mat = static_cast<float>(node.age) / 360.0f; // 15 days
+            float maturity = glm::clamp(std::max(radius_mat, age_mat), 0.0f, 1.0f);
+            color = glm::mix(green, brown, maturity);
         } else {
             color = glm::vec3(0.35f, 0.2f, 0.1f);
         }
@@ -181,7 +210,10 @@ void Renderer::draw_snapshot(const TickSnapshot& snapshot) {
 
         glm::vec3 color;
         if (ns.type == NodeType::STEM) {
-            color = glm::vec3(0.45f, 0.3f, 0.15f);
+            glm::vec3 green(0.25f, 0.55f, 0.15f);
+            glm::vec3 brown(0.45f, 0.3f, 0.15f);
+            float maturity = glm::clamp((ns.radius - 0.05f) / 0.10f, 0.0f, 1.0f);
+            color = glm::mix(green, brown, maturity);
         } else {
             color = glm::vec3(0.35f, 0.2f, 0.1f);
         }
@@ -261,11 +293,11 @@ void Renderer::draw_leaf(glm::vec3 position, glm::vec3 direction, float size, gl
     }
     glm::vec3 up = glm::normalize(glm::cross(perp, direction));
 
-    float half = size * 0.5f;
-    glm::vec3 p0 = position + perp * half + up * half;
-    glm::vec3 p1 = position - perp * half + up * half;
-    glm::vec3 p2 = position - perp * half - up * half;
-    glm::vec3 p3 = position + perp * half - up * half;
+    // Leaf attached at position corner, extending outward along direction and perp
+    glm::vec3 p0 = position;
+    glm::vec3 p1 = position + perp * size;
+    glm::vec3 p2 = position + perp * size + up * size;
+    glm::vec3 p3 = position + up * size;
     glm::vec3 normal = glm::normalize(glm::cross(p1 - p0, p3 - p0));
 
     float vertices[] = {
@@ -327,6 +359,30 @@ void Renderer::setup_ground() {
 void Renderer::draw_ground() {
     glBindVertexArray(ground_vao_);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    draw_grid();
+}
+
+void Renderer::draw_grid() {
+    // Grid on the ground plane (y = 0.001 to avoid z-fighting).
+    // Lines every 1 dm (10 cm). Thicker/brighter every 10 dm (1 m).
+    float y = 0.001f;
+    float extent = 10.0f;  // ±10 dm = ±1 m
+    glm::vec3 minor_color(0.35f, 0.30f, 0.20f);
+    glm::vec3 major_color(0.30f, 0.25f, 0.15f);
+    float minor_r = 0.003f;
+    float major_r = 0.006f;
+
+    for (int i = static_cast<int>(-extent); i <= static_cast<int>(extent); i++) {
+        float pos = static_cast<float>(i);
+        bool major = (i % 10 == 0);
+        float r = major ? major_r : minor_r;
+        glm::vec3 c = major ? major_color : minor_color;
+
+        // X-parallel line
+        draw_cylinder(glm::vec3(-extent, y, pos), glm::vec3(extent, y, pos), r, r, c, 4);
+        // Z-parallel line
+        draw_cylinder(glm::vec3(pos, y, -extent), glm::vec3(pos, y, extent), r, r, c, 4);
+    }
 }
 
 void Renderer::end_frame() {

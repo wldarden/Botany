@@ -56,7 +56,11 @@ static const Node* pick_node(const Plant& plant, const OrbitCamera& camera,
         float dist = glm::length(node.position - closest_on_ray);
 
         // Use a pick radius that scales with node radius (but has a minimum)
-        float pick_radius = std::max(node.radius * 3.0f, max_pick_dist);
+        // For leaf nodes, use leaf_size since their radius is tiny
+        float effective_radius = (node.type == NodeType::LEAF && node.leaf_size > 0.0f)
+            ? node.leaf_size * 0.5f
+            : node.radius;
+        float pick_radius = std::max(effective_radius * 3.0f, max_pick_dist);
 
         if (dist < pick_radius && t < closest_dist) {
             closest_dist = t;
@@ -110,9 +114,13 @@ int main(int argc, char* argv[]) {
                 accessor = [](const Node& n) { return n.cytokinin; };
             } else if (color_chemical == "sugar") {
                 accessor = [](const Node& n) { return n.sugar; };
+            } else if (color_chemical == "gibberellin") {
+                accessor = [](const Node& n) { return n.gibberellin; };
+            } else if (color_chemical == "ethylene") {
+                accessor = [](const Node& n) { return n.ethylene; };
             } else {
                 std::cerr << "Unknown chemical: " << color_chemical
-                          << " (available: auxin, cytokinin, sugar, type)" << std::endl;
+                          << " (available: auxin, cytokinin, sugar, gibberellin, ethylene, type)" << std::endl;
                 renderer.shutdown();
                 return 1;
             }
@@ -130,7 +138,7 @@ int main(int argc, char* argv[]) {
     ImGui_ImplOpenGL3_Init("#version 410");
     ImGui::StyleColorsDark();
 
-    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR };
+    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE };
     Overlay active_overlay = Overlay::NONE;
     bool playing = false;
     int steps_remaining = 0;
@@ -207,22 +215,40 @@ int main(int argc, char* argv[]) {
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Once);
         ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX));
         ImGui::Begin("Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-        ImGui::Text("Tick: %d  Nodes: %d", total_ticks,
+        int hours = total_ticks;
+        int days = hours / 24;
+        ImGui::Text("Tick: %d (%dd %dh)  Nodes: %d", total_ticks, days, hours % 24,
                      static_cast<int>(engine.get_plant(plant_id).node_count()));
 
-        // Sugar stats
+        // Node & sugar stats
         float total_sugar = 0.0f;
         float max_sugar = 0.0f;
-        int leaf_count = 0;
+        int stem_count = 0, root_count = 0, leaf_count = 0;
+        int apical_count = 0, axillary_count = 0;
+        int root_apical_count = 0, root_axillary_count = 0;
         engine.get_plant(plant_id).for_each_node([&](const Node& n) {
             total_sugar += n.sugar;
             if (n.sugar > max_sugar) max_sugar = n.sugar;
-            if (n.type == NodeType::LEAF) leaf_count++;
+            switch (n.type) {
+                case NodeType::STEM: stem_count++; break;
+                case NodeType::ROOT: root_count++; break;
+                case NodeType::LEAF: leaf_count++; break;
+            }
+            if (n.meristem) {
+                switch (n.meristem->type()) {
+                    case MeristemType::APICAL:        apical_count++; break;
+                    case MeristemType::AXILLARY:      axillary_count++; break;
+                    case MeristemType::ROOT_APICAL:   root_apical_count++; break;
+                    case MeristemType::ROOT_AXILLARY: root_axillary_count++; break;
+                }
+            }
         });
-        ImGui::Text("Leaves: %d", leaf_count);
-        ImGui::Text("Sugar: total=%.1f max=%.3f", total_sugar, max_sugar);
+        ImGui::Text("Stem: %d  Root: %d  Leaf: %d", stem_count, root_count, leaf_count);
+        ImGui::Text("Meristems: SA:%d SX:%d RA:%d RX:%d",
+                     apical_count, axillary_count, root_apical_count, root_axillary_count);
+        ImGui::Text("Sugar: total=%.2fg  max=%.4fg", total_sugar, max_sugar);
         ImGui::Separator();
-        ImGui::SliderFloat("Light", &engine.world_params_mut().light_level, 0.0f, 2.0f);
+        ImGui::SliderFloat("Light Level", &engine.world_params_mut().light_level, 0.0f, 2.0f);
         ImGui::SliderInt("Diffusion Iters",
             &engine.world_params_mut().sugar_diffusion_iterations, 1, 20);
 
@@ -249,6 +275,16 @@ int main(int argc, char* argv[]) {
                 playing = true;
                 steps_remaining = 0;
             }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset")) {
+            engine.reset();
+            plant_id = engine.create_plant(g, glm::vec3(0.0f));
+            playing = false;
+            steps_remaining = 0;
+            total_ticks = 0;
+            g_selected_node = nullptr;
+            g_show_node_panel = false;
         }
 
         if (ImGui::CollapsingHeader("Overlays")) {
@@ -280,6 +316,23 @@ int main(int argc, char* argv[]) {
                 renderer.set_color_by_type(false);
                 renderer.set_color_mode([](const Node& n) { return n.sugar; });
                 active_overlay = Overlay::SUGAR;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Light")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.light_exposure; });
+                active_overlay = Overlay::LIGHT;
+            }
+            if (ImGui::Button("GA")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.gibberellin; });
+                active_overlay = Overlay::GIBBERELLIN;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Ethylene")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.ethylene; });
+                active_overlay = Overlay::ETHYLENE;
             }
 
             if (active_overlay == Overlay::NODE_TYPE) {
@@ -359,6 +412,9 @@ int main(int argc, char* argv[]) {
                     ImGui::Text("Leaf Size: %.3f", sel.leaf_size);
                 }
                 ImGui::Text("Starvation: %u ticks", sel.starvation_ticks);
+                if (sel.senescence_ticks > 0) {
+                    ImGui::Text("Senescence: %u ticks", sel.senescence_ticks);
+                }
                 ImGui::Text("Children: %d", static_cast<int>(sel.children.size()));
 
                 ImGui::Separator();
@@ -394,31 +450,57 @@ int main(int argc, char* argv[]) {
                 ImGui::Text("Chemical Levels:");
                 if (ImGui::BeginTable("chemicals", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
                     ImGui::TableSetupColumn("Chemical", ImGuiTableColumnFlags_WidthFixed, 80);
-                    ImGui::TableSetupColumn("Upstream", ImGuiTableColumnFlags_WidthFixed, 65);
+                    ImGui::TableSetupColumn("Seed Side", ImGuiTableColumnFlags_WidthFixed, 65);
                     ImGui::TableSetupColumn("Self", ImGuiTableColumnFlags_WidthFixed, 75);
-                    ImGui::TableSetupColumn("Downstream", ImGuiTableColumnFlags_WidthFixed, 65);
+                    ImGui::TableSetupColumn("Tip Side", ImGuiTableColumnFlags_WidthFixed, 65);
                     ImGui::TableHeadersRow();
 
                     // Sugar
                     ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Sugar");
+                    ImGui::TableSetColumnIndex(0); ImGui::Text("Sugar (g)");
                     ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_sugar, sel.sugar).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.3f", sel.sugar);
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.sugar);
                     ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_sugar, sel.sugar).c_str());
 
-                    // Auxin
+                    // Auxin (dimensionless signaling units)
                     ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Auxin");
+                    ImGui::TableSetColumnIndex(0); ImGui::Text("Auxin (au)");
                     ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_auxin, sel.auxin).c_str());
                     ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.auxin);
                     ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_auxin, sel.auxin).c_str());
 
-                    // Cytokinin
+                    // Cytokinin (dimensionless signaling units)
                     ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Cytokinin");
+                    ImGui::TableSetColumnIndex(0); ImGui::Text("Cyt (au)");
                     ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_cytokinin, sel.cytokinin).c_str());
                     ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.cytokinin);
                     ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_cytokinin, sel.cytokinin).c_str());
+
+                    // Gibberellin
+                    float parent_ga = sel.parent ? sel.parent->gibberellin : 0.0f;
+                    float child_ga = 0.0f;
+                    if (!sel.children.empty()) {
+                        for (const Node* c : sel.children) child_ga += c->gibberellin;
+                        child_ga /= static_cast<float>(sel.children.size());
+                    }
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::Text("GA (au)");
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_ga, sel.gibberellin).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.gibberellin);
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_ga, sel.gibberellin).c_str());
+
+                    // Ethylene
+                    float parent_eth = sel.parent ? sel.parent->ethylene : 0.0f;
+                    float child_eth = 0.0f;
+                    if (!sel.children.empty()) {
+                        for (const Node* c : sel.children) child_eth += c->ethylene;
+                        child_eth /= static_cast<float>(sel.children.size());
+                    }
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::Text("Eth (au)");
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_eth, sel.ethylene).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%.4f", sel.ethylene);
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_eth, sel.ethylene).c_str());
 
                     ImGui::EndTable();
                 }
