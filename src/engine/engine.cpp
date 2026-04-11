@@ -1,8 +1,10 @@
 // src/engine/engine.cpp
 #include "engine/engine.h"
 #include "engine/hormone.h"
-#include "engine/meristem.h"
+#include "engine/meristems/meristem.h"
 #include "engine/sugar.h"
+#include "engine/gibberellin.h"
+#include "engine/ethylene.h"
 
 namespace botany {
 
@@ -16,10 +18,19 @@ void Engine::tick() {
     for (auto& plant : plants_) {
         transport_auxin(*plant);
         transport_cytokinin(*plant);
+        compute_gibberellin(*plant);
         transport_sugar(*plant, world_params_);
-        tick_meristems(*plant);
+        compute_ethylene(*plant, world_params_);
+        process_abscission(*plant);
+        tick_meristems(*plant, world_params_);
+        plant->recompute_world_positions();
     }
     tick_++;
+}
+
+void Engine::reset() {
+    plants_.clear();
+    tick_ = 0;
 }
 
 const Plant& Engine::get_plant(PlantID id) const {
