@@ -15,13 +15,13 @@ namespace botany {
 
 struct WorldParams {
     float light_level = 1.0f;                   // fraction of full sun
-    uint32_t starvation_ticks_max = 1200;       // hours (~50 days) until starvation death
+    uint32_t starvation_ticks_max = 2200;       // hours (~50 days) until starvation death
 
     // Construction costs — energy required per unit of biological growth.
     // Derived from ~1.2-1.4 g glucose / g dry mass (includes 25% growth respiration
     // overhead), scaled by typical cross-section area at initial radius.
     // These are per-distance, not per-time — unchanged by tick rate.
-    float sugar_cost_shoot_growth = 2.0f;       // g glucose / dm of shoot extension
+    float sugar_cost_shoot_growth = 1.5f;       // g glucose / dm of shoot extension
     float sugar_cost_root_growth  = 1.5f;       // g glucose / dm of root extension (roots ~15% cheaper)
     float sugar_cost_thickening   = 0.5f;       // g glucose / dm of radial thickening
     float sugar_cost_elongation   = 1.0f;       // g glucose / dm of internode elongation (cell expansion, cheaper than new growth)

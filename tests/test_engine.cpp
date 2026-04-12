@@ -56,7 +56,8 @@ TEST_CASE("Engine runs multiple ticks and plant grows complex structure", "[engi
     Engine engine;
     Genome g = default_genome();
     g.growth_rate = 0.2f;
-    g.max_internode_length = 0.3f; // chain growth fires often
+    g.shoot_plastochron = 1; // spawn internode every tick for fast testing
+    g.root_plastochron = 1;
     // Raise minimum cap so tip nodes can store enough sugar to grow
     g.sugar_cap_minimum = 1.0f;
     PlantID id = engine.create_plant(g, glm::vec3(0.0f));
@@ -65,6 +66,7 @@ TEST_CASE("Engine runs multiple ticks and plant grows complex structure", "[engi
         const Genome& genome = engine.get_plant(id).genome();
         engine.get_plant_mut(id).for_each_node_mut([&genome](Node& n) {
             n.chemical(ChemicalID::Sugar) = sugar_cap(n, genome);
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
         });
         engine.tick();
     }

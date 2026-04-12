@@ -12,8 +12,14 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 # Run realtime viewer (must run from project root for shader path)
 ./build/botany_realtime [--color auxin|cytokinin|sugar|gibberellin|ethylene|type]
 
+# Run evolution app
+./build/botany_evolve
+
 # Run tests
 ./build/botany_tests
+
+# External dependency: evolve library at /Users/wldarden/repos/evolve
+# (linked via add_subdirectory in CMakeLists.txt)
 ```
 
 ## Architecture
@@ -59,10 +65,16 @@ All 7 node types extend `Node` directly — flat hierarchy, no intermediate clas
 - Draws cylinders between parent-child nodes, leaves as quads
 - Color modes: default (brown), chemical heatmap (auxin/cytokinin/sugar/gibberellin/ethylene), type (green=shoot, orange=root, red/blue=meristems)
 
+### Evolution (`src/evolution/`)
+- **genome_bridge.h/cpp** — `build_genome_template()`, `to_structured()`, `from_structured()` convert between `botany::Genome` and `evolve::StructuredGenome`. Each genome field is a named gene with per-gene mutation config (strength = % of valid range). 8 linkage groups for crossover (auxin, cytokinin, shoot_growth, root_growth, geometry, sugar_economy, gibberellin, ethylene).
+- **fitness.h/cpp** — `PlantStats` (8 objectives: survival, biomass, leaves, sugar, height, crown_ratio, branch_depth, leaf_height_spread). `evaluate_plant()` runs a headless sim. `evaluate_group()` runs multiple competing plants in one shared Engine. `compute_fitness()` does per-generation normalized weighted scoring.
+- **evolution_runner.h/cpp** — `EvolutionRunner` manages the GA lifecycle: init population from default genome with mutations, evaluate in parallel (std::thread), normalize + score fitness, tournament selection + elitism + crossover + mutation. Supports competition mode (competitors > 1 = shared sim with light competition). Tracks best genome + its competitor group for display. Autosaves genome on fitness improvement.
+
 ### Apps
-- **app_realtime.cpp** - Interactive viewer with pause/speed controls
+- **app_realtime.cpp** - Interactive viewer with pause/speed controls, production/maintenance sugar stats
 - **app_headless.cpp** - Headless precompute, saves binary recording
 - **app_playback.cpp** - Playback viewer with ImGui scrubbing
+- **app_evolve.cpp** - Evolution app with ImGui config (population, competitors, max ticks, threads, 8 fitness weight sliders), progress bar, live stats table, fitness history plot, best plant + competitors rendering (best at full color, competitors dimmed), Export Best button. Autosaves best_genome.txt on improvement.
 
 ## Chemical Transport Model
 

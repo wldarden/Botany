@@ -52,29 +52,72 @@ WorldParams EvolutionRunner::randomize_world() {
 }
 
 void EvolutionRunner::evaluate_all() {
+    evaluated_count_.store(0, std::memory_order_relaxed);
     WorldParams world = randomize_world();
     uint32_t pop_size = static_cast<uint32_t>(population_.size());
-    uint32_t num_threads = std::min(config_.num_threads, pop_size);
+    uint32_t comp = std::max(1u, config_.competitors);
+
+    // Build groups of indices. Shuffle so groups vary each generation.
+    std::vector<uint32_t> indices(pop_size);
+    for (uint32_t i = 0; i < pop_size; i++) indices[i] = i;
+    std::shuffle(indices.begin(), indices.end(), rng_);
+
+    struct Group { uint32_t start; uint32_t count; uint32_t id; };
+    std::vector<Group> groups;
+    for (uint32_t i = 0; i < pop_size; i += comp) {
+        uint32_t count = std::min(comp, pop_size - i);
+        uint32_t gid = static_cast<uint32_t>(groups.size());
+        groups.push_back({i, count, gid});
+        // Tag each individual with its group
+        for (uint32_t j = 0; j < count; j++) {
+            population_[indices[i + j]].group_id = gid;
+        }
+    }
+
+    // Evaluate one group: run shared sim, write stats back to population_
+    auto eval_group = [&](const Group& grp) {
+        if (comp <= 1) {
+            // Solo mode — use single-plant evaluator
+            for (uint32_t j = 0; j < grp.count; j++) {
+                uint32_t idx = indices[grp.start + j];
+                Genome g = from_structured(population_[idx].genome);
+                population_[idx].stats = evaluate_plant(g, world, config_.max_ticks);
+                evaluated_count_.fetch_add(1, std::memory_order_relaxed);
+            }
+        } else {
+            // Competition mode — shared sim
+            std::vector<Genome> genomes;
+            genomes.reserve(grp.count);
+            for (uint32_t j = 0; j < grp.count; j++) {
+                genomes.push_back(from_structured(population_[indices[grp.start + j]].genome));
+            }
+            auto results = evaluate_group(genomes, world, config_.max_ticks, config_.plant_spacing);
+            for (uint32_t j = 0; j < grp.count; j++) {
+                population_[indices[grp.start + j]].stats = results[j];
+                evaluated_count_.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    };
+
+    uint32_t num_groups = static_cast<uint32_t>(groups.size());
+    uint32_t num_threads = std::min(config_.num_threads, num_groups);
 
     if (num_threads <= 1) {
-        for (auto& ind : population_) {
-            Genome g = from_structured(ind.genome);
-            ind.stats = evaluate_plant(g, world, config_.max_ticks);
-        }
+        for (auto& grp : groups) eval_group(grp);
         return;
     }
 
+    // Partition groups across threads
     std::vector<std::thread> threads;
-    uint32_t chunk = pop_size / num_threads;
-    uint32_t remainder = pop_size % num_threads;
+    uint32_t chunk = num_groups / num_threads;
+    uint32_t remainder = num_groups % num_threads;
     uint32_t start = 0;
 
     for (uint32_t t = 0; t < num_threads; t++) {
         uint32_t end = start + chunk + (t < remainder ? 1 : 0);
-        threads.emplace_back([this, &world, start, end]() {
-            for (uint32_t i = start; i < end; i++) {
-                Genome g = from_structured(population_[i].genome);
-                population_[i].stats = evaluate_plant(g, world, config_.max_ticks);
+        threads.emplace_back([&, start, end]() {
+            for (uint32_t g = start; g < end; g++) {
+                eval_group(groups[g]);
             }
         });
         start = end;
@@ -109,6 +152,15 @@ void EvolutionRunner::score_all() {
     best_genome_ = population_[0].genome;
     fitness_history_.push_back(best_fitness_);
     fitness_improved_ = (best_fitness_ > prev_best + 1e-6f);
+
+    // Collect competitor genomes from the best plant's group
+    best_competitor_genomes_.clear();
+    uint32_t best_gid = population_[0].group_id;
+    for (size_t i = 1; i < population_.size(); i++) {
+        if (population_[i].group_id == best_gid) {
+            best_competitor_genomes_.push_back(population_[i].genome);
+        }
+    }
 }
 
 const Individual& EvolutionRunner::tournament_select() {

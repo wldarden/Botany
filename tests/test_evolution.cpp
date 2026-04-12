@@ -52,12 +52,12 @@ TEST_CASE("Genome template has linkage groups", "[evolution]") {
     auto& groups = tmpl.linkage_groups();
     REQUIRE(groups.size() == 8);
 
-    // Verify auxin group has 5 genes
+    // Verify auxin group has 4 genes (production, diffusion, decay, threshold)
     bool found_auxin = false;
     for (auto& g : groups) {
         if (g.name == "auxin") {
             found_auxin = true;
-            REQUIRE(g.gene_tags.size() == 5);
+            REQUIRE(g.gene_tags.size() == 4);
         }
     }
     REQUIRE(found_auxin);

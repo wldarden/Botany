@@ -17,13 +17,14 @@ inline constexpr std::array<ChemicalID, 5> all_chemical_ids = {
     ChemicalID::Ethylene,
 };
 
-// Extract hormone transport params from a genome.
-// Add new hormones here — one line per hormone.
-inline std::array<HormoneTransportParams, 3> hormone_params(const Genome& g) {
+// Chemicals that diffuse through the tree graph.
+// One entry per chemical — rate and decay from the genome.
+inline std::array<ChemicalDiffusionParams, 4> diffusion_params(const Genome& g) {
     return {{
-        {ChemicalID::Auxin, g.auxin_transport_rate, g.auxin_directional_bias, g.auxin_decay_rate},
-        {ChemicalID::Cytokinin, g.cytokinin_transport_rate, g.cytokinin_directional_bias, g.cytokinin_decay_rate},
-        {ChemicalID::Gibberellin, g.ga_transport_rate, g.ga_directional_bias, g.ga_decay_rate},
+        {ChemicalID::Auxin,       g.auxin_diffusion_rate,     g.auxin_decay_rate},
+        {ChemicalID::Cytokinin,   g.cytokinin_diffusion_rate, g.cytokinin_decay_rate},
+        {ChemicalID::Gibberellin, g.ga_diffusion_rate,        g.ga_decay_rate},
+        {ChemicalID::Sugar,       g.sugar_diffusion_rate,     0.0f},  // sugar doesn't decay
     }};
 }
 

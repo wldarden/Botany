@@ -8,6 +8,8 @@
 #include "engine/genome.h"
 #include "engine/plant.h"
 #include "engine/world_params.h"
+#include "engine/light.h"
+#include "engine/debug_log.h"
 
 namespace botany {
 
@@ -30,10 +32,15 @@ public:
     const WorldParams& world_params() const { return world_params_; }
     WorldParams& world_params_mut() { return world_params_; }
 
+    const ShadowMapViz& shadow_map() const { return shadow_map_; }
+    DebugLog& debug_log() { return debug_log_; }
+
 private:
     uint32_t tick_ = 0;
     std::vector<std::unique_ptr<Plant>> plants_;
     WorldParams world_params_;
+    ShadowMapViz shadow_map_;
+    DebugLog debug_log_;
 };
 
 } // namespace botany

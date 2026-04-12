@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include "renderer/shader.h"
 #include "renderer/camera.h"
+#include "engine/light.h"
 
 struct GLFWwindow;
 
@@ -28,11 +29,14 @@ public:
 
     void set_color_mode(ChemicalAccessor accessor);
     void set_color_by_type(bool enabled) { color_by_type_ = enabled; }
+    void set_color_tint(float tint) { color_tint_ = tint; }  // 0-1 multiplier on all draw colors
 
     void begin_frame();
     void draw_plant(const Plant& plant);
     void draw_snapshot(const TickSnapshot& snapshot);
     void draw_ground();
+    void draw_shadow_map(const ShadowMapViz& shadow_map);
+    void draw_highlight(const Node& node);
     void end_frame();
 
 private:
@@ -44,6 +48,7 @@ private:
 
     ChemicalAccessor chemical_accessor_;
     bool color_by_type_ = false;
+    float color_tint_ = 1.0f;
 
     uint32_t ground_vao_ = 0;
     uint32_t ground_vbo_ = 0;
@@ -54,7 +59,7 @@ private:
     void draw_cylinder(glm::vec3 start, glm::vec3 end,
                        float r_start, float r_end,
                        glm::vec3 color, int segments = 8);
-    void draw_leaf(glm::vec3 position, glm::vec3 direction, float size, glm::vec3 color = glm::vec3(0.2f, 0.6f, 0.15f));
+    void draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing, float size, glm::vec3 color = glm::vec3(0.2f, 0.6f, 0.15f));
 };
 
 } // namespace botany

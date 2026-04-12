@@ -37,7 +37,7 @@ TEST_CASE("Auxin: shoot apical produces auxin", "[hormone]") {
 TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
     Genome g = default_genome();
     g.auxin_production_rate = 1.0f;
-    g.auxin_transport_rate = 0.5f;
+    g.auxin_diffusion_rate = 0.5f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world();
 

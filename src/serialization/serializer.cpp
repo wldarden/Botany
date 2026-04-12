@@ -48,6 +48,8 @@ void save_tick(std::ostream& out, const Engine& engine, uint32_t plant_id) {
         write_val(out, node.chemical(ChemicalID::Sugar));
         float ls = node.as_leaf() ? node.as_leaf()->leaf_size : 0.0f;
         write_val(out, ls);
+        glm::vec3 fc = node.as_leaf() ? node.as_leaf()->facing : glm::vec3(0.0f, 1.0f, 0.0f);
+        write_val(out, fc);
     });
 }
 
@@ -68,6 +70,7 @@ TickSnapshot load_tick(std::istream& in) {
         ns.cytokinin = read_val<float>(in);
         ns.sugar = read_val<float>(in);
         ns.leaf_size = read_val<float>(in);
+        ns.facing = read_val<glm::vec3>(in);
     }
 
     return snap;

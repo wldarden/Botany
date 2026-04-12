@@ -21,6 +21,7 @@ struct NodeSnapshot {
     float cytokinin;
     float sugar;
     float leaf_size;
+    glm::vec3 facing;
 };
 
 struct TickSnapshot {

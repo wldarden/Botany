@@ -21,12 +21,19 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
     seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
 
+    // Bootstrap cytokinin: the embryo contains hormones throughout,
+    // enough to start growth until leaves produce their own.
+    float seed_cyt = genome.cytokinin_growth_threshold * 50.0f;
+    seed->chemical(ChemicalID::Cytokinin) = seed_cyt;
+
     // Shoot apical meristem node (child of seed)
     Node* shoot = create_node(NodeType::SHOOT_APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
+    shoot->chemical(ChemicalID::Cytokinin) = seed_cyt;
     seed->add_child(shoot);
 
     // Root apical meristem node (child of seed)
     Node* root = create_node(NodeType::ROOT_APICAL, glm::vec3(0.0f, -0.01f, 0.0f), genome.root_initial_radius);
+    root->chemical(ChemicalID::Cytokinin) = seed_cyt;
     seed->add_child(root);
 
     recompute_world_positions();

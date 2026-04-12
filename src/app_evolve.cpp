@@ -27,25 +27,22 @@ static void save_genome(const Genome& g, const std::string& path) {
     std::ofstream out(path);
     if (!out) return;
     out << "auxin_production_rate=" << g.auxin_production_rate << "\n";
-    out << "auxin_transport_rate=" << g.auxin_transport_rate << "\n";
-    out << "auxin_directional_bias=" << g.auxin_directional_bias << "\n";
+    out << "auxin_diffusion_rate=" << g.auxin_diffusion_rate << "\n";
     out << "auxin_decay_rate=" << g.auxin_decay_rate << "\n";
     out << "auxin_threshold=" << g.auxin_threshold << "\n";
     out << "cytokinin_production_rate=" << g.cytokinin_production_rate << "\n";
-    out << "cytokinin_transport_rate=" << g.cytokinin_transport_rate << "\n";
-    out << "cytokinin_directional_bias=" << g.cytokinin_directional_bias << "\n";
+    out << "cytokinin_diffusion_rate=" << g.cytokinin_diffusion_rate << "\n";
     out << "cytokinin_decay_rate=" << g.cytokinin_decay_rate << "\n";
     out << "cytokinin_threshold=" << g.cytokinin_threshold << "\n";
     out << "growth_rate=" << g.growth_rate << "\n";
+    out << "shoot_plastochron=" << g.shoot_plastochron << "\n";
     out << "max_internode_length=" << g.max_internode_length << "\n";
-    out << "min_internode_length=" << g.min_internode_length << "\n";
     out << "branch_angle=" << g.branch_angle << "\n";
     out << "thickening_rate=" << g.thickening_rate << "\n";
     out << "internode_elongation_rate=" << g.internode_elongation_rate << "\n";
     out << "internode_maturation_ticks=" << g.internode_maturation_ticks << "\n";
     out << "root_growth_rate=" << g.root_growth_rate << "\n";
-    out << "root_max_internode_length=" << g.root_max_internode_length << "\n";
-    out << "root_min_internode_length=" << g.root_min_internode_length << "\n";
+    out << "root_plastochron=" << g.root_plastochron << "\n";
     out << "root_branch_angle=" << g.root_branch_angle << "\n";
     out << "root_internode_elongation_rate=" << g.root_internode_elongation_rate << "\n";
     out << "root_internode_maturation_ticks=" << g.root_internode_maturation_ticks << "\n";
@@ -60,7 +57,7 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "growth_noise=" << g.growth_noise << "\n";
     out << "leaf_phototropism_rate=" << g.leaf_phototropism_rate << "\n";
     out << "sugar_production_rate=" << g.sugar_production_rate << "\n";
-    out << "sugar_transport_conductance=" << g.sugar_transport_conductance << "\n";
+    out << "sugar_diffusion_rate=" << g.sugar_diffusion_rate << "\n";
     out << "sugar_maintenance_leaf=" << g.sugar_maintenance_leaf << "\n";
     out << "sugar_maintenance_stem=" << g.sugar_maintenance_stem << "\n";
     out << "sugar_maintenance_root=" << g.sugar_maintenance_root << "\n";
@@ -70,14 +67,11 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "sugar_storage_density_leaf=" << g.sugar_storage_density_leaf << "\n";
     out << "sugar_cap_minimum=" << g.sugar_cap_minimum << "\n";
     out << "sugar_cap_meristem=" << g.sugar_cap_meristem << "\n";
-    out << "sugar_activation_shoot=" << g.sugar_activation_shoot << "\n";
-    out << "sugar_activation_root=" << g.sugar_activation_root << "\n";
     out << "ga_production_rate=" << g.ga_production_rate << "\n";
     out << "ga_leaf_age_max=" << g.ga_leaf_age_max << "\n";
     out << "ga_elongation_sensitivity=" << g.ga_elongation_sensitivity << "\n";
     out << "ga_length_sensitivity=" << g.ga_length_sensitivity << "\n";
-    out << "ga_transport_rate=" << g.ga_transport_rate << "\n";
-    out << "ga_directional_bias=" << g.ga_directional_bias << "\n";
+    out << "ga_diffusion_rate=" << g.ga_diffusion_rate << "\n";
     out << "ga_decay_rate=" << g.ga_decay_rate << "\n";
     out << "ethylene_starvation_rate=" << g.ethylene_starvation_rate << "\n";
     out << "ethylene_shade_rate=" << g.ethylene_shade_rate << "\n";
@@ -114,9 +108,10 @@ int main() {
     evo_config.num_threads = std::max(1u, std::thread::hardware_concurrency());
     EvolutionRunner runner(evo_config);
 
-    // Display engine: re-simulates the best plant for rendering
+    // Display engine: re-simulates the best plant + competitors for rendering
     Engine display_engine;
-    PlantID display_plant = display_engine.create_plant(default_genome(), glm::vec3(0.0f));
+    std::vector<PlantID> display_plant_ids;
+    display_plant_ids.push_back(display_engine.create_plant(default_genome(), glm::vec3(0.0f)));
     bool display_needs_update = false;
 
     bool running = false;
@@ -127,6 +122,7 @@ int main() {
     int pop_size = static_cast<int>(evo_config.population_size);
     int max_ticks = static_cast<int>(evo_config.max_ticks);
     int num_threads = static_cast<int>(evo_config.num_threads);
+    int competitors = static_cast<int>(evo_config.competitors);
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -169,11 +165,30 @@ int main() {
             });
         }
 
-        // Re-simulate best plant for display
+        // Re-simulate best plant + its competitor group for display
         if (display_needs_update && runner.generation() > 0) {
             display_engine.reset();
-            Genome best_g = runner.best_as_botany_genome();
-            display_plant = display_engine.create_plant(best_g, glm::vec3(0.0f));
+            display_plant_ids.clear();
+
+            // Collect all genomes in the group: best first, then competitors
+            std::vector<Genome> group_genomes;
+            group_genomes.push_back(runner.best_as_botany_genome());
+            for (const auto& sg : runner.best_competitor_genomes()) {
+                group_genomes.push_back(from_structured(sg));
+            }
+
+            // Place them spaced along X, centered at origin
+            uint32_t n = static_cast<uint32_t>(group_genomes.size());
+            float spacing = runner.config().plant_spacing;
+            float total_width = (n > 1) ? spacing * static_cast<float>(n - 1) : 0.0f;
+            float start_x = -total_width * 0.5f;
+
+            for (uint32_t i = 0; i < n; i++) {
+                float x = start_x + spacing * static_cast<float>(i);
+                display_plant_ids.push_back(
+                    display_engine.create_plant(group_genomes[i], glm::vec3(x, 0.0f, 0.0f)));
+            }
+
             uint32_t replay_ticks = runner.best_stats().survival_ticks;
             for (uint32_t i = 0; i < replay_ticks; i++) {
                 display_engine.tick();
@@ -194,10 +209,11 @@ int main() {
             bool paused = !running;
             if (paused) {
                 ImGui::SliderInt("Population", &pop_size, 10, 500);
+                ImGui::SliderInt("Competitors", &competitors, 1, 20);
                 ImGui::SliderInt("Max Ticks", &max_ticks, 100, 20000);
                 ImGui::SliderInt("Threads", &num_threads, 1, 16);
             } else {
-                ImGui::Text("Population: %d  Max Ticks: %d  Threads: %d", pop_size, max_ticks, num_threads);
+                ImGui::Text("Population: %d  Competitors: %d  Max Ticks: %d", pop_size, competitors, max_ticks);
             }
 
             ImGui::SeparatorText("Fitness Weights");
@@ -217,6 +233,7 @@ int main() {
         if (!running) {
             if (ImGui::Button("Start")) {
                 runner.config_mut().population_size = static_cast<uint32_t>(pop_size);
+                runner.config_mut().competitors = static_cast<uint32_t>(competitors);
                 runner.config_mut().max_ticks = static_cast<uint32_t>(max_ticks);
                 runner.config_mut().num_threads = static_cast<uint32_t>(num_threads);
                 if (runner.generation() == 0) runner.reset();
@@ -237,7 +254,8 @@ int main() {
             runner.config_mut().num_threads = static_cast<uint32_t>(num_threads);
             runner.reset();
             display_engine.reset();
-            display_plant = display_engine.create_plant(default_genome(), glm::vec3(0.0f));
+            display_plant_ids.clear();
+            display_plant_ids.push_back(display_engine.create_plant(default_genome(), glm::vec3(0.0f)));
         }
 
         // --- Stats ---
@@ -245,7 +263,14 @@ int main() {
             ImGui::SeparatorText("Stats");
             ImGui::Text("Generation: %u", runner.generation());
             ImGui::Text("Best Fitness: %.3f", runner.best_fitness());
-            if (gen_in_progress) ImGui::Text("(evaluating...)");
+            if (gen_in_progress) {
+                uint32_t done = runner.evaluated_count();
+                uint32_t total = runner.config().population_size;
+                float frac = total > 0 ? static_cast<float>(done) / static_cast<float>(total) : 0.0f;
+                char overlay[32];
+                std::snprintf(overlay, sizeof(overlay), "%u / %u", done, total);
+                ImGui::ProgressBar(frac, ImVec2(-1, 0), overlay);
+            }
 
             const PlantStats& s = runner.best_stats();
             if (ImGui::BeginTable("stats", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
@@ -308,7 +333,15 @@ int main() {
         // Render
         renderer.begin_frame();
         renderer.draw_ground();
-        renderer.draw_plant(display_engine.get_plant(display_plant));
+        for (size_t i = 0; i < display_plant_ids.size(); i++) {
+            if (i == 0) {
+                renderer.set_color_tint(1.0f);  // best plant: full color
+            } else {
+                renderer.set_color_tint(0.4f);  // competitors: dimmed
+            }
+            renderer.draw_plant(display_engine.get_plant(display_plant_ids[i]));
+        }
+        renderer.set_color_tint(1.0f);  // reset for ImGui
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         renderer.end_frame();
     }

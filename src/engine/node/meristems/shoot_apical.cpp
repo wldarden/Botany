@@ -21,37 +21,35 @@ void ShootApicalNode::tick(Plant& plant, const WorldParams& world) {
 void ShootApicalNode::grow(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
-    // Roll direction once at the start of each internode
-    if (target_internode_length < 1e-6f) roll_direction(g);
+    grow_tip(g, world);
 
-    if (!grow_tip(g, world)) return;
-    if (parent) spawn_internode(plant, g);
+    // Time-based spawning (plastochron): create nodes at regular intervals,
+    // like real meristems. Internode length comes from elongation afterward.
+    // Don't spawn if starving — a meristem with no sugar shouldn't create nodes it can't feed.
+    if (parent && ticks_since_last_node >= g.shoot_plastochron && starvation_ticks == 0) {
+        spawn_internode(plant, g);
+    }
 }
 
 void ShootApicalNode::roll_direction(const Genome& g) {
     growth_dir = perturb(growth_direction(*this), g.growth_noise);
 }
 
-bool ShootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
+void ShootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
     float max_cost = g.growth_rate * world.sugar_cost_shoot_growth;
     float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
-    if (gf < 1e-6f) return false;
+    if (gf < 1e-6f) return;
 
-    if (target_internode_length < 1e-6f) {
-        target_internode_length = roll_internode_length(
-            g.min_internode_length, g.max_internode_length, gf);
-    }
+    // Roll a fresh direction each tick (small perturbation from parent direction)
+    if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
 
     float actual_rate = g.growth_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_shoot_growth;
     offset += growth_dir * actual_rate;
-    return true;
 }
 
 void ShootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
-    float dist = glm::length(offset);
-    if (dist <= target_internode_length) return;
 
     // Create new interior stem node and insert it between us and our parent
     Node* internode = plant.create_node(NodeType::STEM, offset, radius);
@@ -70,9 +68,8 @@ void ShootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
     spawn_leaf(plant, internode, g, lateral_offset);
 
     phyllotaxis_index++;
-    target_internode_length = 0.0f;
     ticks_since_last_node = 0;
-    // Next call to grow() will roll a fresh direction
+    growth_dir = glm::vec3(0.0f); // re-roll direction for next internode
 }
 
 void ShootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {

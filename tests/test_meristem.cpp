@@ -55,15 +55,15 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
 TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "[meristem]") {
     Genome g = default_genome();
     g.growth_rate = 0.5f;
-    g.max_internode_length = 0.6f;
+    g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
     uint32_t initial_count = plant.node_count();
 
-    // Tick until chain growth fires (distance exceeds max_internode_length)
+    // Tick until chain growth fires (plastochron-based: 1 tick)
     // Keep auxin high so axillary buds stay dormant
     for (int i = 0; i < 2; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -88,12 +88,12 @@ TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "
 TEST_CASE("Interior STEM nodes have at most 3 children", "[meristem]") {
     Genome g = default_genome();
     g.growth_rate = 0.2f;
-    g.max_internode_length = 0.3f;
+    g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
     // Run enough ticks to create several interior nodes
     for (int i = 0; i < 20; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -126,7 +126,7 @@ TEST_CASE("Root apical meristem extends node position downward", "[meristem]") {
 TEST_CASE("Root chain growth spawns root axillary on interior node", "[meristem]") {
     Genome g = default_genome();
     g.root_growth_rate = 0.5f;
-    g.root_max_internode_length = 0.3f;
+    g.root_plastochron = 1; // spawn root node every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
     for (int i = 0; i < 3; i++) {
@@ -144,17 +144,17 @@ TEST_CASE("Root chain growth spawns root axillary on interior node", "[meristem]
     REQUIRE(found_root_axillary);
 }
 
-TEST_CASE("Chain growth: apical meristem transfers to new node when internode too long", "[meristem]") {
+TEST_CASE("Chain growth: apical meristem transfers to new node after plastochron", "[meristem]") {
     Genome g = default_genome();
     g.growth_rate = 0.5f;
-    g.max_internode_length = 0.6f;
+    g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
-    // After 2 ticks the shoot moves 1.0 from its start, exceeding max_internode_length of 0.6
+    // After 1 tick the plastochron fires and spawns an internode
     // Keep auxin high so axillary buds stay dormant (don't spawn extra apicals)
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
     plant.tick(default_world_params());
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; });
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
     plant.tick(default_world_params());
 
     // Should still have exactly one active shoot apical meristem
@@ -174,15 +174,16 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
     Genome g = default_genome();
     g.auxin_threshold = 1.0f;
     g.auxin_production_rate = 0.0f; // disable auxin production so manual values stick
-    g.cytokinin_threshold = 0.0f;
-    g.sugar_activation_shoot = 0.01f; // low threshold so small internode caps don't block
+    g.cytokinin_threshold = 0.0f;   // low threshold so activation isn't blocked by cytokinin
     g.growth_rate = 0.5f;
-    g.max_internode_length = 0.4f;
+    g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
-    // Tick once — chain growth fires, creating an interior node with axillary
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
-    plant.tick(default_world_params());
+    // Tick twice — plastochron fires on the second tick, creating an interior node with axillary
+    for (int i = 0; i < 2; i++) {
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.tick(default_world_params());
+    }
 
     // Count shoot apicals before activation
     int apical_before = 0;
@@ -213,11 +214,14 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     Genome g = default_genome();
     g.auxin_threshold = 1.0f;
     g.growth_rate = 0.5f;
-    g.max_internode_length = 0.4f;
+    g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
-    plant.tick(default_world_params());
+    // Tick twice — plastochron fires on the second tick, creating axillary buds
+    for (int i = 0; i < 2; i++) {
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.tick(default_world_params());
+    }
 
     Node* axillary_node = nullptr;
     plant.for_each_node_mut([&](Node& n) {
@@ -293,13 +297,13 @@ TEST_CASE("Shoot apical meristem grows and deducts sugar", "[meristem][sugar]") 
 TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]") {
     Genome g = default_genome();
     g.growth_rate = 0.5f;
-    g.max_internode_length = 0.6f;
+    g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
     // Run until axillary buds exist
-    // Give all nodes plenty of sugar for growth
+    // Give all nodes plenty of sugar and cytokinin for growth
     for (int i = 0; i < 5; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -312,11 +316,14 @@ TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]")
     });
 
     if (axillary_node) {
-        axillary_node->chemical(ChemicalID::Sugar) = 0.0f;
-        // Set parent auxin low so hormone condition passes
-        if (axillary_node->parent) {
-            axillary_node->parent->chemical(ChemicalID::Auxin) = 0.0f;
-        }
+        // Zero sugar and cytokinin everywhere so:
+        // - axillary can't activate (no sugar)
+        // - meristems can't grow/spawn (no sugar + no cytokinin), preventing vector reallocation
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 0.0f;
+            n.chemical(ChemicalID::Cytokinin) = 0.0f;
+            n.chemical(ChemicalID::Auxin) = 0.0f;
+        });
         plant.tick(default_world_params());
         // Should still be axillary (not enough sugar to activate)
         REQUIRE(axillary_node->type == NodeType::SHOOT_AXILLARY);
@@ -494,19 +501,15 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     // (available = sugar * (1 - reserve_fraction))
     // Thickening cost is tiny (~0.00002g). Need very low sugar so
     // reserve fraction actually limits growth.
+    // Zero ALL sugar in plant1, then give seed barely any — prevents diffusion from children
+    plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
     seed1->chemical(ChemicalID::Sugar) = 0.00005f; // barely any
-    seed2->chemical(ChemicalID::Sugar) = 1.0f;     // plenty
+
+    // Plant2 gets plenty everywhere so diffusion doesn't drain the seed
+    plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 1.0f; });
 
     float r1_before = seed1->radius;
     float r2_before = seed2->radius;
-
-    // Give meristem tips sugar so they don't interfere
-    plant1.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) { n.chemical(ChemicalID::Sugar) = 100.0f; }
-    });
-    plant2.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) { n.chemical(ChemicalID::Sugar) = 100.0f; }
-    });
 
     plant1.tick(default_world_params());
     plant2.tick(default_world_params());

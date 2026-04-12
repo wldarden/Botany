@@ -1,5 +1,6 @@
 #include "engine/node/meristems/root_axillary.h"
 #include "engine/plant.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 
 namespace botany {
@@ -18,11 +19,10 @@ void RootAxillaryNode::tick(Plant& plant, const WorldParams& world) {
 }
 
 bool RootAxillaryNode::can_activate(const Genome& g, const WorldParams& world) const {
-    float stem_cytokinin = parent ? parent->chemical(ChemicalID::Cytokinin) : chemical(ChemicalID::Cytokinin);
-    if (stem_cytokinin >= g.cytokinin_threshold) return false;
+    // Cytokinin from producing leaves signals "the plant can support new roots"
+    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin) : chemical(ChemicalID::Cytokinin);
+    if (local_cyt < g.cytokinin_threshold) return false;
 
-    float parent_sugar_val = parent ? parent->chemical(ChemicalID::Sugar) : chemical(ChemicalID::Sugar);
-    if (parent_sugar_val < g.sugar_activation_root) return false;
     if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 
     return true;

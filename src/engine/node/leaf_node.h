@@ -10,6 +10,7 @@ public:
     float leaf_size = 0.0f;
     float light_exposure = 1.0f;
     uint32_t senescence_ticks = 0;
+    glm::vec3 facing = glm::vec3(0.0f, 1.0f, 0.0f);  // blade orientation (independent of attachment point)
 
     // --- Node overrides ---
     LeafNode(uint32_t id, glm::vec3 position, float radius);

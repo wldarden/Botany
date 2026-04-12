@@ -43,12 +43,14 @@ void StemNode::elongate(const Genome& g, const WorldParams& world) {
     float current_len = glm::length(offset);
     if (current_len >= max_len) return;
 
+    // Elongation is sugar-gated only (not cytokinin). If internodes can't
+    // elongate, leaves stay stacked and shaded, so they never produce the
+    // cytokinin needed to unlock elongation — a death spiral.
     float max_cost = effective_rate * world.sugar_cost_elongation;
-    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
-                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
-    if (gf <= 1e-6f) return;
+    float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+    if (sugar_gf <= 1e-6f) return;
 
-    float actual_rate = effective_rate * gf;
+    float actual_rate = effective_rate * sugar_gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_elongation;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;

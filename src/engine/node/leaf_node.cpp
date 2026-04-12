@@ -54,10 +54,15 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
     }
 
     float leaf_area = leaf_size * leaf_size;
-    chemical(ChemicalID::Sugar) += light_exposure * angle_efficiency
+    float sugar_produced = light_exposure * angle_efficiency
            * world.light_level * leaf_area
            * g.sugar_production_rate;
+    chemical(ChemicalID::Sugar) += sugar_produced;
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
+
+    // Cytokinin production: proportional to actual photosynthetic output.
+    // This is the "I have producing leaves" signal that gates all growth.
+    chemical(ChemicalID::Cytokinin) += sugar_produced * g.cytokinin_production_rate;
 }
 
 void LeafNode::phototropism(const Genome& g, const WorldParams& world) {

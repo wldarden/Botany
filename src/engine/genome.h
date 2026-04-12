@@ -11,30 +11,28 @@ namespace botany {
 struct Genome {
     // Hormone production & sensitivity (dimensionless signaling units)
     float auxin_production_rate;
-    float auxin_transport_rate;
-    float auxin_directional_bias;     // -1=basipetal only, 0=gradient, +1=acropetal only
+    float auxin_diffusion_rate;       // fraction diffused per tick
     float auxin_decay_rate;
     float auxin_threshold;
 
-    float cytokinin_production_rate;
-    float cytokinin_transport_rate;
-    float cytokinin_directional_bias; // -1=basipetal only, 0=gradient, +1=acropetal only
+    float cytokinin_production_rate;    // cytokinin per g sugar produced by leaves (leaf productivity signal)
+    float cytokinin_diffusion_rate;    // fraction diffused per tick
     float cytokinin_decay_rate;
     float cytokinin_threshold;
+    float cytokinin_growth_threshold;  // cytokinin level for full-speed growth (gates all growth processes)
 
     // Shoot growth
     float growth_rate;                // dm/hr — shoot tip extension speed
-    float max_internode_length;       // dm — max internode length (well-fed, lucky)
-    float min_internode_length;       // dm — min internode length (starved/unlucky)
+    uint32_t shoot_plastochron;       // ticks between node creation (time-based, like real meristems)
     float branch_angle;               // radians
     float thickening_rate;            // dm/hr — radial growth of interior nodes
     float internode_elongation_rate;  // dm/hr — intercalary stretch of young internodes
+    float max_internode_length;       // dm — max internode length (elongation target)
     uint32_t internode_maturation_ticks; // hours until internode stops elongating
 
     // Root growth
     float root_growth_rate;           // dm/hr — root tip extension speed
-    float root_max_internode_length;  // dm — max root internode length
-    float root_min_internode_length;  // dm — min root internode length
+    uint32_t root_plastochron;        // ticks between root node creation
     float root_branch_angle;          // radians
     float root_internode_elongation_rate;  // dm/hr
     uint32_t root_internode_maturation_ticks; // hours
@@ -51,8 +49,8 @@ struct Genome {
     float growth_noise;               // radians — max angular perturbation per segment
 
     // Sugar / photosynthesis (g glucose)
-    float sugar_production_rate;      // g glucose / (dm leaf_size · hr) at full sun
-    float sugar_transport_conductance;// conductance scaling for diffusion between nodes
+    float sugar_production_rate;      // g glucose / (dm² leaf area · hr) at full sun
+    float sugar_diffusion_rate;       // fraction diffused per tick
     float sugar_maintenance_leaf;     // g glucose / (dm² leaf area · hr)
     float sugar_maintenance_stem;     // g glucose / (dm³ volume · hr)
     float sugar_maintenance_root;     // g glucose / (dm³ volume · hr)
@@ -67,24 +65,15 @@ struct Genome {
     float sugar_cap_minimum;          // g glucose — floor for tiny/new stem/root/leaf nodes
     float sugar_cap_meristem;         // g glucose — cap for meristem nodes (must hold growth sugar)
 
-    // Sugar save thresholds — minimum reserve before growth occurs (g glucose)
-    float sugar_save_shoot;           // reserve for shoot apical meristems
-    float sugar_save_root;            // reserve for root apical meristems
-    float sugar_save_stem;            // reserve for stem thickening
-
     float leaf_phototropism_rate;     // radians/hr — how fast leaves turn toward light
 
     // Activation thresholds — parent node sugar needed for bud break (g glucose)
-    float sugar_activation_shoot;     // parent sugar needed for shoot axillary activation
-    float sugar_activation_root;      // parent sugar needed for root axillary activation
-
     // Gibberellin — promotes internode elongation, produced by young leaves
     float ga_production_rate;         // GA produced per dm of leaf_size per tick
     uint32_t ga_leaf_age_max;         // ticks — only leaves younger than this produce GA
     float ga_elongation_sensitivity;  // how strongly GA boosts elongation rate
     float ga_length_sensitivity;      // how strongly GA boosts target internode length
-    float ga_transport_rate;          // fraction transported per tick (biased transport)
-    float ga_directional_bias;        // -1=basipetal, 0=gradient, +1=acropetal
+    float ga_diffusion_rate;          // fraction diffused per tick
     float ga_decay_rate;              // exponential decay per tick
 
     // Ethylene — stress/crowding gas signal, triggers leaf abscission
@@ -103,29 +92,27 @@ struct Genome {
 
 inline Genome default_genome() {
     return Genome{
-        .auxin_production_rate = 1.0f,
-        .auxin_transport_rate = 0.3f,
-        .auxin_directional_bias = -0.9f,
-        .auxin_decay_rate = 0.05f,
+        .auxin_production_rate = 0.15f,
+        .auxin_diffusion_rate = 0.3f,
+        .auxin_decay_rate = 0.15f,
         .auxin_threshold = 0.15f,
 
-        .cytokinin_production_rate = 1.0f,
-        .cytokinin_transport_rate = 0.3f,
-        .cytokinin_directional_bias = 0.9f,
+        .cytokinin_production_rate = 5.0f,   // cytokinin per g sugar produced by leaves
+        .cytokinin_diffusion_rate = 0.3f,
         .cytokinin_decay_rate = 0.05f,
         .cytokinin_threshold = 0.15f,
+        .cytokinin_growth_threshold = 0.1f,
 
         .growth_rate = 0.008f,              // ~2 cm/day = 0.8 mm/hr
-        .max_internode_length = 1.0f,       // 10 cm
-        .min_internode_length = 0.3f,       // 3 cm — starved/unlucky minimum
+        .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
         .branch_angle = 0.785f,             // ~45 degrees
         .thickening_rate = 0.00004f,        // ~3.5 mm radius/year
-        .internode_elongation_rate = 0.004f, // dm/hr — half of tip growth rate
+        .internode_elongation_rate = 0.004f, // dm/hr — intercalary stretch after creation
+        .max_internode_length = 1.0f,       // 10 cm — elongation target
         .internode_maturation_ticks = 72,    // 3 days until lockout
 
         .root_growth_rate = 0.004f,         // ~1 cm/day = 0.4 mm/hr
-        .root_max_internode_length = 0.8f,  // 8 cm
-        .root_min_internode_length = 0.2f,  // 2 cm
+        .root_plastochron = 24,             // 1 day between root node creation
         .root_branch_angle = 0.35f,         // ~20 degrees
         .root_internode_elongation_rate = 0.002f, // dm/hr
         .root_internode_maturation_ticks = 48,    // 2 days
@@ -140,37 +127,29 @@ inline Genome default_genome() {
         .tip_offset = 0.01f,
         .growth_noise = 0.26f,              // ~15 degrees
 
-        .sugar_production_rate = 0.012f,    // g glucose / (dm leaf · hr) — ~7 g/m²/day
-        .sugar_transport_conductance = 1.0f,  // ~5% gradient transfer per iter at 5mm radius
-        .sugar_maintenance_leaf = 0.013f,   // g / (dm² · hr) — leaves dominate maintenance budget
+        .sugar_production_rate = 0.004f,     // g glucose / (dm² leaf area · hr) — ~10 g/m²/day
+        .sugar_diffusion_rate = 0.3f,
+        .sugar_maintenance_leaf = 0.001f,    // g / (dm² · hr) — ~25% of gross production (realistic leaf respiration)
         .sugar_maintenance_stem = 0.028f,   // g / (dm³ · hr) — wood is cheap per volume
-        .sugar_maintenance_root = 0.135f,   // g / (dm³ · hr) — fine roots expensive (high turnover)
-        .sugar_maintenance_meristem = 0.001f, // high per mass, small organ
+        .sugar_maintenance_root = 0.005f,   // g / (dm³ · hr) — fine roots expensive (high turnover)
+        .sugar_maintenance_meristem = 0.0001f, // tiny organ — costs ~1/3 of one mature leaf
 
-        .seed_sugar = 28.0f,                 // ~15 days heterotrophic growth
+        .seed_sugar = 48.0f,                 // ~15 days heterotrophic growth
 
-        .sugar_storage_density_wood = 50.0f,  // g glucose max / dm³ — ~5% of dry mass as starch
-        .sugar_storage_density_leaf = 0.5f,   // g glucose max / dm² — thin tissue, less storage
-        .sugar_cap_minimum = 0.05f,           // floor for tiny/new nodes
+        .sugar_storage_density_wood = 500.0f, // g glucose max / dm³ — high cap so stems can pass sugar through
+        .sugar_storage_density_leaf = 2.0f,   // g glucose max / dm² — enough buffer for export
+        .sugar_cap_minimum = 0.1f,            // floor for tiny/new nodes
         .sugar_cap_meristem = 2.0f,           // meristem tips — must hold enough sugar for active growth
 
-        .sugar_save_shoot = 0.01f,          // buffer before growth
-        .sugar_save_root = 0.005f,
-        .sugar_save_stem = 0.02f,
-
         .leaf_phototropism_rate = 0.02f,    // ~1.1 deg/hr — full correction in ~3 days
-
-        .sugar_activation_shoot = 0.5f,     // well-fed branch needed for shoot bud break
-        .sugar_activation_root = 0.3f,      // roots branch with less sugar
 
         // Gibberellin
         .ga_production_rate = 0.5f,
         .ga_leaf_age_max = 168,               // 7 days
         .ga_elongation_sensitivity = 2.0f,
         .ga_length_sensitivity = 1.5f,
-        .ga_transport_rate = 0.2f,            // moderate transport
-        .ga_directional_bias = -0.7f,         // mostly basipetal (leaf -> parent -> trunk)
-        .ga_decay_rate = 0.15f,               // decays faster than auxin — short-range signal
+        .ga_diffusion_rate = 0.2f,
+        .ga_decay_rate = 0.15f,
 
         // Ethylene
         .ethylene_starvation_rate = 0.3f,

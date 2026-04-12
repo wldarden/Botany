@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -18,6 +19,8 @@ struct EvolutionConfig {
     uint32_t tournament_size = 5;
     float light_level_min = 0.5f;
     float light_level_max = 1.0f;
+    uint32_t competitors = 1;      // plants per sim (1 = solo, >1 = shared sim with competition)
+    float plant_spacing = 2.0f;    // dm between plants when competitors > 1
     float light_tilt_max = 0.52f;  // ~30 degrees max tilt
     float mutation_strength_pct = 0.03f;  // mutation stddev as fraction of gene's valid range (3%)
     FitnessWeights weights;
@@ -27,6 +30,7 @@ struct Individual {
     evolve::StructuredGenome genome;
     PlantStats stats;
     float fitness = 0.0f;
+    uint32_t group_id = 0;
 };
 
 class EvolutionRunner {
@@ -47,6 +51,12 @@ public:
 
     Genome best_as_botany_genome() const;
 
+    // Genomes of competitors that were in the same sim group as the best plant.
+    const std::vector<evolve::StructuredGenome>& best_competitor_genomes() const { return best_competitor_genomes_; }
+
+    // Progress: how many individuals evaluated so far this generation (thread-safe read)
+    uint32_t evaluated_count() const { return evaluated_count_.load(std::memory_order_relaxed); }
+
 private:
     void init_population();
     void evaluate_all();
@@ -64,9 +74,11 @@ private:
 
     float best_fitness_ = 0.0f;
     bool fitness_improved_ = false;
+    std::atomic<uint32_t> evaluated_count_{0};
     PlantStats best_stats_;
     evolve::StructuredGenome best_genome_;
     std::vector<float> fitness_history_;
+    std::vector<evolve::StructuredGenome> best_competitor_genomes_;
 };
 
 } // namespace botany

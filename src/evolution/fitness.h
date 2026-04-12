@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 #include "engine/genome.h"
 #include "engine/world_params.h"
 
@@ -29,6 +30,13 @@ struct FitnessWeights {
 };
 
 PlantStats evaluate_plant(const Genome& genome, const WorldParams& world, uint32_t max_ticks);
+
+// Evaluate multiple plants competing in the same sim. Plants are spaced
+// along the X axis. Returns one PlantStats per genome, same order as input.
+std::vector<PlantStats> evaluate_group(const std::vector<Genome>& genomes,
+                                       const WorldParams& world, uint32_t max_ticks,
+                                       float spacing = 2.0f);
+
 float compute_fitness(const PlantStats& stats, const PlantStats& gen_max, const FitnessWeights& weights);
 
 } // namespace botany

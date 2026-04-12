@@ -11,16 +11,16 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
 
     SECTION("hormone rates are positive") {
         REQUIRE(g.auxin_production_rate > 0.0f);
-        REQUIRE(g.auxin_transport_rate > 0.0f);
+        REQUIRE(g.auxin_diffusion_rate > 0.0f);
         REQUIRE(g.auxin_decay_rate > 0.0f);
         REQUIRE(g.cytokinin_production_rate > 0.0f);
-        REQUIRE(g.cytokinin_transport_rate > 0.0f);
+        REQUIRE(g.cytokinin_diffusion_rate > 0.0f);
         REQUIRE(g.cytokinin_decay_rate > 0.0f);
     }
 
     SECTION("transport rates are fractions (0, 1]") {
-        REQUIRE(g.auxin_transport_rate <= 1.0f);
-        REQUIRE(g.cytokinin_transport_rate <= 1.0f);
+        REQUIRE(g.auxin_diffusion_rate <= 1.0f);
+        REQUIRE(g.cytokinin_diffusion_rate <= 1.0f);
     }
 
     SECTION("decay rates are fractions (0, 1)") {
@@ -35,12 +35,11 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
 
     SECTION("internode lengths are positive") {
         REQUIRE(g.max_internode_length > 0.0f);
-        REQUIRE(g.root_max_internode_length > 0.0f);
     }
 
     SECTION("sugar parameters are positive") {
         REQUIRE(g.sugar_production_rate > 0.0f);
-        REQUIRE(g.sugar_transport_conductance > 0.0f);
+        REQUIRE(g.sugar_diffusion_rate > 0.0f);
         REQUIRE(g.sugar_maintenance_leaf > 0.0f);
         REQUIRE(g.sugar_maintenance_stem > 0.0f);
         REQUIRE(g.sugar_maintenance_root > 0.0f);

@@ -48,20 +48,10 @@ static bool has_active_meristems(const Plant& plant) {
     return found;
 }
 
-PlantStats evaluate_plant(const Genome& genome, const WorldParams& world, uint32_t max_ticks) {
-    Engine engine;
-    engine.world_params_mut() = world;
-    PlantID pid = engine.create_plant(genome, glm::vec3(0.0f));
-
-    uint32_t ticks = 0;
-    for (; ticks < max_ticks; ticks++) {
-        engine.tick();
-        if (!has_active_meristems(engine.get_plant(pid))) break;
-    }
-
-    const Plant& plant = engine.get_plant(pid);
+// Collect stats from a single plant after simulation.
+static PlantStats collect_stats(const Plant& plant, uint32_t survival_ticks) {
     PlantStats stats;
-    stats.survival_ticks = ticks;
+    stats.survival_ticks = survival_ticks;
     stats.node_count = plant.node_count();
     stats.total_sugar_produced = plant.total_sugar_produced();
 
@@ -71,6 +61,9 @@ PlantStats evaluate_plant(const Genome& genome, const WorldParams& world, uint32
     std::vector<float> leaf_ys;
 
     plant.for_each_node([&](const Node& n) {
+        if (!std::isfinite(n.position.x) || !std::isfinite(n.position.y) || !std::isfinite(n.position.z))
+            return;  // skip nodes with NaN/Inf positions (degenerate genomes)
+
         min_y = std::min(min_y, n.position.y);
         max_y = std::max(max_y, n.position.y);
         min_x = std::min(min_x, n.position.x);
@@ -82,17 +75,20 @@ PlantStats evaluate_plant(const Genome& genome, const WorldParams& world, uint32
             auto* leaf = n.as_leaf();
             if (leaf && leaf->senescence_ticks == 0) {
                 stats.leaf_count++;
-                leaf_ys.push_back(n.position.y);
+                if (std::isfinite(n.position.y)) {
+                    leaf_ys.push_back(n.position.y);
+                }
             }
         }
     });
 
-    stats.height = std::max(0.0f, max_y);
+    stats.height = (std::isfinite(max_y) && max_y > 0.0f) ? max_y : 0.0f;
 
     float width_x = max_x - min_x;
     float width_z = max_z - min_z;
     float canopy_width = std::max(width_x, width_z);
-    stats.crown_ratio = stats.height > 0.01f ? canopy_width / stats.height : 0.0f;
+    float cr = stats.height > 0.01f ? canopy_width / stats.height : 0.0f;
+    stats.crown_ratio = std::isfinite(cr) ? cr : 0.0f;
 
     stats.branch_depth = compute_branch_depth(plant);
 
@@ -107,10 +103,67 @@ PlantStats evaluate_plant(const Genome& genome, const WorldParams& world, uint32
             variance += d * d;
         }
         variance /= static_cast<float>(leaf_ys.size());
-        stats.leaf_height_spread = std::sqrt(variance);
+        float spread = std::sqrt(variance);
+        stats.leaf_height_spread = std::isfinite(spread) ? spread : 0.0f;
     }
 
     return stats;
+}
+
+PlantStats evaluate_plant(const Genome& genome, const WorldParams& world, uint32_t max_ticks) {
+    Engine engine;
+    engine.world_params_mut() = world;
+    PlantID pid = engine.create_plant(genome, glm::vec3(0.0f));
+
+    uint32_t ticks = 0;
+    for (; ticks < max_ticks; ticks++) {
+        engine.tick();
+        if (!has_active_meristems(engine.get_plant(pid))) break;
+    }
+
+    return collect_stats(engine.get_plant(pid), ticks);
+}
+
+std::vector<PlantStats> evaluate_group(const std::vector<Genome>& genomes,
+                                       const WorldParams& world, uint32_t max_ticks,
+                                       float spacing) {
+    Engine engine;
+    engine.world_params_mut() = world;
+
+    // Place plants spaced along X axis, centered around origin
+    uint32_t n = static_cast<uint32_t>(genomes.size());
+    float total_width = (n > 1) ? spacing * static_cast<float>(n - 1) : 0.0f;
+    float start_x = -total_width * 0.5f;
+
+    std::vector<PlantID> pids;
+    pids.reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        float x = start_x + spacing * static_cast<float>(i);
+        pids.push_back(engine.create_plant(genomes[i], glm::vec3(x, 0.0f, 0.0f)));
+    }
+
+    // Run sim — stop when ALL plants have lost their meristems
+    uint32_t ticks = 0;
+    for (; ticks < max_ticks; ticks++) {
+        engine.tick();
+
+        bool any_active = false;
+        for (uint32_t i = 0; i < n; i++) {
+            if (has_active_meristems(engine.get_plant(pids[i]))) {
+                any_active = true;
+                break;
+            }
+        }
+        if (!any_active) break;
+    }
+
+    // Collect stats per plant
+    std::vector<PlantStats> results;
+    results.reserve(n);
+    for (uint32_t i = 0; i < n; i++) {
+        results.push_back(collect_stats(engine.get_plant(pids[i]), ticks));
+    }
+    return results;
 }
 
 float compute_fitness(const PlantStats& stats, const PlantStats& gen_max, const FitnessWeights& w) {

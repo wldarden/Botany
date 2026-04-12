@@ -21,11 +21,12 @@ void RootApicalNode::tick(Plant& plant, const WorldParams& world) {
 void RootApicalNode::grow(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
-    // Roll direction once at the start of each internode
-    if (target_internode_length < 1e-6f) roll_direction(g);
+    grow_tip(g, world);
 
-    if (!grow_tip(g, world)) return;
-    if (parent) spawn_internode(plant, g);
+    // Time-based spawning (plastochron). Don't spawn if starving.
+    if (parent && ticks_since_last_node >= g.root_plastochron && starvation_ticks == 0) {
+        spawn_internode(plant, g);
+    }
 }
 
 void RootApicalNode::roll_direction(const Genome& g) {
@@ -44,26 +45,20 @@ glm::vec3 RootApicalNode::apply_gravitropism(const glm::vec3& dir, const Genome&
     return glm::normalize(dir + down * strength);
 }
 
-bool RootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
+void RootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
     float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
-    if (gf < 1e-6f) return false;
+    if (gf < 1e-6f) return;
 
-    if (target_internode_length < 1e-6f) {
-        target_internode_length = roll_internode_length(
-            g.root_min_internode_length, g.root_max_internode_length, gf);
-    }
+    if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
 
     float actual_rate = g.root_growth_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
     offset += growth_dir * actual_rate;
-    return true;
 }
 
 void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
-    float dist = glm::length(offset);
-    if (dist <= target_internode_length) return;
 
     // Create new interior root node and insert it between us and our parent
     Node* internode = plant.create_node(NodeType::ROOT, offset, radius);
@@ -81,9 +76,8 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
         spawn_axillary(plant, internode, g, lateral_offset);
     }
 
-    target_internode_length = 0.0f;
     ticks_since_last_node = 0;
-    // Next call to grow() will roll a fresh direction
+    growth_dir = glm::vec3(0.0f); // re-roll direction for next internode
 }
 
 void RootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {

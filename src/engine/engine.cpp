@@ -12,10 +12,15 @@ PlantID Engine::create_plant(const Genome& genome, glm::vec3 position) {
 
 void Engine::tick() {
     // World-level light computation (shared shadow map across all plants)
-    compute_light_exposure(plants_, world_params_);
+    compute_light_exposure(plants_, world_params_, &shadow_map_);
 
     for (auto& plant : plants_) {
         plant->tick(world_params_);
+    }
+    if (debug_log_.is_open()) {
+        for (const auto& plant : plants_) {
+            debug_log_.log_tick(tick_, *plant, world_params_);
+        }
     }
     tick_++;
 }

@@ -6,10 +6,7 @@
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
 #include "engine/node/leaf_node.h"
-#include "engine/node/meristems/shoot_apical.h"
-#include "engine/node/meristems/shoot_axillary.h"
-#include "engine/node/meristems/root_apical.h"
-#include "engine/node/meristems/root_axillary.h"
+#include "engine/node/meristems/meristem_types.h"
 
 namespace botany {
 
@@ -69,8 +66,14 @@ void Node::tick(Plant& plant, const WorldParams& world) {
         return;
     }
 
-    transport_chemicals(g);
+    // Grow before transport: leaves use sugar for expansion first, then
+    // export the surplus. Otherwise transport drains leaves dry and they
+    // never mature — the "tragedy of the commons" problem.
     grow(plant, world);
+    transport_chemicals(g);
+
+    // Re-clamp sugar after transport — diffusion can overfill small nodes
+    chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
 }
 
 void Node::grow(Plant& /*plant*/, const WorldParams& /*world*/) {}
@@ -105,59 +108,33 @@ float Node::maintenance_cost(const Genome& /*g*/) const {
     return 0.0f;
 }
 
-// Generic biased transport: blend of gradient diffusion and directional push.
-// bias < 0: basipetal (push to parent). bias > 0: acropetal (pull from parent). 0: pure gradient.
-static void transport_chemical(float& my_val, float& parent_val,
-                               float rate, float bias, float decay) {
-    float abs_b = std::abs(bias);
-    float gw = 1.0f - abs_b;
-    float dw = abs_b;
-
-    float gradient_flow = (my_val - parent_val) * gw * rate;
-    float directional_flow = (bias < 0)
-        ?  my_val * dw * rate
-        : -parent_val * dw * rate;
-
-    float flow = gradient_flow + directional_flow;
-    if (flow > 0.0f) flow = std::min(flow, my_val);
-    else             flow = std::max(flow, -parent_val);
-
-    my_val -= flow;
-    parent_val += flow;
-    my_val *= (1.0f - decay);
-}
-
 void Node::transport_chemicals(const Genome& g) {
     if (parent) {
-        // Hormones: biased local transport via registry
-        for (const auto& hp : hormone_params(g)) {
-            transport_chemical(chemical(hp.id), parent->chemical(hp.id),
-                hp.transport_rate, hp.directional_bias, hp.decay_rate);
+        for (const auto& dp : diffusion_params(g)) {
+            if (dp.id == ChemicalID::Sugar) {
+                // Sugar transport: cap-aware to prevent annihilation.
+                // Limit flow by receiver's headroom so sugar isn't destroyed by cap clamp.
+                float my_cap = sugar_cap(*this, g);
+                float parent_cap = sugar_cap(*parent, g);
+                float flow = (chemical(dp.id) - parent->chemical(dp.id)) * dp.diffusion_rate;
+                if (flow > 0.0f) {
+                    float headroom = std::max(0.0f, parent_cap - parent->chemical(dp.id));
+                    flow = std::min({flow, chemical(dp.id), headroom});
+                } else {
+                    float headroom = std::max(0.0f, my_cap - chemical(dp.id));
+                    flow = std::max({flow, -parent->chemical(dp.id), -headroom});
+                }
+                chemical(dp.id) -= flow;
+                parent->chemical(dp.id) += flow;
+            } else {
+                diffuse(chemical(dp.id), parent->chemical(dp.id), dp.diffusion_rate);
+                chemical(dp.id) *= (1.0f - dp.decay_rate);
+            }
         }
-
-        // Sugar: cap-aware gradient diffusion (unchanged)
-        float my_cap = sugar_cap(*this, g);
-        float parent_cap = sugar_cap(*parent, g);
-        float diff = chemical(ChemicalID::Sugar) - parent->chemical(ChemicalID::Sugar);
-        float min_r = std::min(radius, parent->radius);
-        if (type == NodeType::LEAF || is_meristem()
-            || parent->type == NodeType::LEAF || parent->is_meristem())
-            min_r = std::max(min_r, 0.01f);
-        float conductance = std::min(min_r * min_r * 3.14159f * g.sugar_transport_conductance, 0.25f);
-        float flow = diff * conductance;
-        if (flow > 0.0f) {
-            float headroom = std::max(0.0f, parent_cap - parent->chemical(ChemicalID::Sugar));
-            flow = std::min({flow, chemical(ChemicalID::Sugar), headroom});
-        } else {
-            float headroom = std::max(0.0f, my_cap - chemical(ChemicalID::Sugar));
-            flow = std::max({flow, -parent->chemical(ChemicalID::Sugar), -headroom});
-        }
-        chemical(ChemicalID::Sugar) -= flow;
-        parent->chemical(ChemicalID::Sugar) += flow;
     } else {
-        // Seed: just decay hormones
-        for (const auto& hp : hormone_params(g)) {
-            chemical(hp.id) *= (1.0f - hp.decay_rate);
+        // Seed: just decay
+        for (const auto& dp : diffusion_params(g)) {
+            chemical(dp.id) *= (1.0f - dp.decay_rate);
         }
     }
 }

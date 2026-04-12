@@ -1,5 +1,6 @@
 #include "engine/node/meristems/shoot_axillary.h"
 #include "engine/plant.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 
 namespace botany {
@@ -18,11 +19,15 @@ void ShootAxillaryNode::tick(Plant& plant, const WorldParams& world) {
 }
 
 bool ShootAxillaryNode::can_activate(const Genome& g, const WorldParams& world) const {
+    // Low auxin removes inhibition (apical dominance weakened)
     float stem_auxin = parent ? parent->chemical(ChemicalID::Auxin) : chemical(ChemicalID::Auxin);
     if (stem_auxin >= g.auxin_threshold) return false;
 
-    float parent_sugar_val = parent ? parent->chemical(ChemicalID::Sugar) : chemical(ChemicalID::Sugar);
-    if (parent_sugar_val < g.sugar_activation_shoot) return false;
+    // Cytokinin from producing leaves signals "the plant can support a new branch."
+    // Sugar can't gate this — it's everywhere during seed-funded growth.
+    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin) : chemical(ChemicalID::Cytokinin);
+    if (local_cyt < g.cytokinin_threshold) return false;
+
     if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 
     return true;

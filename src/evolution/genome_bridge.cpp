@@ -16,35 +16,32 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     const float r = 0.1f;   // 10% chance of mutation per gene per generation
     const float p = mutation_pct;
 
-    // --- Auxin group (5 genes) ---
+    // --- Auxin group (4 genes) ---
     reg(sg, "auxin_production_rate",   g.auxin_production_rate,   r, 0.01f, 2.0f, p);
-    reg(sg, "auxin_transport_rate",    g.auxin_transport_rate,    r, 0.01f, 2.0f, p);
-    reg(sg, "auxin_directional_bias",  g.auxin_directional_bias,  r, -1.0f, 1.0f, p);
+    reg(sg, "auxin_diffusion_rate",    g.auxin_diffusion_rate,    r, 0.01f, 1.0f, p);
     reg(sg, "auxin_decay_rate",        g.auxin_decay_rate,        r, 0.001f, 0.5f, p);
     reg(sg, "auxin_threshold",         g.auxin_threshold,         r, 0.01f, 1.0f, p);
 
     // --- Cytokinin group (5 genes) ---
     reg(sg, "cytokinin_production_rate",  g.cytokinin_production_rate,  r, 0.01f, 2.0f, p);
-    reg(sg, "cytokinin_transport_rate",   g.cytokinin_transport_rate,   r, 0.01f, 2.0f, p);
-    reg(sg, "cytokinin_directional_bias", g.cytokinin_directional_bias, r, -1.0f, 1.0f, p);
+    reg(sg, "cytokinin_diffusion_rate",   g.cytokinin_diffusion_rate,   r, 0.01f, 1.0f, p);
     reg(sg, "cytokinin_decay_rate",       g.cytokinin_decay_rate,       r, 0.001f, 0.5f, p);
     reg(sg, "cytokinin_threshold",        g.cytokinin_threshold,        r, 0.01f, 1.0f, p);
     reg(sg, "cytokinin_growth_threshold", g.cytokinin_growth_threshold, r, 0.01f, 1.0f, p);
 
-    // --- Shoot growth group (7 genes) ---
+    // --- Shoot growth group ---
     reg(sg, "growth_rate",                g.growth_rate,                r, 0.001f, 0.05f, p);
+    reg(sg, "shoot_plastochron",          static_cast<float>(g.shoot_plastochron), r, 6.0f, 168.0f, p);
     reg(sg, "max_internode_length",       g.max_internode_length,       r, 0.05f,  3.0f, p);
-    reg(sg, "min_internode_length",       g.min_internode_length,       r, 0.01f,  1.0f, p);
     reg(sg, "branch_angle",              g.branch_angle,              r, 0.05f,  1.57f, p);
     reg(sg, "thickening_rate",           g.thickening_rate,           r, 0.00001f, 0.001f, p);
     reg(sg, "internode_elongation_rate", g.internode_elongation_rate, r, 0.0005f, 0.02f, p);
     reg(sg, "internode_maturation_ticks", static_cast<float>(g.internode_maturation_ticks),
                                                                       r, 12.0f, 500.0f, p);
 
-    // --- Root growth group (8 genes) ---
+    // --- Root growth group ---
     reg(sg, "root_growth_rate",               g.root_growth_rate,               r, 0.001f, 0.05f, p);
-    reg(sg, "root_max_internode_length",      g.root_max_internode_length,      r, 0.05f,  3.0f, p);
-    reg(sg, "root_min_internode_length",      g.root_min_internode_length,      r, 0.01f,  1.0f, p);
+    reg(sg, "root_plastochron",               static_cast<float>(g.root_plastochron), r, 6.0f, 168.0f, p);
     reg(sg, "root_branch_angle",             g.root_branch_angle,             r, 0.05f,  1.57f, p);
     reg(sg, "root_internode_elongation_rate", g.root_internode_elongation_rate, r, 0.0005f, 0.02f, p);
     reg(sg, "root_internode_maturation_ticks", static_cast<float>(g.root_internode_maturation_ticks),
@@ -64,7 +61,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     // --- Sugar economy group (16 genes) ---
     reg(sg, "sugar_production_rate",       g.sugar_production_rate,       r, 0.001f,  0.1f, p);
-    reg(sg, "sugar_transport_conductance", g.sugar_transport_conductance, r, 1.0f,    100.0f, p);
+    reg(sg, "sugar_diffusion_rate",        g.sugar_diffusion_rate,        r, 0.01f,   1.0f, p);
     reg(sg, "sugar_maintenance_leaf",      g.sugar_maintenance_leaf,      r, 0.001f,  0.1f, p);
     reg(sg, "sugar_maintenance_stem",      g.sugar_maintenance_stem,      r, 0.001f,  0.2f, p);
     reg(sg, "sugar_maintenance_root",      g.sugar_maintenance_root,      r, 0.01f,   0.5f, p);
@@ -74,17 +71,13 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "sugar_storage_density_leaf",  g.sugar_storage_density_leaf,  r, 0.05f,   5.0f, p);
     reg(sg, "sugar_cap_minimum",           g.sugar_cap_minimum,           r, 0.005f,  0.5f, p);
     reg(sg, "sugar_cap_meristem",          g.sugar_cap_meristem,          r, 0.1f,    10.0f, p);
-    reg(sg, "sugar_activation_shoot",      g.sugar_activation_shoot,      r, 0.05f,   5.0f, p);
-    reg(sg, "sugar_activation_root",       g.sugar_activation_root,       r, 0.05f,   3.0f, p);
-
     // --- Gibberellin group (7 genes) ---
     reg(sg, "ga_production_rate",        g.ga_production_rate,        r, 0.01f,  2.0f, p);
     reg(sg, "ga_leaf_age_max",           static_cast<float>(g.ga_leaf_age_max),
                                                                       r, 24.0f,  2000.0f, p);
     reg(sg, "ga_elongation_sensitivity", g.ga_elongation_sensitivity, r, 0.1f,   5.0f, p);
     reg(sg, "ga_length_sensitivity",     g.ga_length_sensitivity,     r, 0.1f,   5.0f, p);
-    reg(sg, "ga_transport_rate",         g.ga_transport_rate,         r, 0.01f,  1.0f, p);
-    reg(sg, "ga_directional_bias",       g.ga_directional_bias,       r, -1.0f,  1.0f, p);
+    reg(sg, "ga_diffusion_rate",         g.ga_diffusion_rate,         r, 0.01f,  1.0f, p);
     reg(sg, "ga_decay_rate",             g.ga_decay_rate,             r, 0.01f,  0.5f, p);
 
     // --- Ethylene group (11 genes) ---
@@ -104,22 +97,22 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
-        "auxin_production_rate", "auxin_transport_rate", "auxin_directional_bias",
+        "auxin_production_rate", "auxin_diffusion_rate",
         "auxin_decay_rate", "auxin_threshold"
     }});
 
     sg.add_linkage_group({"cytokinin", {
-        "cytokinin_production_rate", "cytokinin_transport_rate", "cytokinin_directional_bias",
+        "cytokinin_production_rate", "cytokinin_diffusion_rate",
         "cytokinin_decay_rate", "cytokinin_threshold", "cytokinin_growth_threshold"
     }});
 
     sg.add_linkage_group({"shoot_growth", {
-        "growth_rate", "max_internode_length", "min_internode_length", "branch_angle",
+        "growth_rate", "shoot_plastochron", "max_internode_length", "branch_angle",
         "thickening_rate", "internode_elongation_rate", "internode_maturation_ticks"
     }});
 
     sg.add_linkage_group({"root_growth", {
-        "root_growth_rate", "root_max_internode_length", "root_min_internode_length",
+        "root_growth_rate", "root_plastochron",
         "root_branch_angle", "root_internode_elongation_rate", "root_internode_maturation_ticks",
         "root_gravitropism_strength", "root_gravitropism_depth"
     }});
@@ -130,17 +123,16 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     }});
 
     sg.add_linkage_group({"sugar_economy", {
-        "sugar_production_rate", "sugar_transport_conductance",
+        "sugar_production_rate", "sugar_diffusion_rate",
         "sugar_maintenance_leaf", "sugar_maintenance_stem",
         "sugar_maintenance_root", "sugar_maintenance_meristem",
         "seed_sugar", "sugar_storage_density_wood", "sugar_storage_density_leaf",
-        "sugar_cap_minimum", "sugar_cap_meristem",
-        "sugar_activation_shoot", "sugar_activation_root"
+        "sugar_cap_minimum", "sugar_cap_meristem"
     }});
 
     sg.add_linkage_group({"gibberellin", {
         "ga_production_rate", "ga_leaf_age_max", "ga_elongation_sensitivity",
-        "ga_length_sensitivity", "ga_transport_rate", "ga_directional_bias", "ga_decay_rate"
+        "ga_length_sensitivity", "ga_diffusion_rate", "ga_decay_rate"
     }});
 
     sg.add_linkage_group({"ethylene", {
@@ -163,23 +155,21 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
 
     // Auxin
     g.auxin_production_rate   = sg.get("auxin_production_rate");
-    g.auxin_transport_rate    = sg.get("auxin_transport_rate");
-    g.auxin_directional_bias  = sg.get("auxin_directional_bias");
+    g.auxin_diffusion_rate    = sg.get("auxin_diffusion_rate");
     g.auxin_decay_rate        = sg.get("auxin_decay_rate");
     g.auxin_threshold         = sg.get("auxin_threshold");
 
     // Cytokinin
     g.cytokinin_production_rate   = sg.get("cytokinin_production_rate");
-    g.cytokinin_transport_rate    = sg.get("cytokinin_transport_rate");
-    g.cytokinin_directional_bias  = sg.get("cytokinin_directional_bias");
+    g.cytokinin_diffusion_rate    = sg.get("cytokinin_diffusion_rate");
     g.cytokinin_decay_rate        = sg.get("cytokinin_decay_rate");
     g.cytokinin_threshold         = sg.get("cytokinin_threshold");
     g.cytokinin_growth_threshold  = sg.get("cytokinin_growth_threshold");
 
     // Shoot growth
     g.growth_rate                = sg.get("growth_rate");
+    g.shoot_plastochron          = static_cast<uint32_t>(sg.get("shoot_plastochron"));
     g.max_internode_length       = sg.get("max_internode_length");
-    g.min_internode_length       = sg.get("min_internode_length");
     g.branch_angle               = sg.get("branch_angle");
     g.thickening_rate            = sg.get("thickening_rate");
     g.internode_elongation_rate  = sg.get("internode_elongation_rate");
@@ -187,8 +177,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
 
     // Root growth
     g.root_growth_rate                  = sg.get("root_growth_rate");
-    g.root_max_internode_length         = sg.get("root_max_internode_length");
-    g.root_min_internode_length         = sg.get("root_min_internode_length");
+    g.root_plastochron                  = static_cast<uint32_t>(sg.get("root_plastochron"));
     g.root_branch_angle                 = sg.get("root_branch_angle");
     g.root_internode_elongation_rate    = sg.get("root_internode_elongation_rate");
     g.root_internode_maturation_ticks   = static_cast<uint32_t>(sg.get("root_internode_maturation_ticks"));
@@ -207,7 +196,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
 
     // Sugar economy
     g.sugar_production_rate       = sg.get("sugar_production_rate");
-    g.sugar_transport_conductance = sg.get("sugar_transport_conductance");
+    g.sugar_diffusion_rate        = sg.get("sugar_diffusion_rate");
     g.sugar_maintenance_leaf      = sg.get("sugar_maintenance_leaf");
     g.sugar_maintenance_stem      = sg.get("sugar_maintenance_stem");
     g.sugar_maintenance_root      = sg.get("sugar_maintenance_root");
@@ -217,16 +206,12 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.sugar_storage_density_leaf  = sg.get("sugar_storage_density_leaf");
     g.sugar_cap_minimum           = sg.get("sugar_cap_minimum");
     g.sugar_cap_meristem          = sg.get("sugar_cap_meristem");
-    g.sugar_activation_shoot      = sg.get("sugar_activation_shoot");
-    g.sugar_activation_root       = sg.get("sugar_activation_root");
-
     // Gibberellin
     g.ga_production_rate        = sg.get("ga_production_rate");
     g.ga_leaf_age_max           = static_cast<uint32_t>(sg.get("ga_leaf_age_max"));
     g.ga_elongation_sensitivity = sg.get("ga_elongation_sensitivity");
     g.ga_length_sensitivity     = sg.get("ga_length_sensitivity");
-    g.ga_transport_rate         = sg.get("ga_transport_rate");
-    g.ga_directional_bias       = sg.get("ga_directional_bias");
+    g.ga_diffusion_rate         = sg.get("ga_diffusion_rate");
     g.ga_decay_rate             = sg.get("ga_decay_rate");
 
     // Ethylene

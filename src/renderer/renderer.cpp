@@ -111,7 +111,7 @@ void Renderer::draw_plant(const Plant& plant) {
         if (!node.parent) return;
 
         if (auto* leaf = node.as_leaf()) {
-            glm::vec3 dir = glm::normalize(node.position - node.parent->position);
+            glm::vec3 outward = glm::normalize(node.position - node.parent->position);
             glm::vec3 leaf_color;
             if (chemical_accessor_) {
                 float v = chemical_accessor_(node);
@@ -137,7 +137,7 @@ void Renderer::draw_plant(const Plant& plant) {
                 glm::vec3 senesce_color = glm::mix(yellow, brown, progress);
                 leaf_color = glm::mix(leaf_color, senesce_color, progress);
             }
-            draw_leaf(node.position, dir, leaf->leaf_size, leaf_color);
+            draw_leaf(node.position, outward, leaf->facing, leaf->leaf_size, leaf_color * color_tint_);
             return;
         }
 
@@ -187,7 +187,7 @@ void Renderer::draw_plant(const Plant& plant) {
         }
 
         draw_cylinder(node.parent->position, node.position,
-                      node.parent->radius, node.radius, color);
+                      node.parent->radius, node.radius, color * color_tint_);
     });
 }
 
@@ -205,8 +205,8 @@ void Renderer::draw_snapshot(const TickSnapshot& snapshot) {
         const auto& parent = snapshot.nodes[it->second];
 
         if (ns.type == NodeType::LEAF) {
-            glm::vec3 dir = glm::normalize(ns.position - parent.position);
-            draw_leaf(ns.position, dir, ns.leaf_size);
+            glm::vec3 outward = glm::normalize(ns.position - parent.position);
+            draw_leaf(ns.position, outward, ns.facing, ns.leaf_size);
             continue;
         }
 
@@ -286,21 +286,28 @@ void Renderer::draw_cylinder(glm::vec3 start, glm::vec3 end,
     glDeleteBuffers(1, &vbo);
 }
 
-void Renderer::draw_leaf(glm::vec3 position, glm::vec3 direction, float size, glm::vec3 color) {
-    glm::vec3 perp;
-    if (std::abs(direction.y) < 0.9f) {
-        perp = glm::normalize(glm::cross(direction, glm::vec3(0.0f, 1.0f, 0.0f)));
+void Renderer::draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing, float size, glm::vec3 color) {
+    // Project outward onto the leaf blade plane (perpendicular to facing)
+    glm::vec3 proj = outward - facing * glm::dot(outward, facing);
+    float proj_len = glm::length(proj);
+    if (proj_len < 1e-4f) {
+        // facing is parallel to outward — pick any direction in the blade plane
+        if (std::abs(facing.y) < 0.9f) {
+            proj = glm::normalize(glm::cross(facing, glm::vec3(0.0f, 1.0f, 0.0f)));
+        } else {
+            proj = glm::normalize(glm::cross(facing, glm::vec3(1.0f, 0.0f, 0.0f)));
+        }
     } else {
-        perp = glm::normalize(glm::cross(direction, glm::vec3(1.0f, 0.0f, 0.0f)));
+        proj /= proj_len;
     }
-    glm::vec3 up = glm::normalize(glm::cross(perp, direction));
+    glm::vec3 width = glm::normalize(glm::cross(facing, proj));
 
-    // Leaf attached at position corner, extending outward along direction and perp
-    glm::vec3 p0 = position;
-    glm::vec3 p1 = position + perp * size;
-    glm::vec3 p2 = position + perp * size + up * size;
-    glm::vec3 p3 = position + up * size;
-    glm::vec3 normal = glm::normalize(glm::cross(p1 - p0, p3 - p0));
+    // Leaf extends outward from attachment point, centered on width
+    glm::vec3 p0 = position - width * size * 0.5f;
+    glm::vec3 p1 = position + proj * size - width * size * 0.5f;
+    glm::vec3 p2 = position + proj * size + width * size * 0.5f;
+    glm::vec3 p3 = position + width * size * 0.5f;
+    glm::vec3 normal = facing;
 
     float vertices[] = {
         p0.x, p0.y, p0.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,
@@ -326,6 +333,76 @@ void Renderer::draw_leaf(glm::vec3 position, glm::vec3 direction, float size, gl
     glEnableVertexAttribArray(2);
 
     glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glDeleteVertexArrays(1, &vao);
+    glDeleteBuffers(1, &vbo);
+}
+
+void Renderer::draw_highlight(const Node& node) {
+    if (!node.parent) return;
+
+    // Draw a bright thickened cylinder over the hovered segment
+    glm::vec3 highlight_color(1.0f, 1.0f, 0.0f); // bright yellow
+    float highlight_radius = std::max(node.radius * 2.0f, 0.02f);
+
+    if (auto* leaf = node.as_leaf()) {
+        if (leaf->leaf_size > 0.0f) {
+            glm::vec3 outward = glm::normalize(node.position - node.parent->position);
+            draw_leaf(node.position, outward, leaf->facing, leaf->leaf_size, highlight_color);
+            return;
+        }
+    }
+
+    draw_cylinder(node.parent->position, node.position,
+                  highlight_radius, highlight_radius,
+                  highlight_color, 12);
+}
+
+void Renderer::draw_shadow_map(const ShadowMapViz& shadow_map) {
+    if (shadow_map.cells.empty()) return;
+
+    float half = shadow_map.cell_size * 0.5f;
+    float y = 0.001f; // slightly above ground to avoid z-fighting
+    glm::vec3 normal(0.0f, 1.0f, 0.0f);
+
+    std::vector<float> vertices;
+    vertices.reserve(shadow_map.cells.size() * 6 * 9); // 6 verts per quad, 9 floats per vert
+
+    for (const auto& cell : shadow_map.cells) {
+        float shade = std::min(cell.coverage, 1.0f);
+        // Yellow = full sun, dark purple = fully shaded
+        glm::vec3 sun_color(1.0f, 0.95f, 0.4f);
+        glm::vec3 shade_color(0.15f, 0.05f, 0.2f);
+        glm::vec3 color = glm::mix(sun_color, shade_color, shade);
+
+        float x0 = cell.x - half, x1 = cell.x + half;
+        float z0 = cell.z - half, z1 = cell.z + half;
+
+        auto push = [&](float x, float z) {
+            vertices.push_back(x); vertices.push_back(y); vertices.push_back(z);
+            vertices.push_back(normal.x); vertices.push_back(normal.y); vertices.push_back(normal.z);
+            vertices.push_back(color.x); vertices.push_back(color.y); vertices.push_back(color.z);
+        };
+
+        push(x0, z0); push(x1, z0); push(x1, z1);
+        push(x0, z0); push(x1, z1); push(x0, z1);
+    }
+
+    uint32_t vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STREAM_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<int>(vertices.size() / 9));
 
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);

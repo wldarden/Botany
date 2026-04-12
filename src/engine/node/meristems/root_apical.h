@@ -13,7 +13,6 @@ public:
     void grow(Plant& plant, const WorldParams& world) override;
 
     // --- Meristem state ---
-    float target_internode_length = 0.0f;
     glm::vec3 growth_dir = glm::vec3(0.0f);
     uint32_t ticks_since_last_node = 0;
 
@@ -21,7 +20,7 @@ private:
     // --- Chain growth ---
     void roll_direction(const Genome& g);
     glm::vec3 apply_gravitropism(const glm::vec3& dir, const Genome& g) const;
-    bool grow_tip(const Genome& g, const WorldParams& world);
+    void grow_tip(const Genome& g, const WorldParams& world);
     void spawn_internode(Plant& plant, const Genome& g);
     void spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset);
 };

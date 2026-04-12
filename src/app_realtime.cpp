@@ -22,6 +22,7 @@ using namespace botany;
 
 static Renderer* g_renderer = nullptr;
 static const Node* g_selected_node = nullptr;
+static const Node* g_hovered_node = nullptr;
 static bool g_show_node_panel = false;
 
 // Find the node closest to a screen-space click via ray casting
@@ -46,28 +47,31 @@ static const Node* pick_node(const Plant& plant, const OrbitCamera& camera,
     glm::vec3 ray_origin = near_pt;
 
     const Node* closest = nullptr;
-    float closest_dist = FLT_MAX;
-    float max_pick_dist = 1.0f; // max distance from ray to count as a hit
+    float closest_ray_dist = FLT_MAX;
 
     plant.for_each_node([&](const Node& node) {
-        // Point-to-ray distance
-        glm::vec3 to_node = node.position - ray_origin;
-        float t = glm::dot(to_node, ray_dir);
-        if (t < 0.0f) return; // behind camera
-
-        glm::vec3 closest_on_ray = ray_origin + ray_dir * t;
-        float dist = glm::length(node.position - closest_on_ray);
-
-        // Use a pick radius that scales with node radius (but has a minimum)
-        // For leaf nodes, use leaf_size since their radius is tiny
+        glm::vec3 test_pos = node.position;
         float effective_radius = node.radius;
         if (auto* leaf = node.as_leaf()) {
-            if (leaf->leaf_size > 0.0f) effective_radius = leaf->leaf_size * 0.5f;
+            if (leaf->leaf_size > 0.0f && node.parent) {
+                glm::vec3 outward = glm::normalize(node.position - node.parent->position);
+                test_pos = node.position + outward * (leaf->leaf_size * 0.5f);
+                effective_radius = leaf->leaf_size * 0.5f;
+            }
         }
-        float pick_radius = std::max(effective_radius * 3.0f, max_pick_dist);
 
-        if (dist < pick_radius && t < closest_dist) {
-            closest_dist = t;
+        glm::vec3 to_node = test_pos - ray_origin;
+        float t = glm::dot(to_node, ray_dir);
+        if (t < 0.0f) return;
+
+        glm::vec3 closest_on_ray = ray_origin + ray_dir * t;
+        float dist = glm::length(test_pos - closest_on_ray);
+
+        // Pick radius: generous for tiny nodes, proportional for larger ones
+        float pick_radius = std::max(effective_radius * 2.0f, 0.15f);
+
+        if (dist < pick_radius && dist < closest_ray_dist) {
+            closest_ray_dist = dist;
             closest = &node;
         }
     });
@@ -99,6 +103,7 @@ int main(int argc, char* argv[]) {
     }
     Genome g = default_genome();
     PlantID plant_id = engine.create_plant(g, glm::vec3(0.0f));
+    engine.debug_log().open("debug_log.csv");
 
     Renderer renderer;
     if (!renderer.init(1280, 800, "shaders")) {
@@ -199,22 +204,26 @@ int main(int argc, char* argv[]) {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // Mouse picking — debounced: fire once on press, not every frame
-        bool mouse_down = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-        if (mouse_down && !mouse_was_pressed && !ImGui::GetIO().WantCaptureMouse) {
-            double mx, my;
-            glfwGetCursorPos(window, &mx, &my);
-            int w, h;
-            glfwGetWindowSize(window, &w, &h);
-            const Node* picked = pick_node(engine.get_plant(plant_id),
-                                            renderer.camera(),
-                                            static_cast<int>(mx), static_cast<int>(my), w, h);
-            if (picked) {
-                g_selected_node = picked;
+        // Hover + click picking
+        double mx, my;
+        glfwGetCursorPos(window, &mx, &my);
+        int w, h;
+        glfwGetWindowSize(window, &w, &h);
+
+        if (!ImGui::GetIO().WantCaptureMouse) {
+            g_hovered_node = pick_node(engine.get_plant(plant_id),
+                                       renderer.camera(),
+                                       static_cast<int>(mx), static_cast<int>(my), w, h);
+
+            bool mouse_down = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+            if (mouse_down && !mouse_was_pressed && g_hovered_node) {
+                g_selected_node = g_hovered_node;
                 g_show_node_panel = true;
             }
+            mouse_was_pressed = mouse_down;
+        } else {
+            g_hovered_node = nullptr;
         }
-        mouse_was_pressed = mouse_down;
 
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Once);
         ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(FLT_MAX, FLT_MAX));
@@ -227,12 +236,15 @@ int main(int argc, char* argv[]) {
         // Node & sugar stats
         float total_sugar = 0.0f;
         float max_sugar = 0.0f;
+        float total_maintenance = 0.0f;
         int stem_count = 0, root_count = 0, leaf_count = 0;
         int apical_count = 0, axillary_count = 0;
         int root_apical_count = 0, root_axillary_count = 0;
+        const Genome& pg = engine.get_plant(plant_id).genome();
         engine.get_plant(plant_id).for_each_node([&](const Node& n) {
             total_sugar += n.chemical(ChemicalID::Sugar);
             if (n.chemical(ChemicalID::Sugar) > max_sugar) max_sugar = n.chemical(ChemicalID::Sugar);
+            total_maintenance += n.maintenance_cost(pg);
             switch (n.type) {
                 case NodeType::STEM: stem_count++; break;
                 case NodeType::ROOT: root_count++; break;
@@ -243,12 +255,22 @@ int main(int argc, char* argv[]) {
                 case NodeType::ROOT_AXILLARY:  root_axillary_count++; break;
             }
         });
+
+        // Per-tick sugar production (delta of lifetime accumulator)
+        float current_produced = engine.get_plant(plant_id).total_sugar_produced();
+        static float prev_produced = 0.0f;
+        float last_tick_production = current_produced - prev_produced;
+        prev_produced = current_produced;
+
         ImGui::Text("Stem: %d  Root: %d  Leaf: %d", stem_count, root_count, leaf_count);
         ImGui::Text("Meristems: SA:%d SX:%d RA:%d RX:%d",
                      apical_count, axillary_count, root_apical_count, root_axillary_count);
         ImGui::Text("Sugar: total=%.2fg  max=%.4fg", total_sugar, max_sugar);
+        ImGui::Text("Production: %.4fg/tick  Maintenance: %.4fg/tick", last_tick_production, total_maintenance);
         ImGui::Separator();
         ImGui::SliderFloat("Light Level", &engine.world_params_mut().light_level, 0.0f, 2.0f);
+        static bool show_shadow_map = false;
+        ImGui::Checkbox("Show Shadow Map", &show_shadow_map);
         ImGui::SeparatorText("Time");
         if (ImGui::Button("Step 1")) {
             playing = false;
@@ -510,7 +532,12 @@ int main(int argc, char* argv[]) {
 
         renderer.begin_frame();
         renderer.draw_ground();
+        if (show_shadow_map) {
+            renderer.draw_shadow_map(engine.shadow_map());
+        }
         renderer.draw_plant(engine.get_plant(plant_id));
+        if (g_hovered_node) renderer.draw_highlight(*g_hovered_node);
+        if (g_selected_node && g_selected_node != g_hovered_node) renderer.draw_highlight(*g_selected_node);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         renderer.end_frame();
     }

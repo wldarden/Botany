@@ -84,11 +84,15 @@ inline glm::vec3 perturb(const glm::vec3& dir, float max_angle) {
     return glm::normalize(dir * std::cos(tilt) + radial * std::sin(tilt));
 }
 
-// Compute growth fraction based on available sugar.
-inline float sugar_growth_fraction(float sugar, float save_threshold, float max_cost) {
+// Compute growth fraction: sugar funds growth, cytokinin gates the rate.
+// Cytokinin is produced by photosynthesizing leaves — no producing leaves = no growth.
+inline float growth_fraction(float sugar, float max_cost,
+                             float cytokinin, float cyt_threshold) {
     if (max_cost < 1e-6f) return 1.0f;
-    float available = std::max(sugar - save_threshold, 0.0f);
-    return std::min(available / max_cost, 1.0f);
+    float sugar_gf = std::min(sugar / max_cost, 1.0f);
+    if (sugar_gf < 1e-6f) return 0.0f;
+    float cyt_gf = std::min(cytokinin / std::max(cyt_threshold, 1e-6f), 1.0f);
+    return sugar_gf * cyt_gf;
 }
 
 } // namespace meristem_helpers

@@ -39,16 +39,16 @@ void RootNode::elongate(const Genome& g, const WorldParams& world) {
     float eth_inhibit = std::max(0.0f, 1.0f - chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
     float effective_rate = g.root_internode_elongation_rate * ga_boost * eth_inhibit;
 
-    float max_len = g.root_max_internode_length * (1.0f + chemical(ChemicalID::Gibberellin) * g.ga_length_sensitivity);
+    float max_len = g.max_internode_length * (1.0f + chemical(ChemicalID::Gibberellin) * g.ga_length_sensitivity);
     float current_len = glm::length(offset);
     if (current_len >= max_len) return;
 
+    // Elongation is sugar-gated only (not cytokinin) — same reasoning as stems
     float max_cost = effective_rate * world.sugar_cost_elongation;
-    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
-                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
-    if (gf <= 1e-6f) return;
+    float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+    if (sugar_gf <= 1e-6f) return;
 
-    float actual_rate = effective_rate * gf;
+    float actual_rate = effective_rate * sugar_gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_elongation;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;

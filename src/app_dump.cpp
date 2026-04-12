@@ -37,11 +37,11 @@ static const char* node_type_str(NodeType t) {
 static void print_genome(const Genome& g) {
     std::cout << "=== GENOME ===" << std::endl;
     std::cout << "  auxin_production_rate:    " << g.auxin_production_rate << std::endl;
-    std::cout << "  auxin_transport_rate:     " << g.auxin_transport_rate << std::endl;
+    std::cout << "  auxin_diffusion_rate:     " << g.auxin_diffusion_rate << std::endl;
     std::cout << "  auxin_decay_rate:         " << g.auxin_decay_rate << std::endl;
     std::cout << "  auxin_threshold:          " << g.auxin_threshold << std::endl;
     std::cout << "  cytokinin_production_rate:" << g.cytokinin_production_rate << std::endl;
-    std::cout << "  cytokinin_transport_rate: " << g.cytokinin_transport_rate << std::endl;
+    std::cout << "  cytokinin_diffusion_rate: " << g.cytokinin_diffusion_rate << std::endl;
     std::cout << "  cytokinin_decay_rate:     " << g.cytokinin_decay_rate << std::endl;
     std::cout << "  cytokinin_threshold:      " << g.cytokinin_threshold << std::endl;
     std::cout << "  growth_rate:              " << g.growth_rate << std::endl;
@@ -49,7 +49,7 @@ static void print_genome(const Genome& g) {
     std::cout << "  branch_angle:             " << g.branch_angle << " rad (" << (g.branch_angle * 180.0f / 3.14159f) << " deg)" << std::endl;
     std::cout << "  thickening_rate:          " << g.thickening_rate << std::endl;
     std::cout << "  root_growth_rate:         " << g.root_growth_rate << std::endl;
-    std::cout << "  root_max_internode_length:" << g.root_max_internode_length << std::endl;
+    std::cout << "  max_internode_length:     " << g.max_internode_length << std::endl;
     std::cout << "  root_branch_angle:        " << g.root_branch_angle << " rad (" << (g.root_branch_angle * 180.0f / 3.14159f) << " deg)" << std::endl;
     std::cout << "  max_leaf_size:            " << g.max_leaf_size << std::endl;
     std::cout << "  initial_radius:           " << g.initial_radius << std::endl;

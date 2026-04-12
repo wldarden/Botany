@@ -24,11 +24,13 @@ struct CellKeyHash {
 };
 
 struct CasterEntry {
-    float depth;     // distance along light direction (higher = closer to light)
-    float coverage;  // fraction of cell blocked
+    float depth;
+    float coverage;
 };
 
-void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants, const WorldParams& world) {
+void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants,
+                            const WorldParams& world,
+                            ShadowMapViz* viz_out) {
     const float cell = world.light_cell_size;
     if (cell <= 1e-6f) return;
 
@@ -49,7 +51,7 @@ void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants, c
 
             float shadow_radius = node.radius;
             if (auto* leaf = node.as_leaf()) {
-                leaf->light_exposure = 1.0f; // reset
+                leaf->light_exposure = 1.0f;
                 shadow_radius = leaf->leaf_size;
             }
             if (shadow_radius <= 1e-6f) return;
@@ -107,11 +109,10 @@ void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants, c
 
                     auto it = grid.find({cu + du, cv + dv});
                     if (it == grid.end()) {
-                        total_exposure += 1.0f; // no shade in this cell
+                        total_exposure += 1.0f;
                         continue;
                     }
 
-                    // Sum coverage from casters ABOVE this leaf (closer to light)
                     float coverage_above = 0.0f;
                     for (const auto& entry : it->second) {
                         if (entry.depth > depth) {
@@ -127,14 +128,34 @@ void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants, c
                 : 1.0f;
         });
     }
+
+    // Phase 3: Output visualization data if requested
+    if (viz_out) {
+        viz_out->cell_size = cell;
+        viz_out->cells.clear();
+        viz_out->cells.reserve(grid.size());
+
+        for (const auto& [key, entries] : grid) {
+            // Convert cell coords back to world XZ (for overhead sun: u=z, v=x)
+            float cu = (key.u + 0.5f) * cell;
+            float cv = (key.v + 0.5f) * cell;
+            // World position = cu * plane_u + cv * plane_v (projected onto ground y=0)
+            glm::vec3 world_pos = cu * plane_u + cv * plane_v;
+
+            float total_coverage = 0.0f;
+            for (const auto& e : entries) {
+                total_coverage += e.coverage;
+            }
+
+            viz_out->cells.push_back({world_pos.x, world_pos.z, total_coverage});
+        }
+    }
 }
 
 void compute_light_exposure(Plant& plant, const WorldParams& world) {
-    // Wrap single plant in a temporary vector. We take a non-owning pointer,
-    // so we must release it before the vector destructs.
     std::vector<std::unique_ptr<Plant>> tmp;
     tmp.emplace_back(&plant);
-    compute_light_exposure(tmp, world);
+    compute_light_exposure(tmp, world, nullptr);
     tmp[0].release();
 }
 
