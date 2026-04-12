@@ -2,6 +2,7 @@
 #include "engine/plant.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
+#include "engine/chemical/chemical_registry.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
 #include "engine/node/leaf_node.h"
@@ -128,13 +129,14 @@ static void transport_chemical(float& my_val, float& parent_val,
 
 void Node::transport_chemicals(const Genome& g) {
     if (parent) {
-        // Auxin: basipetal
-        transport_chemical(chemical(ChemicalID::Auxin), parent->chemical(ChemicalID::Auxin),
-            g.auxin_transport_rate, g.auxin_directional_bias, g.auxin_decay_rate);
-        // Cytokinin: acropetal
-        transport_chemical(chemical(ChemicalID::Cytokinin), parent->chemical(ChemicalID::Cytokinin),
-            g.cytokinin_transport_rate, g.cytokinin_directional_bias, g.cytokinin_decay_rate);
-        // Sugar: gradient-based, cap-aware, conductance scales with radius
+        // Hormones: biased local transport via registry
+        for (const auto& hp : hormone_params(g)) {
+            if (hp.id == ChemicalID::Gibberellin) continue;  // still global pass
+            transport_chemical(chemical(hp.id), parent->chemical(hp.id),
+                hp.transport_rate, hp.directional_bias, hp.decay_rate);
+        }
+
+        // Sugar: cap-aware gradient diffusion (unchanged)
         float my_cap = sugar_cap(*this, g);
         float parent_cap = sugar_cap(*parent, g);
         float diff = chemical(ChemicalID::Sugar) - parent->chemical(ChemicalID::Sugar);
@@ -154,9 +156,11 @@ void Node::transport_chemicals(const Genome& g) {
         chemical(ChemicalID::Sugar) -= flow;
         parent->chemical(ChemicalID::Sugar) += flow;
     } else {
-        // Seed: no parent, just decay hormones
-        chemical(ChemicalID::Auxin) *= (1.0f - g.auxin_decay_rate);
-        chemical(ChemicalID::Cytokinin) *= (1.0f - g.cytokinin_decay_rate);
+        // Seed: just decay hormones
+        for (const auto& hp : hormone_params(g)) {
+            if (hp.id == ChemicalID::Gibberellin) continue;
+            chemical(hp.id) *= (1.0f - hp.decay_rate);
+        }
     }
 }
 
