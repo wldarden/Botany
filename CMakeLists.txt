@@ -78,6 +78,7 @@ add_library(botany_engine STATIC
     src/engine/plant.cpp
     src/engine/hormone.cpp
     src/engine/sugar.cpp
+    src/engine/light.cpp
     src/engine/gibberellin.cpp
     src/engine/ethylene.cpp
     src/engine/engine.cpp

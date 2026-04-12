@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <glm/vec3.hpp>
 
 namespace botany {
 
@@ -27,7 +28,8 @@ struct WorldParams {
     float sugar_cost_activation   = 0.3f;       // g glucose per meristem activation (bud break)
     float sugar_cost_leaf_growth  = 1.5f;       // g glucose / dm of leaf expansion (leaf tissue is expensive — 1.5 g/g dry mass)
     float sugar_cost_phototropism = 0.001f;      // g glucose / radian of leaf turning
-    float light_extinction_coeff  = 0.5f;       // Beer-Lambert k — how aggressively foliage blocks light (real broadleaf: 0.5-0.7)
+    float light_cell_size         = 0.075f;     // dm — shadow map cell size (smaller = higher resolution, more cells)
+    glm::vec3 light_direction     = glm::vec3(0.0f, 1.0f, 0.0f); // unit vector pointing TOWARD light source
 };
 
 inline WorldParams default_world_params() {
@@ -41,7 +43,8 @@ inline WorldParams default_world_params() {
         .sugar_cost_activation   = 0.3f,
         .sugar_cost_leaf_growth  = 1.5f,
         .sugar_cost_phototropism = 0.001f,
-        .light_extinction_coeff  = 0.5f,
+        .light_cell_size         = 0.075f,
+        .light_direction         = glm::vec3(0.0f, 1.0f, 0.0f),
     };
 }
 

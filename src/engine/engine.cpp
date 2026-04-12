@@ -1,5 +1,6 @@
 // src/engine/engine.cpp
 #include "engine/engine.h"
+#include "engine/light.h"
 
 namespace botany {
 
@@ -10,6 +11,9 @@ PlantID Engine::create_plant(const Genome& genome, glm::vec3 position) {
 }
 
 void Engine::tick() {
+    // World-level light computation (shared shadow map across all plants)
+    compute_light_exposure(plants_, world_params_);
+
     for (auto& plant : plants_) {
         plant->tick(world_params_);
     }
