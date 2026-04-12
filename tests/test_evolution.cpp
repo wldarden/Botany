@@ -129,3 +129,18 @@ TEST_CASE("EvolutionRunner advances generations", "[evolution]") {
     runner.run_generation();
     REQUIRE(runner.generation() == 2);
 }
+
+TEST_CASE("Node has mass and stress fields", "[stress]") {
+    botany::Engine engine;
+    botany::Genome g = botany::default_genome();
+    engine.create_plant(g, glm::vec3(0.0f));
+
+    for (int i = 0; i < 50; i++) engine.tick();
+
+    const botany::Plant& plant = engine.get_plant(0);
+    bool found_nonzero_mass = false;
+    plant.for_each_node([&](const botany::Node& n) {
+        if (n.total_mass > 0.0f) found_nonzero_mass = true;
+    });
+    REQUIRE(found_nonzero_mass);
+}

@@ -50,6 +50,11 @@ public:
     // --- Chemicals ---
     uint32_t starvation_ticks = 0;
 
+    // --- Mass / stress (computed each tick, children's values are one tick stale) ---
+    float total_mass = 0.0f;       // self mass + all children's total_mass
+    glm::vec3 mass_moment{0.0f};   // self_mass * position + Σ child.mass_moment
+    float stress = 0.0f;           // torque / cross-section (structural load)
+
     // Chemical storage — map-based, sole storage for all chemical values.
     std::unordered_map<ChemicalID, float> chemicals;
 

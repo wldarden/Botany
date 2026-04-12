@@ -7,6 +7,9 @@
 #include "engine/node/root_node.h"
 #include "engine/node/leaf_node.h"
 #include "engine/node/meristems/meristem_types.h"
+#include <algorithm>
+#include <cmath>
+#include <glm/geometric.hpp>
 
 namespace botany {
 
@@ -71,6 +74,51 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     // export the surplus. Otherwise transport drains leaves dry and they
     // never mature — the "tragedy of the commons" problem.
     grow(plant, world);
+
+    // --- Mass & stress computation ---
+    float self_mass = 0.0f;
+    bool is_underground = (type == NodeType::ROOT || type == NodeType::ROOT_APICAL || type == NodeType::ROOT_AXILLARY);
+
+    if (!is_underground) {
+        if (type == NodeType::LEAF) {
+            auto* leaf = as_leaf();
+            self_mass = leaf ? (leaf->leaf_size * leaf->leaf_size * world.leaf_mass_density) : 0.0f;
+        } else if (type == NodeType::STEM) {
+            float length = std::max(glm::length(offset), 0.01f);
+            self_mass = 3.14159f * radius * radius * length * g.wood_density;
+        } else if (is_meristem()) {
+            self_mass = world.meristem_mass;
+        }
+    }
+
+    // Accumulate subtree mass from direct children (their values are one tick stale)
+    total_mass = self_mass;
+    mass_moment = self_mass * position;
+    for (const Node* child : children) {
+        total_mass += child->total_mass;
+        mass_moment += child->mass_moment;
+    }
+
+    // Stress computation (above-ground only, skip if near ground)
+    stress = 0.0f;
+    if (!is_underground && position.y > world.ground_support_height) {
+        float child_mass = total_mass - self_mass;
+        if (child_mass > 1e-6f && radius > 1e-6f) {
+            glm::vec3 child_com = (mass_moment - self_mass * position) / child_mass;
+            float dx = child_com.x - position.x;
+            float dz = child_com.z - position.z;
+            float lever_arm = std::sqrt(dx * dx + dz * dz);
+            float torque = child_mass * world.gravity * lever_arm;
+            float cross_section = 3.14159f * radius * radius;
+            stress = torque / cross_section;
+        }
+    }
+
+    // Stress hormone production (above-ground only)
+    if (!is_underground && stress > 0.0f) {
+        chemical(ChemicalID::Stress) += stress * g.stress_hormone_production_rate;
+    }
+
     transport_chemicals(g);
 
     // Re-clamp sugar after transport — diffusion can overfill small nodes
