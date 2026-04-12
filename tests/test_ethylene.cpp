@@ -112,7 +112,6 @@ TEST_CASE("Crowded nodes produce ethylene", "[ethylene]") {
         plant.seed_mut()->add_child(n);
     }
 
-    plant.recompute_world_positions();
 
     WorldParams wp = default_world_params();
     compute_ethylene(plant, wp);

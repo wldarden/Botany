@@ -392,9 +392,7 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     glm::vec3 pos2_before = tip2->position;
 
     plant1.tick(default_world_params());
-    plant1.recompute_world_positions();
     plant2.tick(default_world_params());
-    plant2.recompute_world_positions();
 
     float dist1 = glm::length(tip1->position - pos1_before);
     float dist2 = glm::length(tip2->position - pos2_before);

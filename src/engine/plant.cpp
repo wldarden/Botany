@@ -36,7 +36,10 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     root->chemical(ChemicalID::Cytokinin) = seed_cyt;
     seed->add_child(root);
 
-    recompute_world_positions();
+    // Set initial world positions (subsequent ticks compute inline during DFS)
+    seed->position = seed->offset;
+    shoot->position = seed->position + shoot->offset;
+    root->position = seed->position + root->offset;
 }
 
 void Plant::tick(const WorldParams& world) {
@@ -44,7 +47,6 @@ void Plant::tick(const WorldParams& world) {
     // by each node during Node::transport_chemicals()
     // compute_ethylene(*this, world);  // disabled: crowding kills leaves instantly
     tick_tree(world);
-    recompute_world_positions();
 }
 
 void Plant::remove_subtree(Node* node) {
@@ -130,18 +132,6 @@ void Plant::tick_tree(const WorldParams& world) {
     flush_removals();
 }
 
-static void recompute_recursive(Node& node) {
-    for (Node* child : node.children) {
-        child->position = node.position + child->offset;
-        recompute_recursive(*child);
-    }
-}
-
-void Plant::recompute_world_positions() {
-    Node& seed = *nodes_[0];
-    seed.position = seed.offset;
-    recompute_recursive(seed);
-}
 
 Node* Plant::create_node(NodeType type, glm::vec3 position, float radius) {
     std::unique_ptr<Node> node;

@@ -50,6 +50,12 @@ void Node::replace_child(Node* old_child, Node* new_child) {
 }
 
 void Node::tick(Plant& plant, const WorldParams& world) {
+    // Compute world position inline (parent is already ticked, so its position is current)
+    position = parent ? parent->position + offset : offset;
+    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
+        position = parent ? parent->position : glm::vec3(0.0f);
+    }
+
     age++;
     const Genome& g = plant.genome();
 

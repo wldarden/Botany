@@ -36,7 +36,6 @@ public:
 
     void tick(const struct WorldParams& world);
     void remove_subtree(Node* node);
-    void recompute_world_positions();
 
     void queue_removal(Node* node);
     void flush_removals();

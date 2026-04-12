@@ -25,9 +25,10 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
     if (!header_written_) {
         file_ << "tick,node_id,parent_id,type,age,children,"
               << "sugar,sugar_cap,maintenance,production,"
-              << "auxin,cytokinin,gibberellin,ethylene,"
+              << "auxin,cytokinin,gibberellin,ethylene,stress_hormone,"
               << "light_exposure,leaf_size,angle_eff,senescence,"
-              << "starvation_ticks,pos_x,pos_y,pos_z,radius\n";
+              << "starvation_ticks,pos_x,pos_y,pos_z,radius,"
+              << "total_mass,stress\n";
         header_written_ = true;
     }
 
@@ -82,11 +83,13 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
               << node.chemical(ChemicalID::Cytokinin) << ","
               << node.chemical(ChemicalID::Gibberellin) << ","
               << node.chemical(ChemicalID::Ethylene) << ","
+              << node.chemical(ChemicalID::Stress) << ","
               << light_exp << "," << leaf_sz << "," << angle_eff << ","
               << senescence << ","
               << node.starvation_ticks << ","
               << node.position.x << "," << node.position.y << "," << node.position.z << ","
-              << node.radius << "\n";
+              << node.radius << ","
+              << node.total_mass << "," << node.stress << "\n";
     });
 }
 

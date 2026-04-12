@@ -436,6 +436,17 @@ int main(int argc, char* argv[]) {
                 ImGui::Text("Radius: %.4f", sel.radius);
                 if (auto* leaf = sel.as_leaf()) {
                     ImGui::Text("Leaf Size: %.3f", leaf->leaf_size);
+                    ImGui::Text("Light Exposure: %.1f%%", leaf->light_exposure * 100.0f);
+                    // Sugar production: light * angle * world_light * area * rate
+                    const Genome& lg = engine.get_plant(plant_id).genome();
+                    float angle_eff = 1.0f;
+                    float flen = glm::length(leaf->facing);
+                    if (flen > 1e-4f) angle_eff = std::max(0.0f, (leaf->facing / flen).y);
+                    float leaf_area = leaf->leaf_size * leaf->leaf_size;
+                    float production = leaf->light_exposure * angle_eff
+                        * engine.world_params().light_level * leaf_area
+                        * lg.sugar_production_rate;
+                    ImGui::Text("Sugar/tick: %.5f g", production);
                     if (leaf->senescence_ticks > 0) {
                         ImGui::Text("Senescence: %u ticks", leaf->senescence_ticks);
                     }
