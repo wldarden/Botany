@@ -44,6 +44,14 @@ void ShootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
     // Roll a fresh direction each tick (small perturbation from parent direction)
     if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
 
+    // Stress hormone pulls growth direction toward vertical
+    float stress_grav = chemical(ChemicalID::Stress) * g.stress_gravitropism_boost;
+    if (stress_grav > 1e-6f) {
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+        float blend = std::min(stress_grav, 0.5f);  // cap at 50% pull toward vertical
+        growth_dir = glm::normalize(glm::mix(growth_dir, up, blend));
+    }
+
     float actual_rate = g.growth_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_shoot_growth;
     offset += growth_dir * actual_rate;
