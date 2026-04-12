@@ -78,6 +78,7 @@ add_library(botany_engine STATIC
     src/engine/plant.cpp
     src/engine/sugar.cpp
     src/engine/light.cpp
+    src/engine/debug_log.cpp
     src/engine/ethylene.cpp
     src/engine/engine.cpp
     src/engine/world_params.cpp
@@ -145,7 +146,7 @@ add_executable(botany_tests
     tests/test_serializer.cpp
     tests/test_evolution.cpp
 )
-target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization Catch2::Catch2WithMain)
+target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization botany_evolution Catch2::Catch2WithMain)
 include(CTest)
 include(Catch)
 catch_discover_tests(botany_tests)
