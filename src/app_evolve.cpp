@@ -84,6 +84,14 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "ethylene_abscission_threshold=" << g.ethylene_abscission_threshold << "\n";
     out << "ethylene_elongation_inhibition=" << g.ethylene_elongation_inhibition << "\n";
     out << "senescence_duration=" << g.senescence_duration << "\n";
+    out << "wood_density=" << g.wood_density << "\n";
+    out << "wood_flexibility=" << g.wood_flexibility << "\n";
+    out << "stress_hormone_production_rate=" << g.stress_hormone_production_rate << "\n";
+    out << "stress_hormone_diffusion_rate=" << g.stress_hormone_diffusion_rate << "\n";
+    out << "stress_hormone_decay_rate=" << g.stress_hormone_decay_rate << "\n";
+    out << "stress_thickening_boost=" << g.stress_thickening_boost << "\n";
+    out << "stress_elongation_inhibition=" << g.stress_elongation_inhibition << "\n";
+    out << "stress_gravitropism_boost=" << g.stress_gravitropism_boost << "\n";
 }
 
 int main() {
