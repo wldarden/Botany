@@ -4,6 +4,7 @@
 #include "engine/genome.h"
 #include "evolution/genome_bridge.h"
 #include "evolution/fitness.h"
+#include "evolution/evolution_runner.h"
 
 using Catch::Matchers::WithinAbs;
 
@@ -109,4 +110,22 @@ TEST_CASE("compute_fitness handles zero gen_max gracefully", "[evolution]") {
     botany::FitnessWeights w;
     float fitness = botany::compute_fitness(stats, gen_max, w);
     REQUIRE_THAT(fitness, WithinAbs(0.0, 1e-4));
+}
+
+TEST_CASE("EvolutionRunner advances generations", "[evolution]") {
+    botany::EvolutionConfig config;
+    config.population_size = 10;
+    config.max_ticks = 200;
+    config.num_threads = 2;
+
+    botany::EvolutionRunner runner(config);
+    REQUIRE(runner.generation() == 0);
+
+    runner.run_generation();
+    REQUIRE(runner.generation() == 1);
+    REQUIRE(runner.best_fitness() > 0.0f);
+    REQUIRE(runner.best_stats().survival_ticks > 0);
+
+    runner.run_generation();
+    REQUIRE(runner.generation() == 2);
 }
