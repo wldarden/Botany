@@ -95,6 +95,16 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "senescence_duration",            static_cast<float>(g.senescence_duration),
                                                                                 r, 12.0f,  500.0f, p);
 
+    // --- Stress group (8 genes) ---
+    reg(sg, "wood_density",                    g.wood_density,                    r, 10.0f, 200.0f, p);
+    reg(sg, "wood_flexibility",                g.wood_flexibility,                r, 0.1f,  1.0f, p);
+    reg(sg, "stress_hormone_production_rate",  g.stress_hormone_production_rate,  r, 0.0f,  1.0f, p);
+    reg(sg, "stress_hormone_diffusion_rate",   g.stress_hormone_diffusion_rate,   r, 0.01f, 0.5f, p);
+    reg(sg, "stress_hormone_decay_rate",       g.stress_hormone_decay_rate,       r, 0.01f, 0.5f, p);
+    reg(sg, "stress_thickening_boost",         g.stress_thickening_boost,         r, 0.0f,  5.0f, p);
+    reg(sg, "stress_elongation_inhibition",    g.stress_elongation_inhibition,    r, 0.0f,  5.0f, p);
+    reg(sg, "stress_gravitropism_boost",       g.stress_gravitropism_boost,       r, 0.0f,  5.0f, p);
+
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
         "auxin_production_rate", "auxin_diffusion_rate",
@@ -141,6 +151,13 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "ethylene_crowding_radius", "ethylene_diffusion_radius",
         "ethylene_abscission_threshold", "ethylene_elongation_inhibition",
         "senescence_duration"
+    }});
+
+    sg.add_linkage_group({"stress", {
+        "wood_density", "wood_flexibility",
+        "stress_hormone_production_rate", "stress_hormone_diffusion_rate",
+        "stress_hormone_decay_rate",
+        "stress_thickening_boost", "stress_elongation_inhibition", "stress_gravitropism_boost"
     }});
 
     return sg;
@@ -226,6 +243,16 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.ethylene_abscission_threshold  = sg.get("ethylene_abscission_threshold");
     g.ethylene_elongation_inhibition = sg.get("ethylene_elongation_inhibition");
     g.senescence_duration            = static_cast<uint32_t>(sg.get("senescence_duration"));
+
+    // Stress
+    g.wood_density                    = sg.get("wood_density");
+    g.wood_flexibility                = sg.get("wood_flexibility");
+    g.stress_hormone_production_rate  = sg.get("stress_hormone_production_rate");
+    g.stress_hormone_diffusion_rate   = sg.get("stress_hormone_diffusion_rate");
+    g.stress_hormone_decay_rate       = sg.get("stress_hormone_decay_rate");
+    g.stress_thickening_boost         = sg.get("stress_thickening_boost");
+    g.stress_elongation_inhibition    = sg.get("stress_elongation_inhibition");
+    g.stress_gravitropism_boost       = sg.get("stress_gravitropism_boost");
 
     return g;
 }

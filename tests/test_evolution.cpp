@@ -45,12 +45,16 @@ TEST_CASE("Genome round-trips through StructuredGenome", "[evolution]") {
                  WithinAbs(original.ethylene_abscission_threshold, 1e-6));
     REQUIRE(restored.internode_maturation_ticks == original.internode_maturation_ticks);
     REQUIRE(restored.senescence_duration == original.senescence_duration);
+    REQUIRE_THAT(restored.wood_density,
+                 WithinAbs(original.wood_density, 1e-6));
+    REQUIRE_THAT(restored.stress_thickening_boost,
+                 WithinAbs(original.stress_thickening_boost, 1e-6));
 }
 
 TEST_CASE("Genome template has linkage groups", "[evolution]") {
     auto tmpl = botany::build_genome_template(botany::default_genome());
     auto& groups = tmpl.linkage_groups();
-    REQUIRE(groups.size() == 8);
+    REQUIRE(groups.size() == 9);
 
     // Verify auxin group has 4 genes (production, diffusion, decay, threshold)
     bool found_auxin = false;
