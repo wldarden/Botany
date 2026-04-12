@@ -147,7 +147,7 @@ int main(int argc, char* argv[]) {
     ImGui_ImplOpenGL3_Init("#version 410");
     ImGui::StyleColorsDark();
 
-    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE };
+    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE, STRESS };
     Overlay active_overlay = Overlay::NONE;
     bool playing = false;
     int steps_remaining = 0;
@@ -352,6 +352,12 @@ int main(int argc, char* argv[]) {
                 renderer.set_color_by_type(false);
                 renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Ethylene); });
                 active_overlay = Overlay::ETHYLENE;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Stress")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.stress; });
+                active_overlay = Overlay::STRESS;
             }
 
             if (active_overlay == Overlay::NODE_TYPE) {
