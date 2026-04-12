@@ -67,9 +67,9 @@ evolve::StructuredGenome build_genome_template(const Genome& g) {
     reg(sg, "sugar_storage_density_leaf",  g.sugar_storage_density_leaf,  0.1f, 0.1f,   0.05f,  5.0f);
     reg(sg, "sugar_cap_minimum",           g.sugar_cap_minimum,           0.1f, 0.01f,  0.005f, 0.5f);
     reg(sg, "sugar_cap_meristem",          g.sugar_cap_meristem,          0.1f, 0.5f,   0.1f,   10.0f);
-    reg(sg, "sugar_save_shoot",            g.sugar_reserve_shoot,         0.1f, 0.005f, 0.001f, 0.2f);
-    reg(sg, "sugar_save_root",             g.sugar_reserve_root,          0.1f, 0.003f, 0.001f, 0.1f);
-    reg(sg, "sugar_save_stem",             g.sugar_reserve_stem,          0.1f, 0.005f, 0.001f, 0.2f);
+    reg(sg, "sugar_save_shoot",            g.sugar_save_shoot,         0.1f, 0.005f, 0.001f, 0.2f);
+    reg(sg, "sugar_save_root",             g.sugar_save_root,          0.1f, 0.003f, 0.001f, 0.1f);
+    reg(sg, "sugar_save_stem",             g.sugar_save_stem,          0.1f, 0.005f, 0.001f, 0.2f);
     reg(sg, "sugar_activation_shoot",      g.sugar_activation_shoot,      0.1f, 0.1f,   0.05f,  5.0f);
     reg(sg, "sugar_activation_root",       g.sugar_activation_root,       0.1f, 0.05f,  0.05f,  3.0f);
 
@@ -213,9 +213,9 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.sugar_storage_density_leaf  = sg.get("sugar_storage_density_leaf");
     g.sugar_cap_minimum           = sg.get("sugar_cap_minimum");
     g.sugar_cap_meristem          = sg.get("sugar_cap_meristem");
-    g.sugar_reserve_shoot         = sg.get("sugar_save_shoot");
-    g.sugar_reserve_root          = sg.get("sugar_save_root");
-    g.sugar_reserve_stem          = sg.get("sugar_save_stem");
+    g.sugar_save_shoot         = sg.get("sugar_save_shoot");
+    g.sugar_save_root          = sg.get("sugar_save_root");
+    g.sugar_save_stem          = sg.get("sugar_save_stem");
     g.sugar_activation_shoot      = sg.get("sugar_activation_shoot");
     g.sugar_activation_root       = sg.get("sugar_activation_root");
 
