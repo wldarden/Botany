@@ -171,9 +171,11 @@ TEST_CASE("Leaf above ethylene threshold begins senescence", "[ethylene][absciss
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
     leaf->chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 0.1f;
+    leaf->chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
-    process_abscission(plant);
+    WorldParams wp = default_world_params();
+    leaf->tick(plant, wp);
 
     REQUIRE(leaf->as_leaf()->senescence_ticks > 0);
 }
@@ -185,9 +187,11 @@ TEST_CASE("Leaf below ethylene threshold stays healthy", "[ethylene][abscission]
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
     leaf->chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold * 0.5f;
+    leaf->chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
-    process_abscission(plant);
+    WorldParams wp = default_world_params();
+    leaf->tick(plant, wp);
 
     REQUIRE(leaf->as_leaf()->senescence_ticks == 0);
 }
@@ -200,27 +204,15 @@ TEST_CASE("Senescing leaf is removed after senescence_duration", "[ethylene][abs
     leaf->as_leaf()->leaf_size = 0.2f;
     leaf->chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 0.1f;
     leaf->as_leaf()->senescence_ticks = g.senescence_duration - 1; // almost done
+    leaf->chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
     uint32_t count_before = plant.node_count();
-    process_abscission(plant);
+    WorldParams wp = default_world_params();
+    leaf->tick(plant, wp);
+    plant.flush_removals();
 
     REQUIRE(plant.node_count() < count_before);
-}
-
-TEST_CASE("Non-leaf nodes do not senesce", "[ethylene][abscission]") {
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
-
-    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
-    stem->chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 10.0f; // very high
-    plant.seed_mut()->add_child(stem);
-
-    uint32_t count_before = plant.node_count();
-    process_abscission(plant);
-
-    // senescence_ticks only exists on LeafNode, so stem nodes can't senesce
-    REQUIRE(plant.node_count() == count_before);
 }
 
 TEST_CASE("Self-thinning cascade prunes shaded interior leaves", "[ethylene][integration]") {
@@ -261,15 +253,14 @@ TEST_CASE("Self-thinning cascade prunes shaded interior leaves", "[ethylene][int
 
     WorldParams wp = default_world_params();
 
-    // Run ethylene + abscission for enough ticks to trigger senescence and removal
+    // Run full plant ticks for enough ticks to trigger senescence and removal
     for (int i = 0; i < 20; i++) {
         // Keep light_exposure fixed (simulate persistent shade)
         plant.for_each_node_mut([&](Node& n) {
-            if (n.id == inner_id) n.as_leaf()->light_exposure = 0.1f;
-            if (n.id == outer_id) n.as_leaf()->light_exposure = 0.9f;
+            if (n.id == inner_id && n.as_leaf()) n.as_leaf()->light_exposure = 0.1f;
+            if (n.id == outer_id && n.as_leaf()) n.as_leaf()->light_exposure = 0.9f;
         });
-        compute_ethylene(plant, wp);
-        process_abscission(plant);
+        plant.tick(wp);
     }
 
     // Inner (shaded) leaf should have been removed

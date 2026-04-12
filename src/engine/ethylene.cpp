@@ -83,33 +83,4 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
     }
 }
 
-void process_abscission(Plant& plant) {
-    const Genome& g = plant.genome();
-
-    // Increment senescence on senescing leaves, collect leaves to remove
-    std::vector<Node*> to_remove;
-    plant.for_each_node_mut([&](Node& node) {
-        auto* leaf = node.as_leaf();
-        if (!leaf) return;
-
-        // Start senescence if ethylene exceeds threshold and not yet senescing
-        if (leaf->senescence_ticks == 0 &&
-            node.chemical(ChemicalID::Ethylene) > g.ethylene_abscission_threshold) {
-            leaf->senescence_ticks = 1;
-        }
-
-        // Advance senescence
-        if (leaf->senescence_ticks > 0) {
-            leaf->senescence_ticks++;
-            if (leaf->senescence_ticks >= g.senescence_duration) {
-                to_remove.push_back(&node);
-            }
-        }
-    });
-
-    for (Node* n : to_remove) {
-        plant.remove_subtree(n);
-    }
-}
-
 } // namespace botany

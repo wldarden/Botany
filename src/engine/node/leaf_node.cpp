@@ -23,6 +23,18 @@ void LeafNode::grow(Plant& plant, const WorldParams& world) {
     photosynthesize(g, world);
     phototropism(g, world);
     grow_size(g, world);
+
+    // Abscission: ethylene triggers senescence, then leaf drop
+    if (senescence_ticks == 0 && chemical(ChemicalID::Ethylene) > g.ethylene_abscission_threshold) {
+        senescence_ticks = 1;
+    }
+    if (senescence_ticks > 0) {
+        senescence_ticks++;
+        if (senescence_ticks >= g.senescence_duration) {
+            die(plant);
+            return;
+        }
+    }
 }
 
 void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {

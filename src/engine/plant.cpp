@@ -38,7 +38,6 @@ void Plant::tick(const WorldParams& world) {
     // by each node during Node::transport_chemicals()
     transport_sugar(*this, world);
     compute_ethylene(*this, world);
-    process_abscission(*this);
     tick_tree(world);
     recompute_world_positions();
 }
