@@ -82,6 +82,14 @@ void ShootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome
 void ShootApicalNode::spawn_leaf(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
     Node* leaf = plant.create_node(NodeType::LEAF, lateral_offset, 0.0f);
     leaf->as_leaf()->leaf_size = g.leaf_bud_size;
+    float len = glm::length(lateral_offset);
+    if (len > 1e-4f) {
+        leaf->as_leaf()->facing = lateral_offset / len;
+    }
+    // Meristem gives the new leaf some sugar to bootstrap it
+    float gift = std::min(chemical(ChemicalID::Sugar) * 0.1f, 0.5f);
+    chemical(ChemicalID::Sugar) -= gift;
+    leaf->chemical(ChemicalID::Sugar) = gift;
     internode->add_child(leaf);
 }
 

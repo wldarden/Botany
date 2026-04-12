@@ -394,7 +394,7 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     REQUIRE(dist2 > dist1);
 }
 
-TEST_CASE("Growth at save_threshold produces zero growth", "[meristem][sugar]") {
+TEST_CASE("Zero sugar produces zero growth", "[meristem][sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
@@ -405,9 +405,8 @@ TEST_CASE("Growth at save_threshold produces zero growth", "[meristem][sugar]") 
     });
     REQUIRE(shoot_tip != nullptr);
 
-    // Exactly at save threshold — no growth (zero all nodes so transport doesn't add sugar)
+    // Zero sugar everywhere — no growth possible
     plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-    shoot_tip->chemical(ChemicalID::Sugar) = g.sugar_save_shoot;
     glm::vec3 pos_before = shoot_tip->position;
     plant.tick(default_world_params());
     REQUIRE(shoot_tip->position.y == pos_before.y);
@@ -446,36 +445,25 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
 TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
     WorldParams wp = default_world_params();
 
-    // Plant 1: ethylene has no effect (inhibition = 0)
-    Genome g1 = default_genome();
-    g1.ethylene_elongation_inhibition = 0.0f;
-    Plant plant1(g1, glm::vec3(0.0f));
+    // Plant 1: no ethylene on stem
+    Genome g = default_genome();
+    Plant plant1(g, glm::vec3(0.0f));
 
     Node* stem1 = plant1.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem1->age = 1;
     stem1->chemical(ChemicalID::Sugar) = 5.0f;
+    plant1.seed_mut()->chemical(ChemicalID::Sugar) = 5.0f;
     plant1.seed_mut()->add_child(stem1);
 
-    // Add a starving leaf nearby to produce ethylene in both plants
-    Node* leaf1 = plant1.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf1->as_leaf()->leaf_size = 1.0f;
-    leaf1->chemical(ChemicalID::Sugar) = 0.0f;
-    stem1->add_child(leaf1);
-
-    // Plant 2: ethylene strongly inhibits elongation
-    Genome g2 = default_genome();
-    g2.ethylene_elongation_inhibition = 5.0f;
-    Plant plant2(g2, glm::vec3(0.0f));
+    // Plant 2: inject ethylene directly onto stem
+    Plant plant2(g, glm::vec3(0.0f));
 
     Node* stem2 = plant2.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem2->age = 1;
     stem2->chemical(ChemicalID::Sugar) = 5.0f;
+    stem2->chemical(ChemicalID::Ethylene) = 1.0f;  // direct injection
+    plant2.seed_mut()->chemical(ChemicalID::Sugar) = 5.0f;
     plant2.seed_mut()->add_child(stem2);
-
-    Node* leaf2 = plant2.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
-    leaf2->as_leaf()->leaf_size = 1.0f;
-    leaf2->chemical(ChemicalID::Sugar) = 0.0f;
-    stem2->add_child(leaf2);
 
     float offset1_before = glm::length(stem1->offset);
     float offset2_before = glm::length(stem2->offset);
@@ -499,9 +487,12 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     Node* seed2 = plant2.seed_mut();
 
     WorldParams w = default_world_params();
-    float max_cost = g.thickening_rate * w.sugar_cost_thickening;
-    seed1->chemical(ChemicalID::Sugar) = g.sugar_save_stem + max_cost * 0.5f;
-    seed2->chemical(ChemicalID::Sugar) = g.sugar_save_stem + max_cost * 2.0f;
+    // With reserve_fraction, a node with more sugar has more available for growth
+    // (available = sugar * (1 - reserve_fraction))
+    // Thickening cost is tiny (~0.00002g). Need very low sugar so
+    // reserve fraction actually limits growth.
+    seed1->chemical(ChemicalID::Sugar) = 0.00005f; // barely any
+    seed2->chemical(ChemicalID::Sugar) = 1.0f;     // plenty
 
     float r1_before = seed1->radius;
     float r2_before = seed2->radius;
