@@ -3,6 +3,7 @@
 #include "engine/engine.h"
 #include "engine/genome.h"
 #include "evolution/genome_bridge.h"
+#include "evolution/fitness.h"
 
 using Catch::Matchers::WithinAbs;
 
@@ -58,4 +59,54 @@ TEST_CASE("Genome template has linkage groups", "[evolution]") {
         }
     }
     REQUIRE(found_auxin);
+}
+
+TEST_CASE("evaluate_plant returns populated stats", "[evolution]") {
+    botany::Genome g = botany::default_genome();
+    botany::WorldParams world = botany::default_world_params();
+
+    auto stats = botany::evaluate_plant(g, world, 500);
+
+    REQUIRE(stats.survival_ticks > 0);
+    REQUIRE(stats.node_count > 3);
+    REQUIRE(stats.total_sugar_produced > 0.0f);
+    REQUIRE(stats.height > 0.0f);
+}
+
+TEST_CASE("evaluate_plant respects max_ticks", "[evolution]") {
+    botany::Genome g = botany::default_genome();
+    botany::WorldParams world = botany::default_world_params();
+
+    auto stats = botany::evaluate_plant(g, world, 50);
+    REQUIRE(stats.survival_ticks <= 50);
+}
+
+TEST_CASE("compute_fitness normalizes and weights correctly", "[evolution]") {
+    botany::PlantStats stats;
+    stats.survival_ticks = 100;
+    stats.node_count = 50;
+    stats.leaf_count = 10;
+    stats.total_sugar_produced = 5.0f;
+    stats.height = 2.0f;
+    stats.crown_ratio = 0.5f;
+    stats.branch_depth = 3;
+    stats.leaf_height_spread = 1.0f;
+
+    botany::PlantStats gen_max = stats;
+
+    botany::FitnessWeights w;
+    float fitness = botany::compute_fitness(stats, gen_max, w);
+    REQUIRE_THAT(fitness, WithinAbs(8.0, 1e-4));
+}
+
+TEST_CASE("compute_fitness handles zero gen_max gracefully", "[evolution]") {
+    botany::PlantStats stats;
+    stats.survival_ticks = 100;
+    stats.height = 2.0f;
+
+    botany::PlantStats gen_max;
+
+    botany::FitnessWeights w;
+    float fitness = botany::compute_fitness(stats, gen_max, w);
+    REQUIRE_THAT(fitness, WithinAbs(0.0, 1e-4));
 }
