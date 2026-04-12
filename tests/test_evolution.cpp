@@ -144,3 +144,47 @@ TEST_CASE("Node has mass and stress fields", "[stress]") {
     });
     REQUIRE(found_nonzero_mass);
 }
+
+TEST_CASE("Extreme stress causes branch break", "[stress]") {
+    botany::Genome g = botany::default_genome();
+    g.wood_density = 500.0f;         // extremely heavy wood
+    g.wood_flexibility = 0.01f;      // nearly rigid (snaps almost immediately)
+    g.growth_rate = 0.05f;           // fast growth to build mass quickly
+    g.branch_angle = 1.4f;           // nearly horizontal branches
+
+    botany::Engine engine;
+    botany::WorldParams world = botany::default_world_params();
+    world.break_strength_factor = 0.01f;  // extremely weak wood — easy to break
+    engine.world_params_mut() = world;
+    engine.create_plant(g, glm::vec3(0.0f));
+
+    uint32_t peak_nodes = 0;
+    uint32_t peak_tick = 0;
+    uint32_t final_nodes = 0;
+    bool had_nodes = false;
+    bool saw_decrease = false;
+    uint32_t prev_count = 0;
+
+    for (int i = 0; i < 2000; i++) {
+        engine.tick();
+        uint32_t count = engine.get_plant(0).node_count();
+        if (count > 10) had_nodes = true;
+        if (count > peak_nodes) {
+            peak_nodes = count;
+            peak_tick = static_cast<uint32_t>(i);
+        }
+        if (count < prev_count) saw_decrease = true;
+        prev_count = count;
+        final_nodes = count;
+    }
+
+    // Structural breaks must have occurred (count decreased at some point)
+    REQUIRE(saw_decrease);
+
+    // After 2000 ticks, the plant's final count must be below its peak —
+    // structural damage from breaks prevents full recovery
+    if (had_nodes && peak_tick < 1500) {
+        // Only check if peak was reached early enough to have time to decline
+        REQUIRE(final_nodes < peak_nodes);
+    }
+}

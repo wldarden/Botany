@@ -119,6 +119,41 @@ void Node::tick(Plant& plant, const WorldParams& world) {
         chemical(ChemicalID::Stress) += stress * g.stress_hormone_production_rate;
     }
 
+    // --- Droop and break (above-ground stems only) ---
+    if (type == NodeType::STEM && !is_underground && stress > 0.0f) {
+        float break_stress = g.wood_density * world.break_strength_factor;
+        float droop_threshold = break_stress * g.wood_flexibility;
+
+        if (stress >= break_stress) {
+            // Branch snaps — remove this node and entire subtree
+            die(plant);
+            return;  // node is dead, skip transport
+        }
+
+        if (stress > droop_threshold) {
+            // Branch droops toward gravity
+            float excess = (stress - droop_threshold) / (break_stress - droop_threshold);
+            float droop_angle = std::min(excess * world.droop_rate, world.droop_rate);
+            float len = glm::length(offset);
+            if (len > 1e-4f) {
+                glm::vec3 dir = offset / len;
+                glm::vec3 down(0.0f, -1.0f, 0.0f);
+                // Rotate dir toward down by droop_angle using Rodrigues' rotation
+                glm::vec3 axis = glm::cross(dir, down);
+                float axis_len = glm::length(axis);
+                if (axis_len > 1e-6f) {
+                    axis /= axis_len;
+                    float c = std::cos(droop_angle);
+                    float s = std::sin(droop_angle);
+                    glm::vec3 new_dir = dir * c
+                        + glm::cross(axis, dir) * s
+                        + axis * glm::dot(axis, dir) * (1.0f - c);
+                    offset = glm::normalize(new_dir) * len;
+                }
+            }
+        }
+    }
+
     transport_chemicals(g);
 
     // Re-clamp sugar after transport — diffusion can overfill small nodes
