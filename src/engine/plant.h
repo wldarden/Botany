@@ -31,6 +31,9 @@ public:
         return root_meristem_count_ >= max_root_meristems;
     }
 
+    float total_sugar_produced() const { return total_sugar_produced_; }
+    void add_sugar_produced(float amount) { total_sugar_produced_ += amount; }
+
     void tick(const struct WorldParams& world);
     void remove_subtree(Node* node);
     void recompute_world_positions();
@@ -50,6 +53,7 @@ private:
     uint32_t root_meristem_count_ = 0;
     std::vector<std::unique_ptr<Node>> nodes_;
     std::vector<Node*> pending_removals_;
+    float total_sugar_produced_ = 0.0f;
 };
 
 } // namespace botany

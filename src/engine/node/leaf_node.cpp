@@ -20,7 +20,10 @@ void LeafNode::grow(Plant& plant, const WorldParams& world) {
         chemical(ChemicalID::Gibberellin) += leaf_size * g.ga_production_rate;
     }
 
+    float sugar_before = chemical(ChemicalID::Sugar);
     photosynthesize(g, world);
+    float delta = chemical(ChemicalID::Sugar) - sugar_before;
+    if (delta > 0.0f) plant.add_sugar_produced(delta);
     phototropism(g, world);
     grow_size(g, world);
 
@@ -44,14 +47,15 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
     if (chemical(ChemicalID::Sugar) >= cap) return;
 
     float angle_efficiency = 1.0f;
-    float offset_len = glm::length(offset);
-    if (offset_len > 1e-4f) {
-        glm::vec3 leaf_normal = offset / offset_len;
+    float facing_len = glm::length(facing);
+    if (facing_len > 1e-4f) {
+        glm::vec3 leaf_normal = facing / facing_len;
         angle_efficiency = std::max(0.0f, leaf_normal.y);
     }
 
+    float leaf_area = leaf_size * leaf_size;
     chemical(ChemicalID::Sugar) += light_exposure * angle_efficiency
-           * world.light_level * leaf_size
+           * world.light_level * leaf_area
            * g.sugar_production_rate;
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
 }
@@ -59,10 +63,10 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
 void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     if (g.leaf_phototropism_rate <= 1e-8f) return;
 
-    float offset_len = glm::length(offset);
-    if (offset_len <= 1e-4f) return;
+    float facing_len = glm::length(facing);
+    if (facing_len <= 1e-4f) return;
 
-    glm::vec3 dir = offset / offset_len;
+    glm::vec3 dir = facing / facing_len;
     glm::vec3 up(0.0f, 1.0f, 0.0f);
     float cos_angle = glm::dot(dir, up);
     if (cos_angle >= 0.999f) return;
@@ -84,7 +88,7 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     glm::vec3 new_dir = dir * c
         + glm::cross(axis, dir) * s
         + axis * glm::dot(axis, dir) * (1.0f - c);
-    offset = glm::normalize(new_dir) * offset_len;
+    facing = glm::normalize(new_dir);
 }
 
 void LeafNode::grow_size(const Genome& g, const WorldParams& world) {
