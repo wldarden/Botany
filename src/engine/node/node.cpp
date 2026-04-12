@@ -27,6 +27,7 @@ Node::Node(uint32_t id, NodeType type, glm::vec3 position, float radius)
     chemicals[ChemicalID::Gibberellin] = 0.0f;
     chemicals[ChemicalID::Sugar] = 0.0f;
     chemicals[ChemicalID::Ethylene] = 0.0f;
+    chemicals[ChemicalID::Stress] = 0.0f;
 }
 
 void Node::add_child(Node* child) {

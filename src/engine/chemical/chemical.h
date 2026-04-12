@@ -11,6 +11,7 @@ enum class ChemicalID : uint8_t {
     Gibberellin,
     Sugar,
     Ethylene,
+    Stress,
 };
 
 enum class ChemicalCategory : uint8_t {
