@@ -88,6 +88,16 @@ struct Genome {
     float ethylene_abscission_threshold;  // ethylene level triggering leaf senescence
     float ethylene_elongation_inhibition; // strength of elongation suppression
     uint32_t senescence_duration;         // ticks from senescence start to leaf drop
+
+    // Stress — mechanical load response
+    float wood_density;                   // g/dm³ — mass per volume, also determines strength
+    float wood_flexibility;               // 0-1 — droop threshold as fraction of break threshold
+    float stress_hormone_production_rate; // hormone per unit stress
+    float stress_hormone_diffusion_rate;  // fraction diffused per tick
+    float stress_hormone_decay_rate;      // fraction decayed per tick
+    float stress_thickening_boost;        // thickening multiplier per unit stress hormone
+    float stress_elongation_inhibition;   // elongation suppression per unit stress hormone
+    float stress_gravitropism_boost;      // gravitropism pull per unit stress hormone
 };
 
 inline Genome default_genome() {
@@ -163,6 +173,16 @@ inline Genome default_genome() {
         .ethylene_abscission_threshold = 0.5f,
         .ethylene_elongation_inhibition = 1.0f,
         .senescence_duration = 48,            // 2 days
+
+        // Stress
+        .wood_density = 50.0f,                    // g/dm³ — light deciduous wood
+        .wood_flexibility = 0.5f,                 // droop starts at 50% of break stress
+        .stress_hormone_production_rate = 0.1f,   // moderate signaling
+        .stress_hormone_diffusion_rate = 0.15f,   // moderate local diffusion
+        .stress_hormone_decay_rate = 0.2f,        // fades quickly — local signal
+        .stress_thickening_boost = 1.0f,          // 1:1 hormone-to-thickening boost
+        .stress_elongation_inhibition = 1.0f,     // 1:1 hormone-to-elongation suppression
+        .stress_gravitropism_boost = 0.5f,        // moderate upward correction
     };
 }
 

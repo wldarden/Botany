@@ -30,6 +30,15 @@ struct WorldParams {
     float sugar_cost_phototropism = 0.001f;      // g glucose / radian of leaf turning
     float light_cell_size         = 0.075f;     // dm — shadow map cell size (smaller = higher resolution, more cells)
     glm::vec3 light_direction     = glm::vec3(0.0f, 1.0f, 0.0f); // unit vector pointing TOWARD light source
+
+    // Stress physics
+    float gravity = 9.81f;                  // m/s² — gravitational acceleration
+    float break_strength_factor = 5.0f;     // stress units per (g/dm³) of wood density
+    float reference_wood_density = 50.0f;   // g/dm³ — density at which sugar costs are calibrated
+    float leaf_mass_density = 5.0f;         // g/dm² of leaf area
+    float meristem_mass = 0.1f;             // g — fixed mass for meristem tips
+    float ground_support_height = 0.5f;     // dm — below this Y, stress is zeroed
+    float droop_rate = 0.01f;               // radians/tick — max angular droop when overstressed
 };
 
 inline WorldParams default_world_params() {
@@ -45,6 +54,13 @@ inline WorldParams default_world_params() {
         .sugar_cost_phototropism = 0.001f,
         .light_cell_size         = 0.075f,
         .light_direction         = glm::vec3(0.0f, 1.0f, 0.0f),
+        .gravity                 = 9.81f,
+        .break_strength_factor   = 5.0f,
+        .reference_wood_density  = 50.0f,
+        .leaf_mass_density       = 5.0f,
+        .meristem_mass           = 0.1f,
+        .ground_support_height   = 0.5f,
+        .droop_rate              = 0.01f,
     };
 }
 
