@@ -114,6 +114,22 @@ target_link_libraries(botany_playback PRIVATE botany_engine botany_renderer bota
 add_executable(botany_dump src/app_dump.cpp)
 target_link_libraries(botany_dump PRIVATE botany_engine botany_serialization)
 
+# Evolution library (external)
+add_subdirectory(/Users/wldarden/repos/evolve ${CMAKE_BINARY_DIR}/evolve)
+
+# Evolution library (project)
+add_library(botany_evolution STATIC
+    src/evolution/genome_bridge.cpp
+    src/evolution/fitness.cpp
+    src/evolution/evolution_runner.cpp
+)
+target_include_directories(botany_evolution PUBLIC src)
+target_link_libraries(botany_evolution PUBLIC botany_engine evolve)
+
+# Evolution app
+add_executable(botany_evolve src/app_evolve.cpp)
+target_link_libraries(botany_evolve PRIVATE botany_engine botany_evolution botany_renderer imgui)
+
 # Tests
 enable_testing()
 add_executable(botany_tests
@@ -127,6 +143,7 @@ add_executable(botany_tests
     tests/test_gibberellin.cpp
     tests/test_ethylene.cpp
     tests/test_serializer.cpp
+    tests/test_evolution.cpp
 )
 target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization Catch2::Catch2WithMain)
 include(CTest)
