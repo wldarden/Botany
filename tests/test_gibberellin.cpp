@@ -1,30 +1,53 @@
 #include <catch2/catch_test_macros.hpp>
-#include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
 #include "engine/node/leaf_node.h"
 #include "engine/genome.h"
-#include "engine/gibberellin.h"
+#include "engine/world_params.h"
+#include "engine/chemical/chemical.h"
 
 using namespace botany;
-using Catch::Matchers::WithinAbs;
 
-TEST_CASE("Young leaf produces GA on parent node", "[gibberellin]") {
+TEST_CASE("Young leaf produces GA on itself", "[gibberellin]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    // Create: seed -> stem -> leaf
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(stem);
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->age = 10; // young
+    leaf->age = 10;
+    leaf->chemical(ChemicalID::Sugar) = 1.0f;
     stem->add_child(leaf);
 
-    compute_gibberellin(plant);
+    WorldParams wp = default_world_params();
+    leaf->tick(plant, wp);
 
-    float expected = leaf->as_leaf()->leaf_size * g.ga_production_rate;
-    REQUIRE_THAT(stem->chemical(ChemicalID::Gibberellin), WithinAbs(expected, 1e-6));
+    REQUIRE(leaf->chemical(ChemicalID::Gibberellin) > 0.0f);
+}
+
+TEST_CASE("GA spreads to parent via transport", "[gibberellin]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(stem);
+    stem->chemical(ChemicalID::Sugar) = 5.0f;
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
+    leaf->as_leaf()->leaf_size = 0.2f;
+    leaf->age = 10;
+    leaf->chemical(ChemicalID::Sugar) = 50.0f;
+    stem->add_child(leaf);
+
+    WorldParams wp = default_world_params();
+
+    // Tick the leaf a few times to produce and transport GA
+    for (int i = 0; i < 3; i++) {
+        leaf->tick(plant, wp);
+    }
+
+    REQUIRE(stem->chemical(ChemicalID::Gibberellin) > 0.0f);
 }
 
 TEST_CASE("Old leaf produces no GA", "[gibberellin]") {
@@ -36,77 +59,50 @@ TEST_CASE("Old leaf produces no GA", "[gibberellin]") {
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->age = g.ga_leaf_age_max + 1; // too old
+    leaf->age = g.ga_leaf_age_max + 1;
+    leaf->chemical(ChemicalID::Sugar) = 1.0f;
     stem->add_child(leaf);
 
-    compute_gibberellin(plant);
+    WorldParams wp = default_world_params();
+    leaf->tick(plant, wp);
 
-    REQUIRE(stem->chemical(ChemicalID::Gibberellin) == 0.0f);
+    // No GA production (age exceeds max), and no prior GA in system
+    REQUIRE(leaf->chemical(ChemicalID::Gibberellin) < 1e-6f);
 }
 
-TEST_CASE("GA reaches grandparent at reduced fraction", "[gibberellin]") {
+TEST_CASE("GA decays without production", "[gibberellin]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    // seed -> grandparent -> parent -> leaf
-    Node* grandparent = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
-    plant.seed_mut()->add_child(grandparent);
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(stem);
+    stem->chemical(ChemicalID::Gibberellin) = 1.0f;
+    stem->chemical(ChemicalID::Sugar) = 5.0f;
 
-    Node* parent = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
-    grandparent->add_child(parent);
+    WorldParams wp = default_world_params();
+    for (int i = 0; i < 20; i++) {
+        stem->tick(plant, wp);
+    }
 
-    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
-    leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->age = 10;
-    parent->add_child(leaf);
-
-    compute_gibberellin(plant);
-
-    float parent_expected = leaf->as_leaf()->leaf_size * g.ga_production_rate;
-    float grandparent_expected = leaf->as_leaf()->leaf_size * g.ga_production_rate * 0.3f;
-
-    REQUIRE_THAT(parent->chemical(ChemicalID::Gibberellin), WithinAbs(parent_expected, 1e-6));
-    REQUIRE_THAT(grandparent->chemical(ChemicalID::Gibberellin), WithinAbs(grandparent_expected, 1e-6));
+    REQUIRE(stem->chemical(ChemicalID::Gibberellin) < 0.1f);
 }
 
-TEST_CASE("GA does not spread beyond grandparent", "[gibberellin]") {
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
-
-    // seed -> great_grandparent -> grandparent -> parent -> leaf
-    Node* ggp = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
-    plant.seed_mut()->add_child(ggp);
-
-    Node* gp = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
-    ggp->add_child(gp);
-
-    Node* parent = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
-    gp->add_child(parent);
-
-    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
-    leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->age = 10;
-    parent->add_child(leaf);
-
-    compute_gibberellin(plant);
-
-    // Great-grandparent and seed should have no GA
-    REQUIRE(ggp->chemical(ChemicalID::Gibberellin) == 0.0f);
-    REQUIRE(plant.seed()->chemical(ChemicalID::Gibberellin) == 0.0f);
-}
-
-TEST_CASE("GA resets to zero before recomputing", "[gibberellin]") {
+TEST_CASE("Senescing leaf produces no GA", "[gibberellin]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(stem);
 
-    // Manually set GA to something nonzero
-    stem->chemical(ChemicalID::Gibberellin) = 999.0f;
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
+    leaf->as_leaf()->leaf_size = 0.2f;
+    leaf->age = 10;
+    leaf->as_leaf()->senescence_ticks = 1;
+    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    stem->add_child(leaf);
 
-    // No leaves — compute should reset to 0
-    compute_gibberellin(plant);
+    WorldParams wp = default_world_params();
+    leaf->tick(plant, wp);
 
-    REQUIRE(stem->chemical(ChemicalID::Gibberellin) == 0.0f);
+    REQUIRE(leaf->chemical(ChemicalID::Gibberellin) < 1e-6f);
 }

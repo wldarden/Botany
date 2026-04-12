@@ -131,7 +131,6 @@ void Node::transport_chemicals(const Genome& g) {
     if (parent) {
         // Hormones: biased local transport via registry
         for (const auto& hp : hormone_params(g)) {
-            if (hp.id == ChemicalID::Gibberellin) continue;  // still global pass
             transport_chemical(chemical(hp.id), parent->chemical(hp.id),
                 hp.transport_rate, hp.directional_bias, hp.decay_rate);
         }
@@ -158,7 +157,6 @@ void Node::transport_chemicals(const Genome& g) {
     } else {
         // Seed: just decay hormones
         for (const auto& hp : hormone_params(g)) {
-            if (hp.id == ChemicalID::Gibberellin) continue;
             chemical(hp.id) *= (1.0f - hp.decay_rate);
         }
     }

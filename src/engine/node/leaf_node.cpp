@@ -14,6 +14,12 @@ LeafNode::LeafNode(uint32_t id, glm::vec3 position, float radius)
 
 void LeafNode::grow(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
+
+    // Gibberellin production: young leaves produce GA on themselves
+    if (age < g.ga_leaf_age_max && leaf_size > 1e-6f && senescence_ticks == 0) {
+        chemical(ChemicalID::Gibberellin) += leaf_size * g.ga_production_rate;
+    }
+
     photosynthesize(g, world);
     phototropism(g, world);
     grow_size(g, world);

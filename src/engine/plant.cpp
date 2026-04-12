@@ -8,7 +8,6 @@
 #include "engine/node/meristems/root_apical.h"
 #include "engine/node/meristems/root_axillary.h"
 #include "engine/sugar.h"
-#include "engine/gibberellin.h"
 #include "engine/ethylene.h"
 #include "engine/world_params.h"
 #include <algorithm>
@@ -37,7 +36,6 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
 void Plant::tick(const WorldParams& world) {
     // Auxin, cytokinin, sugar diffusion: now transported locally
     // by each node during Node::transport_chemicals()
-    compute_gibberellin(*this);
     transport_sugar(*this, world);
     compute_ethylene(*this, world);
     process_abscission(*this);
