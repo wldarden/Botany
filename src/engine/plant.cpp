@@ -35,7 +35,7 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
 void Plant::tick(const WorldParams& world) {
     // Auxin, cytokinin, sugar diffusion: now transported locally
     // by each node during Node::transport_chemicals()
-    compute_ethylene(*this, world);
+    // compute_ethylene(*this, world);  // disabled: crowding kills leaves instantly
     tick_tree(world);
     recompute_world_positions();
 }
