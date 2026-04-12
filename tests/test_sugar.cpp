@@ -332,7 +332,7 @@ TEST_CASE("Subtree removal cleans up all descendants", "[sugar]") {
 
 // === Integration test ===
 
-TEST_CASE("transport_sugar runs full produce-diffuse-consume cycle", "[sugar]") {
+TEST_CASE("Leaf tick runs full produce-diffuse-consume cycle", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
