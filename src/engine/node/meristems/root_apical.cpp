@@ -14,7 +14,6 @@ RootApicalNode::RootApicalNode(uint32_t id, glm::vec3 position, float radius)
 
 void RootApicalNode::tick(Plant& plant, const WorldParams& world) {
     chemical(ChemicalID::Cytokinin) += plant.genome().cytokinin_production_rate;
-    cytokinin = chemical(ChemicalID::Cytokinin);
     Node::tick(plant, world);
     ticks_since_last_node++;
 }
@@ -57,7 +56,6 @@ bool RootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
 
     float actual_rate = g.root_growth_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
-    sugar = chemical(ChemicalID::Sugar);
     offset += growth_dir * actual_rate;
     return true;
 }

@@ -26,7 +26,6 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
     for (auto& info : nodes) {
         Node& node = *info.node;
         node.chemical(ChemicalID::Ethylene) = 0.0f;
-        node.ethylene = 0.0f;
 
         // Trigger 1: Sugar starvation
         if (node.chemical(ChemicalID::Sugar) <= 0.0f) {
@@ -59,7 +58,6 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
             }
         }
         node.chemical(ChemicalID::Ethylene) += g.ethylene_crowding_rate * static_cast<float>(nearby_count);
-        node.ethylene = node.chemical(ChemicalID::Ethylene);
     }
 
     // Phase 2: Spatial gas diffusion (compute-then-apply)
@@ -82,7 +80,6 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
 
     for (size_t i = 0; i < nodes.size(); i++) {
         nodes[i].node->chemical(ChemicalID::Ethylene) += received[i];
-        nodes[i].node->ethylene = nodes[i].node->chemical(ChemicalID::Ethylene);
     }
 }
 

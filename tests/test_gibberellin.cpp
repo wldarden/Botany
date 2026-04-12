@@ -103,7 +103,7 @@ TEST_CASE("GA resets to zero before recomputing", "[gibberellin]") {
     plant.seed_mut()->add_child(stem);
 
     // Manually set GA to something nonzero
-    stem->chemical(ChemicalID::Gibberellin) = 999.0f; stem->gibberellin = 999.0f;
+    stem->chemical(ChemicalID::Gibberellin) = 999.0f;
 
     // No leaves — compute should reset to 0
     compute_gibberellin(plant);

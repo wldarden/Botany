@@ -36,7 +36,6 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
            * world.light_level * leaf_size
            * g.sugar_production_rate;
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
-    sugar = chemical(ChemicalID::Sugar);
 }
 
 void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
@@ -62,7 +61,6 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     if (chemical(ChemicalID::Sugar) < cost) return;
 
     chemical(ChemicalID::Sugar) -= cost;
-    sugar = chemical(ChemicalID::Sugar);
     float c = std::cos(turn);
     float s = std::sin(turn);
     glm::vec3 new_dir = dir * c
@@ -87,7 +85,6 @@ void LeafNode::grow_size(const Genome& g, const WorldParams& world) {
 
     leaf_size += growth;
     chemical(ChemicalID::Sugar) -= cost;
-    sugar = chemical(ChemicalID::Sugar);
 }
 
 float LeafNode::maintenance_cost(const Genome& g) const {

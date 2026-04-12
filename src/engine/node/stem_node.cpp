@@ -26,7 +26,6 @@ void StemNode::thicken(const Genome& g, const WorldParams& world) {
 
     float actual_rate = g.thickening_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_thickening;
-    sugar = chemical(ChemicalID::Sugar);
     radius += actual_rate;
 }
 
@@ -49,7 +48,6 @@ void StemNode::elongate(const Genome& g, const WorldParams& world) {
 
     float actual_rate = effective_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_elongation;
-    sugar = chemical(ChemicalID::Sugar);
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;
     }

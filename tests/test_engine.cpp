@@ -44,7 +44,7 @@ TEST_CASE("Engine tick grows the plant", "[engine]") {
 
     const Genome& genome = engine.get_plant(id).genome();
     engine.get_plant_mut(id).for_each_node_mut([&genome](Node& n) {
-        n.chemical(ChemicalID::Sugar) = sugar_cap(n, genome); n.sugar = sugar_cap(n, genome);
+        n.chemical(ChemicalID::Sugar) = sugar_cap(n, genome);
     });
     engine.tick();
 
@@ -64,7 +64,7 @@ TEST_CASE("Engine runs multiple ticks and plant grows complex structure", "[engi
     for (int i = 0; i < 20; i++) {
         const Genome& genome = engine.get_plant(id).genome();
         engine.get_plant_mut(id).for_each_node_mut([&genome](Node& n) {
-            n.chemical(ChemicalID::Sugar) = sugar_cap(n, genome); n.sugar = sugar_cap(n, genome);
+            n.chemical(ChemicalID::Sugar) = sugar_cap(n, genome);
         });
         engine.tick();
     }

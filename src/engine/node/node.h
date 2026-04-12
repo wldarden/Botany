@@ -48,15 +48,9 @@ public:
     uint32_t age;
 
     // --- Chemicals ---
-    float auxin;
-    float cytokinin;
-    float sugar = 0.0f;
     uint32_t starvation_ticks = 0;
-    float gibberellin = 0.0f;
-    float ethylene = 0.0f;
 
-    // Chemical storage — map-based, replaces individual fields.
-    // During migration, both map and old fields exist.
+    // Chemical storage — map-based, sole storage for all chemical values.
     std::unordered_map<ChemicalID, float> chemicals;
 
     float& chemical(ChemicalID id) { return chemicals[id]; }

@@ -5,7 +5,6 @@
 #include "engine/node/leaf_node.h"
 #include <algorithm>
 #include <cmath>
-#include <vector>
 #include <glm/geometric.hpp>
 
 namespace botany {
@@ -23,7 +22,6 @@ float sugar_cap(const Node& node, const Genome& g) {
         case NodeType::ROOT: {
             float volume = 3.14159f * node.radius * node.radius * length;
             float cap = volume * g.sugar_storage_density_wood;
-            // Seed node (no parent): cap must hold initial reserves
             if (!node.parent) {
                 cap = std::max(cap, g.seed_sugar);
             }
@@ -38,55 +36,8 @@ float sugar_cap(const Node& node, const Genome& g) {
     return g.sugar_cap_minimum;
 }
 
-void compute_light_exposure(Plant& plant, const WorldParams& world) {
-    // Collect all above-ground nodes as shadow casters, and leaves as targets.
-    struct Caster { float x, y, z, shadow_radius; };
-    struct LeafTarget { LeafNode* leaf; float x, y, z, size; };
-
-    std::vector<Caster> casters;
-    std::vector<LeafTarget> leaves;
-
-    plant.for_each_node_mut([&](Node& node) {
-        // Only above-ground physical nodes cast shadows
-        if (node.type != NodeType::ROOT && !node.is_meristem()) {
-            float sr = node.radius;
-            if (auto* leaf = node.as_leaf()) {
-                leaf->light_exposure = 1.0f;  // reset
-                sr = leaf->leaf_size;
-            }
-            if (sr > 1e-6f) {
-                casters.push_back({node.position.x, node.position.y,
-                                   node.position.z, sr});
-            }
-        }
-        if (auto* leaf = node.as_leaf()) {
-            if (leaf->leaf_size > 1e-6f && leaf->senescence_ticks == 0) {
-                leaves.push_back({leaf, node.position.x, node.position.y,
-                                  node.position.z, leaf->leaf_size});
-            }
-        }
-    });
-
-    // For each leaf, accumulate shade from all nodes above it.
-    // Beer-Lambert: exposure = exp(-k * accumulated_shade_area)
-    float k = world.light_extinction_coeff;
-    for (auto& lt : leaves) {
-        float shade = 0.0f;
-        for (const auto& c : casters) {
-            if (c.y <= lt.y) continue;
-            float dx = c.x - lt.x;
-            float dz = c.z - lt.z;
-            float horiz2 = dx * dx + dz * dz;
-            float reach = c.shadow_radius + lt.size;
-            if (horiz2 >= reach * reach) continue;
-            float overlap = 1.0f - std::sqrt(horiz2) / reach;
-            shade += c.shadow_radius * overlap;
-        }
-        lt.leaf->light_exposure = std::exp(-k * shade);
-    }
-}
-
-// Sugar consumption + starvation + death now in Node::tick()
+// Light exposure: engine/light.cpp (world-level, called from Engine::tick)
+// Sugar consumption + starvation + death: Node::tick()
 
 void grow_leaves(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
@@ -113,7 +64,6 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
                         float cost = turn * world.sugar_cost_phototropism;
                         if (node.chemical(ChemicalID::Sugar) >= cost) {
                             node.chemical(ChemicalID::Sugar) -= cost;
-                            node.sugar = node.chemical(ChemicalID::Sugar);
                             float c = std::cos(turn);
                             float s = std::sin(turn);
                             glm::vec3 new_dir = dir * c
@@ -142,12 +92,11 @@ void grow_leaves(Plant& plant, const WorldParams& world) {
 
         leaf->leaf_size += growth;
         node.chemical(ChemicalID::Sugar) -= cost;
-        node.sugar = node.chemical(ChemicalID::Sugar);
     });
 }
 
 void transport_sugar(Plant& plant, const WorldParams& world) {
-    compute_light_exposure(plant, world);
+    // Light exposure: computed by Engine before plant ticks (engine/light.cpp)
     // Sugar production: LeafNode::tick()
     // Sugar diffusion: Node::transport_chemicals()
     // Sugar consumption + starvation death: Node::tick()

@@ -11,7 +11,6 @@ void compute_gibberellin(Plant& plant) {
     // Phase 1: Reset all GA to zero
     plant.for_each_node_mut([](Node& node) {
         node.chemical(ChemicalID::Gibberellin) = 0.0f;
-        node.gibberellin = 0.0f;
     });
 
     // Phase 2: Young leaves produce GA on their parent (and grandparent)
@@ -26,12 +25,10 @@ void compute_gibberellin(Plant& plant) {
         // Apply to parent
         if (node.parent) {
             node.parent->chemical(ChemicalID::Gibberellin) += production;
-            node.parent->gibberellin = node.parent->chemical(ChemicalID::Gibberellin);
 
             // Apply reduced fraction to grandparent
             if (node.parent->parent) {
                 node.parent->parent->chemical(ChemicalID::Gibberellin) += production * 0.3f;
-                node.parent->parent->gibberellin = node.parent->parent->chemical(ChemicalID::Gibberellin);
             }
         }
     });

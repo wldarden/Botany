@@ -14,7 +14,6 @@ ShootApicalNode::ShootApicalNode(uint32_t id, glm::vec3 position, float radius)
 
 void ShootApicalNode::tick(Plant& plant, const WorldParams& world) {
     chemical(ChemicalID::Auxin) += plant.genome().auxin_production_rate;
-    auxin = chemical(ChemicalID::Auxin);
     Node::tick(plant, world);
     ticks_since_last_node++;
 }
@@ -45,7 +44,6 @@ bool ShootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
 
     float actual_rate = g.growth_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_shoot_growth;
-    sugar = chemical(ChemicalID::Sugar);
     offset += growth_dir * actual_rate;
     return true;
 }

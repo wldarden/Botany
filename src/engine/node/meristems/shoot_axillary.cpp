@@ -31,7 +31,6 @@ bool ShootAxillaryNode::can_activate(const Genome& g, const WorldParams& world) 
 void ShootAxillaryNode::activate(Plant& plant, const Genome& g, const WorldParams& world) {
     Node* apical = plant.create_node(NodeType::SHOOT_APICAL, offset, g.initial_radius);
     apical->chemical(ChemicalID::Sugar) = chemical(ChemicalID::Sugar) - world.sugar_cost_activation;
-    apical->sugar = apical->chemical(ChemicalID::Sugar);
 
     if (parent) {
         parent->replace_child(this, apical);

@@ -22,7 +22,6 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     // Seed node
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
     seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
-    seed->sugar = genome.seed_sugar;
 
     // Shoot apical meristem node (child of seed)
     Node* shoot = create_node(NodeType::SHOOT_APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
