@@ -375,8 +375,11 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     // Low sugar = slow growth, high sugar = full growth
     WorldParams w = default_world_params();
     float max_cost = g.growth_rate * w.sugar_cost_shoot_growth;
-    tip1->chemical(ChemicalID::Sugar) = g.sugar_save_shoot + max_cost * 0.5f; // half growth
-    tip2->chemical(ChemicalID::Sugar) = g.sugar_save_shoot + max_cost * 2.0f; // full growth (capped at 1.0)
+    tip1->chemical(ChemicalID::Sugar) = max_cost * 0.5f; // half growth
+    tip2->chemical(ChemicalID::Sugar) = max_cost * 2.0f; // full growth (capped at 1.0)
+    // Saturate cytokinin so it doesn't gate this test
+    tip1->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 2.0f;
+    tip2->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 2.0f;
 
     glm::vec3 pos1_before = tip1->position;
     glm::vec3 pos2_before = tip2->position;

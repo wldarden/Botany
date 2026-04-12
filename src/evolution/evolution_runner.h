@@ -19,6 +19,7 @@ struct EvolutionConfig {
     float light_level_min = 0.5f;
     float light_level_max = 1.0f;
     float light_tilt_max = 0.52f;  // ~30 degrees max tilt
+    float mutation_strength_pct = 0.03f;  // mutation stddev as fraction of gene's valid range (3%)
     FitnessWeights weights;
 };
 
@@ -37,6 +38,7 @@ public:
 
     uint32_t generation() const { return generation_; }
     float best_fitness() const { return best_fitness_; }
+    bool fitness_improved() const { return fitness_improved_; }
     const PlantStats& best_stats() const { return best_stats_; }
     const evolve::StructuredGenome& best_genome() const { return best_genome_; }
     const std::vector<float>& fitness_history() const { return fitness_history_; }
@@ -61,6 +63,7 @@ private:
     evolve::StructuredGenome genome_template_;
 
     float best_fitness_ = 0.0f;
+    bool fitness_improved_ = false;
     PlantStats best_stats_;
     evolve::StructuredGenome best_genome_;
     std::vector<float> fitness_history_;

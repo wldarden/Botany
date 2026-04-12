@@ -23,6 +23,75 @@ static void scroll_callback(GLFWwindow*, double, double yoffset) {
     if (g_renderer) g_renderer->camera().zoom(static_cast<float>(yoffset));
 }
 
+static void save_genome(const Genome& g, const std::string& path) {
+    std::ofstream out(path);
+    if (!out) return;
+    out << "auxin_production_rate=" << g.auxin_production_rate << "\n";
+    out << "auxin_transport_rate=" << g.auxin_transport_rate << "\n";
+    out << "auxin_directional_bias=" << g.auxin_directional_bias << "\n";
+    out << "auxin_decay_rate=" << g.auxin_decay_rate << "\n";
+    out << "auxin_threshold=" << g.auxin_threshold << "\n";
+    out << "cytokinin_production_rate=" << g.cytokinin_production_rate << "\n";
+    out << "cytokinin_transport_rate=" << g.cytokinin_transport_rate << "\n";
+    out << "cytokinin_directional_bias=" << g.cytokinin_directional_bias << "\n";
+    out << "cytokinin_decay_rate=" << g.cytokinin_decay_rate << "\n";
+    out << "cytokinin_threshold=" << g.cytokinin_threshold << "\n";
+    out << "growth_rate=" << g.growth_rate << "\n";
+    out << "max_internode_length=" << g.max_internode_length << "\n";
+    out << "min_internode_length=" << g.min_internode_length << "\n";
+    out << "branch_angle=" << g.branch_angle << "\n";
+    out << "thickening_rate=" << g.thickening_rate << "\n";
+    out << "internode_elongation_rate=" << g.internode_elongation_rate << "\n";
+    out << "internode_maturation_ticks=" << g.internode_maturation_ticks << "\n";
+    out << "root_growth_rate=" << g.root_growth_rate << "\n";
+    out << "root_max_internode_length=" << g.root_max_internode_length << "\n";
+    out << "root_min_internode_length=" << g.root_min_internode_length << "\n";
+    out << "root_branch_angle=" << g.root_branch_angle << "\n";
+    out << "root_internode_elongation_rate=" << g.root_internode_elongation_rate << "\n";
+    out << "root_internode_maturation_ticks=" << g.root_internode_maturation_ticks << "\n";
+    out << "root_gravitropism_strength=" << g.root_gravitropism_strength << "\n";
+    out << "root_gravitropism_depth=" << g.root_gravitropism_depth << "\n";
+    out << "max_leaf_size=" << g.max_leaf_size << "\n";
+    out << "leaf_growth_rate=" << g.leaf_growth_rate << "\n";
+    out << "leaf_bud_size=" << g.leaf_bud_size << "\n";
+    out << "initial_radius=" << g.initial_radius << "\n";
+    out << "root_initial_radius=" << g.root_initial_radius << "\n";
+    out << "tip_offset=" << g.tip_offset << "\n";
+    out << "growth_noise=" << g.growth_noise << "\n";
+    out << "leaf_phototropism_rate=" << g.leaf_phototropism_rate << "\n";
+    out << "sugar_production_rate=" << g.sugar_production_rate << "\n";
+    out << "sugar_transport_conductance=" << g.sugar_transport_conductance << "\n";
+    out << "sugar_maintenance_leaf=" << g.sugar_maintenance_leaf << "\n";
+    out << "sugar_maintenance_stem=" << g.sugar_maintenance_stem << "\n";
+    out << "sugar_maintenance_root=" << g.sugar_maintenance_root << "\n";
+    out << "sugar_maintenance_meristem=" << g.sugar_maintenance_meristem << "\n";
+    out << "seed_sugar=" << g.seed_sugar << "\n";
+    out << "sugar_storage_density_wood=" << g.sugar_storage_density_wood << "\n";
+    out << "sugar_storage_density_leaf=" << g.sugar_storage_density_leaf << "\n";
+    out << "sugar_cap_minimum=" << g.sugar_cap_minimum << "\n";
+    out << "sugar_cap_meristem=" << g.sugar_cap_meristem << "\n";
+    out << "sugar_activation_shoot=" << g.sugar_activation_shoot << "\n";
+    out << "sugar_activation_root=" << g.sugar_activation_root << "\n";
+    out << "ga_production_rate=" << g.ga_production_rate << "\n";
+    out << "ga_leaf_age_max=" << g.ga_leaf_age_max << "\n";
+    out << "ga_elongation_sensitivity=" << g.ga_elongation_sensitivity << "\n";
+    out << "ga_length_sensitivity=" << g.ga_length_sensitivity << "\n";
+    out << "ga_transport_rate=" << g.ga_transport_rate << "\n";
+    out << "ga_directional_bias=" << g.ga_directional_bias << "\n";
+    out << "ga_decay_rate=" << g.ga_decay_rate << "\n";
+    out << "ethylene_starvation_rate=" << g.ethylene_starvation_rate << "\n";
+    out << "ethylene_shade_rate=" << g.ethylene_shade_rate << "\n";
+    out << "ethylene_shade_threshold=" << g.ethylene_shade_threshold << "\n";
+    out << "ethylene_age_rate=" << g.ethylene_age_rate << "\n";
+    out << "ethylene_age_onset=" << g.ethylene_age_onset << "\n";
+    out << "ethylene_crowding_rate=" << g.ethylene_crowding_rate << "\n";
+    out << "ethylene_crowding_radius=" << g.ethylene_crowding_radius << "\n";
+    out << "ethylene_diffusion_radius=" << g.ethylene_diffusion_radius << "\n";
+    out << "ethylene_abscission_threshold=" << g.ethylene_abscission_threshold << "\n";
+    out << "ethylene_elongation_inhibition=" << g.ethylene_elongation_inhibition << "\n";
+    out << "senescence_duration=" << g.senescence_duration << "\n";
+}
+
 int main() {
     Renderer renderer;
     if (!renderer.init(1280, 800, "shaders")) {
@@ -81,6 +150,14 @@ int main() {
         if (!gen_in_progress && evo_thread.joinable()) {
             evo_thread.join();
             display_needs_update = true;
+
+            // Autosave on improvement
+            if (runner.fitness_improved()) {
+                save_genome(runner.best_as_botany_genome(), "best_genome.txt");
+                std::cout << "Gen " << runner.generation()
+                          << ": new best fitness " << runner.best_fitness()
+                          << " -> saved best_genome.txt" << std::endl;
+            }
         }
 
         // Auto-launch next generation if running
@@ -220,78 +297,8 @@ int main() {
 
             // Export Best button
             if (ImGui::Button("Export Best")) {
-                Genome best_g = runner.best_as_botany_genome();
-                std::ofstream out("best_genome.txt");
-                if (out) {
-                    out << "auxin_production_rate=" << best_g.auxin_production_rate << "\n";
-                    out << "auxin_transport_rate=" << best_g.auxin_transport_rate << "\n";
-                    out << "auxin_directional_bias=" << best_g.auxin_directional_bias << "\n";
-                    out << "auxin_decay_rate=" << best_g.auxin_decay_rate << "\n";
-                    out << "auxin_threshold=" << best_g.auxin_threshold << "\n";
-                    out << "cytokinin_production_rate=" << best_g.cytokinin_production_rate << "\n";
-                    out << "cytokinin_transport_rate=" << best_g.cytokinin_transport_rate << "\n";
-                    out << "cytokinin_directional_bias=" << best_g.cytokinin_directional_bias << "\n";
-                    out << "cytokinin_decay_rate=" << best_g.cytokinin_decay_rate << "\n";
-                    out << "cytokinin_threshold=" << best_g.cytokinin_threshold << "\n";
-                    out << "growth_rate=" << best_g.growth_rate << "\n";
-                    out << "max_internode_length=" << best_g.max_internode_length << "\n";
-                    out << "min_internode_length=" << best_g.min_internode_length << "\n";
-                    out << "branch_angle=" << best_g.branch_angle << "\n";
-                    out << "thickening_rate=" << best_g.thickening_rate << "\n";
-                    out << "internode_elongation_rate=" << best_g.internode_elongation_rate << "\n";
-                    out << "internode_maturation_ticks=" << best_g.internode_maturation_ticks << "\n";
-                    out << "root_growth_rate=" << best_g.root_growth_rate << "\n";
-                    out << "root_max_internode_length=" << best_g.root_max_internode_length << "\n";
-                    out << "root_min_internode_length=" << best_g.root_min_internode_length << "\n";
-                    out << "root_branch_angle=" << best_g.root_branch_angle << "\n";
-                    out << "root_internode_elongation_rate=" << best_g.root_internode_elongation_rate << "\n";
-                    out << "root_internode_maturation_ticks=" << best_g.root_internode_maturation_ticks << "\n";
-                    out << "root_gravitropism_strength=" << best_g.root_gravitropism_strength << "\n";
-                    out << "root_gravitropism_depth=" << best_g.root_gravitropism_depth << "\n";
-                    out << "max_leaf_size=" << best_g.max_leaf_size << "\n";
-                    out << "leaf_growth_rate=" << best_g.leaf_growth_rate << "\n";
-                    out << "leaf_bud_size=" << best_g.leaf_bud_size << "\n";
-                    out << "initial_radius=" << best_g.initial_radius << "\n";
-                    out << "root_initial_radius=" << best_g.root_initial_radius << "\n";
-                    out << "tip_offset=" << best_g.tip_offset << "\n";
-                    out << "growth_noise=" << best_g.growth_noise << "\n";
-                    out << "leaf_phototropism_rate=" << best_g.leaf_phototropism_rate << "\n";
-                    out << "sugar_production_rate=" << best_g.sugar_production_rate << "\n";
-                    out << "sugar_transport_conductance=" << best_g.sugar_transport_conductance << "\n";
-                    out << "sugar_maintenance_leaf=" << best_g.sugar_maintenance_leaf << "\n";
-                    out << "sugar_maintenance_stem=" << best_g.sugar_maintenance_stem << "\n";
-                    out << "sugar_maintenance_root=" << best_g.sugar_maintenance_root << "\n";
-                    out << "sugar_maintenance_meristem=" << best_g.sugar_maintenance_meristem << "\n";
-                    out << "seed_sugar=" << best_g.seed_sugar << "\n";
-                    out << "sugar_storage_density_wood=" << best_g.sugar_storage_density_wood << "\n";
-                    out << "sugar_storage_density_leaf=" << best_g.sugar_storage_density_leaf << "\n";
-                    out << "sugar_cap_minimum=" << best_g.sugar_cap_minimum << "\n";
-                    out << "sugar_cap_meristem=" << best_g.sugar_cap_meristem << "\n";
-                    out << "sugar_save_shoot=" << best_g.sugar_save_shoot << "\n";
-                    out << "sugar_save_root=" << best_g.sugar_save_root << "\n";
-                    out << "sugar_save_stem=" << best_g.sugar_save_stem << "\n";
-                    out << "sugar_activation_shoot=" << best_g.sugar_activation_shoot << "\n";
-                    out << "sugar_activation_root=" << best_g.sugar_activation_root << "\n";
-                    out << "ga_production_rate=" << best_g.ga_production_rate << "\n";
-                    out << "ga_leaf_age_max=" << best_g.ga_leaf_age_max << "\n";
-                    out << "ga_elongation_sensitivity=" << best_g.ga_elongation_sensitivity << "\n";
-                    out << "ga_length_sensitivity=" << best_g.ga_length_sensitivity << "\n";
-                    out << "ga_transport_rate=" << best_g.ga_transport_rate << "\n";
-                    out << "ga_directional_bias=" << best_g.ga_directional_bias << "\n";
-                    out << "ga_decay_rate=" << best_g.ga_decay_rate << "\n";
-                    out << "ethylene_starvation_rate=" << best_g.ethylene_starvation_rate << "\n";
-                    out << "ethylene_shade_rate=" << best_g.ethylene_shade_rate << "\n";
-                    out << "ethylene_shade_threshold=" << best_g.ethylene_shade_threshold << "\n";
-                    out << "ethylene_age_rate=" << best_g.ethylene_age_rate << "\n";
-                    out << "ethylene_age_onset=" << best_g.ethylene_age_onset << "\n";
-                    out << "ethylene_crowding_rate=" << best_g.ethylene_crowding_rate << "\n";
-                    out << "ethylene_crowding_radius=" << best_g.ethylene_crowding_radius << "\n";
-                    out << "ethylene_diffusion_radius=" << best_g.ethylene_diffusion_radius << "\n";
-                    out << "ethylene_abscission_threshold=" << best_g.ethylene_abscission_threshold << "\n";
-                    out << "ethylene_elongation_inhibition=" << best_g.ethylene_elongation_inhibition << "\n";
-                    out << "senescence_duration=" << best_g.senescence_duration << "\n";
-                    std::cout << "Exported best genome to best_genome.txt" << std::endl;
-                }
+                save_genome(runner.best_as_botany_genome(), "best_genome.txt");
+                std::cout << "Exported best genome to best_genome.txt" << std::endl;
             }
         }
 

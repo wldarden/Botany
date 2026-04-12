@@ -7,7 +7,7 @@
 
 namespace botany {
 
-using meristem_helpers::sugar_growth_fraction;
+using meristem_helpers::growth_fraction;
 
 StemNode::StemNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::STEM, position, radius)
@@ -21,7 +21,8 @@ void StemNode::grow(Plant& plant, const WorldParams& world) {
 
 void StemNode::thicken(const Genome& g, const WorldParams& world) {
     float max_cost = g.thickening_rate * world.sugar_cost_thickening;
-    float gf = sugar_growth_fraction(chemical(ChemicalID::Sugar), g.sugar_save_stem, max_cost);
+    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
+                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf <= 1e-6f) return;
 
     float actual_rate = g.thickening_rate * gf;
@@ -43,7 +44,8 @@ void StemNode::elongate(const Genome& g, const WorldParams& world) {
     if (current_len >= max_len) return;
 
     float max_cost = effective_rate * world.sugar_cost_elongation;
-    float gf = sugar_growth_fraction(chemical(ChemicalID::Sugar), g.sugar_save_stem, max_cost);
+    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
+                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf <= 1e-6f) return;
 
     float actual_rate = effective_rate * gf;

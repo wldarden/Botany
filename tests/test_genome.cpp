@@ -50,8 +50,6 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
         REQUIRE(w.sugar_cost_shoot_growth > 0.0f);
         REQUIRE(w.sugar_cost_root_growth > 0.0f);
         REQUIRE(w.sugar_cost_thickening > 0.0f);
-        REQUIRE(g.sugar_save_shoot >= 0.0f);
-        REQUIRE(g.sugar_save_root >= 0.0f);
-        REQUIRE(g.sugar_save_stem >= 0.0f);
+        REQUIRE(g.cytokinin_growth_threshold > 0.0f);
     }
 }

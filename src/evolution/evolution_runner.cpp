@@ -11,7 +11,7 @@ namespace botany {
 EvolutionRunner::EvolutionRunner(const EvolutionConfig& config, uint32_t seed)
     : config_(config), rng_(seed)
 {
-    genome_template_ = build_genome_template(default_genome());
+    genome_template_ = build_genome_template(default_genome(), config_.mutation_strength_pct);
     init_population();
 }
 
@@ -103,10 +103,12 @@ void EvolutionRunner::score_all() {
     std::sort(population_.begin(), population_.end(),
               [](const Individual& a, const Individual& b) { return a.fitness > b.fitness; });
 
+    float prev_best = best_fitness_;
     best_fitness_ = population_[0].fitness;
     best_stats_ = population_[0].stats;
     best_genome_ = population_[0].genome;
     fitness_history_.push_back(best_fitness_);
+    fitness_improved_ = (best_fitness_ > prev_best + 1e-6f);
 }
 
 const Individual& EvolutionRunner::tournament_select() {

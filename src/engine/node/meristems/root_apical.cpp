@@ -13,7 +13,7 @@ RootApicalNode::RootApicalNode(uint32_t id, glm::vec3 position, float radius)
 {}
 
 void RootApicalNode::tick(Plant& plant, const WorldParams& world) {
-    chemical(ChemicalID::Cytokinin) += plant.genome().cytokinin_production_rate;
+    // Cytokinin production moved to leaves (proportional to sugar production)
     Node::tick(plant, world);
     ticks_since_last_node++;
 }
@@ -46,7 +46,8 @@ glm::vec3 RootApicalNode::apply_gravitropism(const glm::vec3& dir, const Genome&
 
 bool RootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
-    float gf = sugar_growth_fraction(chemical(ChemicalID::Sugar), g.sugar_save_root, max_cost);
+    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
+                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf < 1e-6f) return false;
 
     if (target_internode_length < 1e-6f) {

@@ -34,7 +34,8 @@ void ShootApicalNode::roll_direction(const Genome& g) {
 
 bool ShootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
     float max_cost = g.growth_rate * world.sugar_cost_shoot_growth;
-    float gf = sugar_growth_fraction(chemical(ChemicalID::Sugar), g.sugar_save_shoot, max_cost);
+    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
+                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf < 1e-6f) return false;
 
     if (target_internode_length < 1e-6f) {

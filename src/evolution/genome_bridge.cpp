@@ -2,101 +2,105 @@
 
 namespace botany {
 
+// Register a gene with strength computed as a percentage of its valid range.
+// rate = probability of mutation per generation (0.1 = 10%)
+// pct  = mutation stddev as fraction of (max - min)
 static void reg(evolve::StructuredGenome& sg, const std::string& tag, float val,
-                float rate, float strength, float min_val, float max_val) {
+                float rate, float min_val, float max_val, float pct) {
+    float strength = (max_val - min_val) * pct;
     sg.add_gene({tag, {val}, {rate, strength, min_val, max_val}});
 }
 
-evolve::StructuredGenome build_genome_template(const Genome& g) {
+evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_pct) {
     evolve::StructuredGenome sg;
+    const float r = 0.1f;   // 10% chance of mutation per gene per generation
+    const float p = mutation_pct;
 
     // --- Auxin group (5 genes) ---
-    reg(sg, "auxin_production_rate",   g.auxin_production_rate,   0.1f, 0.05f, 0.01f, 2.0f);
-    reg(sg, "auxin_transport_rate",    g.auxin_transport_rate,    0.1f, 0.05f, 0.01f, 2.0f);
-    reg(sg, "auxin_directional_bias",  g.auxin_directional_bias,  0.1f, 0.1f, -1.0f, 1.0f);
-    reg(sg, "auxin_decay_rate",        g.auxin_decay_rate,        0.1f, 0.02f, 0.001f, 0.5f);
-    reg(sg, "auxin_threshold",         g.auxin_threshold,         0.1f, 0.03f, 0.01f, 1.0f);
+    reg(sg, "auxin_production_rate",   g.auxin_production_rate,   r, 0.01f, 2.0f, p);
+    reg(sg, "auxin_transport_rate",    g.auxin_transport_rate,    r, 0.01f, 2.0f, p);
+    reg(sg, "auxin_directional_bias",  g.auxin_directional_bias,  r, -1.0f, 1.0f, p);
+    reg(sg, "auxin_decay_rate",        g.auxin_decay_rate,        r, 0.001f, 0.5f, p);
+    reg(sg, "auxin_threshold",         g.auxin_threshold,         r, 0.01f, 1.0f, p);
 
     // --- Cytokinin group (5 genes) ---
-    reg(sg, "cytokinin_production_rate",  g.cytokinin_production_rate,  0.1f, 0.05f, 0.01f, 2.0f);
-    reg(sg, "cytokinin_transport_rate",   g.cytokinin_transport_rate,   0.1f, 0.05f, 0.01f, 2.0f);
-    reg(sg, "cytokinin_directional_bias", g.cytokinin_directional_bias, 0.1f, 0.1f, -1.0f, 1.0f);
-    reg(sg, "cytokinin_decay_rate",       g.cytokinin_decay_rate,       0.1f, 0.02f, 0.001f, 0.5f);
-    reg(sg, "cytokinin_threshold",        g.cytokinin_threshold,        0.1f, 0.03f, 0.01f, 1.0f);
+    reg(sg, "cytokinin_production_rate",  g.cytokinin_production_rate,  r, 0.01f, 2.0f, p);
+    reg(sg, "cytokinin_transport_rate",   g.cytokinin_transport_rate,   r, 0.01f, 2.0f, p);
+    reg(sg, "cytokinin_directional_bias", g.cytokinin_directional_bias, r, -1.0f, 1.0f, p);
+    reg(sg, "cytokinin_decay_rate",       g.cytokinin_decay_rate,       r, 0.001f, 0.5f, p);
+    reg(sg, "cytokinin_threshold",        g.cytokinin_threshold,        r, 0.01f, 1.0f, p);
+    reg(sg, "cytokinin_growth_threshold", g.cytokinin_growth_threshold, r, 0.01f, 1.0f, p);
 
     // --- Shoot growth group (7 genes) ---
-    reg(sg, "growth_rate",                 g.growth_rate,                 0.1f, 0.001f,  0.001f, 0.05f);
-    reg(sg, "max_internode_length",        g.max_internode_length,        0.1f, 0.05f,   0.05f,  3.0f);
-    reg(sg, "min_internode_length",        g.min_internode_length,        0.1f, 0.03f,   0.01f,  1.0f);
-    reg(sg, "branch_angle",                g.branch_angle,                0.1f, 0.1f,    0.05f,  1.57f);
-    reg(sg, "thickening_rate",             g.thickening_rate,             0.1f, 0.00002f, 0.00001f, 0.001f);
-    reg(sg, "internode_elongation_rate",   g.internode_elongation_rate,   0.1f, 0.001f,  0.0005f, 0.02f);
-    reg(sg, "internode_maturation_ticks",  static_cast<float>(g.internode_maturation_ticks),
-                                                                           0.1f, 10.0f,   12.0f,  500.0f);
+    reg(sg, "growth_rate",                g.growth_rate,                r, 0.001f, 0.05f, p);
+    reg(sg, "max_internode_length",       g.max_internode_length,       r, 0.05f,  3.0f, p);
+    reg(sg, "min_internode_length",       g.min_internode_length,       r, 0.01f,  1.0f, p);
+    reg(sg, "branch_angle",              g.branch_angle,              r, 0.05f,  1.57f, p);
+    reg(sg, "thickening_rate",           g.thickening_rate,           r, 0.00001f, 0.001f, p);
+    reg(sg, "internode_elongation_rate", g.internode_elongation_rate, r, 0.0005f, 0.02f, p);
+    reg(sg, "internode_maturation_ticks", static_cast<float>(g.internode_maturation_ticks),
+                                                                      r, 12.0f, 500.0f, p);
 
     // --- Root growth group (8 genes) ---
-    reg(sg, "root_growth_rate",                  g.root_growth_rate,                  0.1f, 0.001f, 0.001f, 0.05f);
-    reg(sg, "root_max_internode_length",         g.root_max_internode_length,         0.1f, 0.05f,  0.05f,  3.0f);
-    reg(sg, "root_min_internode_length",         g.root_min_internode_length,         0.1f, 0.03f,  0.01f,  1.0f);
-    reg(sg, "root_branch_angle",                 g.root_branch_angle,                 0.1f, 0.05f,  0.05f,  1.57f);
-    reg(sg, "root_internode_elongation_rate",    g.root_internode_elongation_rate,    0.1f, 0.001f, 0.0005f, 0.02f);
-    reg(sg, "root_internode_maturation_ticks",   static_cast<float>(g.root_internode_maturation_ticks),
-                                                                                       0.1f, 10.0f,  12.0f,  500.0f);
-    reg(sg, "root_gravitropism_strength",        g.root_gravitropism_strength,        0.1f, 0.2f,   0.1f,   10.0f);
-    reg(sg, "root_gravitropism_depth",           g.root_gravitropism_depth,           0.1f, 0.1f,   0.1f,   5.0f);
+    reg(sg, "root_growth_rate",               g.root_growth_rate,               r, 0.001f, 0.05f, p);
+    reg(sg, "root_max_internode_length",      g.root_max_internode_length,      r, 0.05f,  3.0f, p);
+    reg(sg, "root_min_internode_length",      g.root_min_internode_length,      r, 0.01f,  1.0f, p);
+    reg(sg, "root_branch_angle",             g.root_branch_angle,             r, 0.05f,  1.57f, p);
+    reg(sg, "root_internode_elongation_rate", g.root_internode_elongation_rate, r, 0.0005f, 0.02f, p);
+    reg(sg, "root_internode_maturation_ticks", static_cast<float>(g.root_internode_maturation_ticks),
+                                                                                r, 12.0f, 500.0f, p);
+    reg(sg, "root_gravitropism_strength",    g.root_gravitropism_strength,    r, 0.1f, 10.0f, p);
+    reg(sg, "root_gravitropism_depth",       g.root_gravitropism_depth,       r, 0.1f, 5.0f, p);
 
     // --- Geometry group (8 genes) ---
-    reg(sg, "max_leaf_size",            g.max_leaf_size,            0.1f, 0.03f,   0.05f,  1.0f);
-    reg(sg, "leaf_growth_rate",         g.leaf_growth_rate,         0.1f, 0.0005f, 0.0001f, 0.01f);
-    reg(sg, "leaf_bud_size",            g.leaf_bud_size,            0.1f, 0.005f,  0.005f, 0.1f);
-    reg(sg, "initial_radius",           g.initial_radius,           0.1f, 0.01f,   0.01f,  0.2f);
-    reg(sg, "root_initial_radius",      g.root_initial_radius,      0.1f, 0.005f,  0.005f, 0.1f);
-    reg(sg, "tip_offset",               g.tip_offset,               0.1f, 0.005f,  0.001f, 0.1f);
-    reg(sg, "growth_noise",             g.growth_noise,             0.1f, 0.05f,   0.01f,  0.8f);
-    reg(sg, "leaf_phototropism_rate",   g.leaf_phototropism_rate,   0.1f, 0.005f,  0.001f, 0.1f);
+    reg(sg, "max_leaf_size",          g.max_leaf_size,          r, 0.05f,   1.0f, p);
+    reg(sg, "leaf_growth_rate",       g.leaf_growth_rate,       r, 0.0001f, 0.01f, p);
+    reg(sg, "leaf_bud_size",          g.leaf_bud_size,          r, 0.005f,  0.1f, p);
+    reg(sg, "initial_radius",         g.initial_radius,         r, 0.01f,   0.2f, p);
+    reg(sg, "root_initial_radius",    g.root_initial_radius,    r, 0.005f,  0.1f, p);
+    reg(sg, "tip_offset",             g.tip_offset,             r, 0.001f,  0.1f, p);
+    reg(sg, "growth_noise",           g.growth_noise,           r, 0.01f,   0.8f, p);
+    reg(sg, "leaf_phototropism_rate", g.leaf_phototropism_rate, r, 0.001f,  0.1f, p);
 
     // --- Sugar economy group (16 genes) ---
-    reg(sg, "sugar_production_rate",       g.sugar_production_rate,       0.1f, 0.002f, 0.001f, 0.1f);
-    reg(sg, "sugar_transport_conductance", g.sugar_transport_conductance, 0.1f, 2.0f,   1.0f,   100.0f);
-    reg(sg, "sugar_maintenance_leaf",      g.sugar_maintenance_leaf,      0.1f, 0.002f, 0.001f, 0.1f);
-    reg(sg, "sugar_maintenance_stem",      g.sugar_maintenance_stem,      0.1f, 0.005f, 0.001f, 0.2f);
-    reg(sg, "sugar_maintenance_root",      g.sugar_maintenance_root,      0.1f, 0.02f,  0.01f,  0.5f);
-    reg(sg, "sugar_maintenance_meristem",  g.sugar_maintenance_meristem,  0.1f, 0.001f, 0.0001f, 0.01f);
-    reg(sg, "seed_sugar",                  g.seed_sugar,                  0.1f, 5.0f,   5.0f,   200.0f);
-    reg(sg, "sugar_storage_density_wood",  g.sugar_storage_density_wood,  0.1f, 50.0f,  50.0f,  2000.0f);
-    reg(sg, "sugar_storage_density_leaf",  g.sugar_storage_density_leaf,  0.1f, 0.1f,   0.05f,  5.0f);
-    reg(sg, "sugar_cap_minimum",           g.sugar_cap_minimum,           0.1f, 0.01f,  0.005f, 0.5f);
-    reg(sg, "sugar_cap_meristem",          g.sugar_cap_meristem,          0.1f, 0.5f,   0.1f,   10.0f);
-    reg(sg, "sugar_save_shoot",            g.sugar_save_shoot,         0.1f, 0.005f, 0.001f, 0.2f);
-    reg(sg, "sugar_save_root",             g.sugar_save_root,          0.1f, 0.003f, 0.001f, 0.1f);
-    reg(sg, "sugar_save_stem",             g.sugar_save_stem,          0.1f, 0.005f, 0.001f, 0.2f);
-    reg(sg, "sugar_activation_shoot",      g.sugar_activation_shoot,      0.1f, 0.1f,   0.05f,  5.0f);
-    reg(sg, "sugar_activation_root",       g.sugar_activation_root,       0.1f, 0.05f,  0.05f,  3.0f);
+    reg(sg, "sugar_production_rate",       g.sugar_production_rate,       r, 0.001f,  0.1f, p);
+    reg(sg, "sugar_transport_conductance", g.sugar_transport_conductance, r, 1.0f,    100.0f, p);
+    reg(sg, "sugar_maintenance_leaf",      g.sugar_maintenance_leaf,      r, 0.001f,  0.1f, p);
+    reg(sg, "sugar_maintenance_stem",      g.sugar_maintenance_stem,      r, 0.001f,  0.2f, p);
+    reg(sg, "sugar_maintenance_root",      g.sugar_maintenance_root,      r, 0.01f,   0.5f, p);
+    reg(sg, "sugar_maintenance_meristem",  g.sugar_maintenance_meristem,  r, 0.0001f, 0.01f, p);
+    reg(sg, "seed_sugar",                  g.seed_sugar,                  r, 5.0f,    200.0f, p);
+    reg(sg, "sugar_storage_density_wood",  g.sugar_storage_density_wood,  r, 50.0f,   2000.0f, p);
+    reg(sg, "sugar_storage_density_leaf",  g.sugar_storage_density_leaf,  r, 0.05f,   5.0f, p);
+    reg(sg, "sugar_cap_minimum",           g.sugar_cap_minimum,           r, 0.005f,  0.5f, p);
+    reg(sg, "sugar_cap_meristem",          g.sugar_cap_meristem,          r, 0.1f,    10.0f, p);
+    reg(sg, "sugar_activation_shoot",      g.sugar_activation_shoot,      r, 0.05f,   5.0f, p);
+    reg(sg, "sugar_activation_root",       g.sugar_activation_root,       r, 0.05f,   3.0f, p);
 
     // --- Gibberellin group (7 genes) ---
-    reg(sg, "ga_production_rate",        g.ga_production_rate,        0.1f, 0.05f, 0.01f,  2.0f);
+    reg(sg, "ga_production_rate",        g.ga_production_rate,        r, 0.01f,  2.0f, p);
     reg(sg, "ga_leaf_age_max",           static_cast<float>(g.ga_leaf_age_max),
-                                                                      0.1f, 20.0f, 24.0f,  2000.0f);
-    reg(sg, "ga_elongation_sensitivity", g.ga_elongation_sensitivity, 0.1f, 0.2f,  0.1f,   5.0f);
-    reg(sg, "ga_length_sensitivity",     g.ga_length_sensitivity,     0.1f, 0.2f,  0.1f,   5.0f);
-    reg(sg, "ga_transport_rate",         g.ga_transport_rate,         0.1f, 0.05f, 0.01f,  1.0f);
-    reg(sg, "ga_directional_bias",       g.ga_directional_bias,       0.1f, 0.1f, -1.0f,   1.0f);
-    reg(sg, "ga_decay_rate",             g.ga_decay_rate,             0.1f, 0.03f, 0.01f,  0.5f);
+                                                                      r, 24.0f,  2000.0f, p);
+    reg(sg, "ga_elongation_sensitivity", g.ga_elongation_sensitivity, r, 0.1f,   5.0f, p);
+    reg(sg, "ga_length_sensitivity",     g.ga_length_sensitivity,     r, 0.1f,   5.0f, p);
+    reg(sg, "ga_transport_rate",         g.ga_transport_rate,         r, 0.01f,  1.0f, p);
+    reg(sg, "ga_directional_bias",       g.ga_directional_bias,       r, -1.0f,  1.0f, p);
+    reg(sg, "ga_decay_rate",             g.ga_decay_rate,             r, 0.01f,  0.5f, p);
 
     // --- Ethylene group (11 genes) ---
-    reg(sg, "ethylene_starvation_rate",       g.ethylene_starvation_rate,       0.1f, 0.05f, 0.01f,  2.0f);
-    reg(sg, "ethylene_shade_rate",            g.ethylene_shade_rate,            0.1f, 0.05f, 0.01f,  2.0f);
-    reg(sg, "ethylene_shade_threshold",       g.ethylene_shade_threshold,       0.1f, 0.05f, 0.05f,  1.0f);
-    reg(sg, "ethylene_age_rate",              g.ethylene_age_rate,              0.1f, 0.01f, 0.001f, 0.5f);
+    reg(sg, "ethylene_starvation_rate",       g.ethylene_starvation_rate,       r, 0.01f,  2.0f, p);
+    reg(sg, "ethylene_shade_rate",            g.ethylene_shade_rate,            r, 0.01f,  2.0f, p);
+    reg(sg, "ethylene_shade_threshold",       g.ethylene_shade_threshold,       r, 0.05f,  1.0f, p);
+    reg(sg, "ethylene_age_rate",              g.ethylene_age_rate,              r, 0.001f, 0.5f, p);
     reg(sg, "ethylene_age_onset",             static_cast<float>(g.ethylene_age_onset),
-                                                                                0.1f, 50.0f, 100.0f, 5000.0f);
-    reg(sg, "ethylene_crowding_rate",         g.ethylene_crowding_rate,         0.1f, 0.02f, 0.01f,  1.0f);
-    reg(sg, "ethylene_crowding_radius",       g.ethylene_crowding_radius,       0.1f, 0.1f,  0.1f,   3.0f);
-    reg(sg, "ethylene_diffusion_radius",      g.ethylene_diffusion_radius,      0.1f, 0.2f,  0.1f,   5.0f);
-    reg(sg, "ethylene_abscission_threshold",  g.ethylene_abscission_threshold,  0.1f, 0.1f,  0.05f,  2.0f);
-    reg(sg, "ethylene_elongation_inhibition", g.ethylene_elongation_inhibition, 0.1f, 0.2f,  0.1f,   5.0f);
+                                                                                r, 100.0f, 5000.0f, p);
+    reg(sg, "ethylene_crowding_rate",         g.ethylene_crowding_rate,         r, 0.01f,  1.0f, p);
+    reg(sg, "ethylene_crowding_radius",       g.ethylene_crowding_radius,       r, 0.1f,   3.0f, p);
+    reg(sg, "ethylene_diffusion_radius",      g.ethylene_diffusion_radius,      r, 0.1f,   5.0f, p);
+    reg(sg, "ethylene_abscission_threshold",  g.ethylene_abscission_threshold,  r, 0.05f,  2.0f, p);
+    reg(sg, "ethylene_elongation_inhibition", g.ethylene_elongation_inhibition, r, 0.1f,   5.0f, p);
     reg(sg, "senescence_duration",            static_cast<float>(g.senescence_duration),
-                                                                                0.1f, 10.0f, 12.0f,  500.0f);
+                                                                                r, 12.0f,  500.0f, p);
 
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
@@ -106,7 +110,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g) {
 
     sg.add_linkage_group({"cytokinin", {
         "cytokinin_production_rate", "cytokinin_transport_rate", "cytokinin_directional_bias",
-        "cytokinin_decay_rate", "cytokinin_threshold"
+        "cytokinin_decay_rate", "cytokinin_threshold", "cytokinin_growth_threshold"
     }});
 
     sg.add_linkage_group({"shoot_growth", {
@@ -131,7 +135,6 @@ evolve::StructuredGenome build_genome_template(const Genome& g) {
         "sugar_maintenance_root", "sugar_maintenance_meristem",
         "seed_sugar", "sugar_storage_density_wood", "sugar_storage_density_leaf",
         "sugar_cap_minimum", "sugar_cap_meristem",
-        "sugar_save_shoot", "sugar_save_root", "sugar_save_stem",
         "sugar_activation_shoot", "sugar_activation_root"
     }});
 
@@ -151,8 +154,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g) {
     return sg;
 }
 
-evolve::StructuredGenome to_structured(const Genome& g) {
-    return build_genome_template(g);
+evolve::StructuredGenome to_structured(const Genome& g, float mutation_pct) {
+    return build_genome_template(g, mutation_pct);
 }
 
 Genome from_structured(const evolve::StructuredGenome& sg) {
@@ -171,6 +174,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.cytokinin_directional_bias  = sg.get("cytokinin_directional_bias");
     g.cytokinin_decay_rate        = sg.get("cytokinin_decay_rate");
     g.cytokinin_threshold         = sg.get("cytokinin_threshold");
+    g.cytokinin_growth_threshold  = sg.get("cytokinin_growth_threshold");
 
     // Shoot growth
     g.growth_rate                = sg.get("growth_rate");
@@ -213,9 +217,6 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.sugar_storage_density_leaf  = sg.get("sugar_storage_density_leaf");
     g.sugar_cap_minimum           = sg.get("sugar_cap_minimum");
     g.sugar_cap_meristem          = sg.get("sugar_cap_meristem");
-    g.sugar_save_shoot         = sg.get("sugar_save_shoot");
-    g.sugar_save_root          = sg.get("sugar_save_root");
-    g.sugar_save_stem          = sg.get("sugar_save_stem");
     g.sugar_activation_shoot      = sg.get("sugar_activation_shoot");
     g.sugar_activation_root       = sg.get("sugar_activation_root");
 
