@@ -10,6 +10,7 @@ public:
     float leaf_size = 0.0f;
     float light_exposure = 1.0f;
     uint32_t senescence_ticks = 0;
+    uint32_t deficit_ticks = 0;  // consecutive ticks where maintenance > production
     glm::vec3 facing = glm::vec3(0.0f, 1.0f, 0.0f);  // blade orientation (independent of attachment point)
 
     // --- Node overrides ---

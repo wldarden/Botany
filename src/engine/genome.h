@@ -43,6 +43,7 @@ struct Genome {
     float max_leaf_size;              // dm — maximum leaf side-length
     float leaf_growth_rate;           // dm/hr — how fast leaves grow from bud to max
     float leaf_bud_size;              // dm — initial size of a leaf bud
+    float leaf_petiole_length;        // dm — stalk length holding leaf away from stem
     float initial_radius;             // dm — stem radius at creation (~5mm)
     float root_initial_radius;        // dm — root radius at creation (~2.5mm)
     float tip_offset;                 // dm — small forward offset when chaining nodes
@@ -75,6 +76,10 @@ struct Genome {
     float ga_length_sensitivity;      // how strongly GA boosts target internode length
     float ga_diffusion_rate;          // fraction diffused per tick
     float ga_decay_rate;              // exponential decay per tick
+
+    // Leaf abscission — carbon-balance driven
+    uint32_t leaf_abscission_ticks;        // ticks of net sugar deficit before senescence
+    uint32_t min_leaf_age_before_abscission; // ticks — young leaves are immune (still growing)
 
     // Ethylene — stress/crowding gas signal, triggers leaf abscission
     float ethylene_starvation_rate;       // production when sugar = 0
@@ -126,19 +131,20 @@ inline Genome default_genome() {
         .root_branch_angle = 0.35f,         // ~20 degrees
         .root_internode_elongation_rate = 0.002f, // dm/hr
         .root_internode_maturation_ticks = 48,    // 2 days
-        .root_gravitropism_strength = 2.0f,
+        .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
 
-        .max_leaf_size = 0.3f,              // 3 cm side-length at maturity
-        .leaf_growth_rate = 0.001f,         // ~0.24 mm/hr — full size in ~250 hrs (~10 days)
+        .max_leaf_size = 1.5f,              // 15 cm side-length at maturity (realistic broad leaf)
+        .leaf_growth_rate = 0.005f,         // ~0.5 mm/hr — full size (1.5dm) in ~300 hrs (~12 days)
         .leaf_bud_size = 0.02f,             // 2 mm bud
+        .leaf_petiole_length = 0.5f,        // 5 cm petiole (realistic for broad leaves)
         .initial_radius = 0.05f,            // 5 mm
         .root_initial_radius = 0.025f,      // 2.5 mm
         .tip_offset = 0.01f,
         .growth_noise = 0.26f,              // ~15 degrees
 
-        .sugar_production_rate = 0.004f,     // g glucose / (dm² leaf area · hr) — ~10 g/m²/day
-        .sugar_diffusion_rate = 0.3f,
+        .sugar_production_rate = 0.02f,      // g glucose / (dm² leaf area · hr) — maintenance is ~5% of full-sun production
+        .sugar_diffusion_rate = 0.8f,        // high base rate — radius scaling is the real throttle
         .sugar_maintenance_leaf = 0.001f,    // g / (dm² · hr) — ~25% of gross production (realistic leaf respiration)
         .sugar_maintenance_stem = 0.028f,   // g / (dm³ · hr) — wood is cheap per volume
         .sugar_maintenance_root = 0.005f,   // g / (dm³ · hr) — fine roots expensive (high turnover)
@@ -161,6 +167,10 @@ inline Genome default_genome() {
         .ga_diffusion_rate = 0.2f,
         .ga_decay_rate = 0.15f,
 
+        // Leaf abscission
+        .leaf_abscission_ticks = 500,         // ~21 days of net deficit
+        .min_leaf_age_before_abscission = 240, // ~10 days — let new leaves grow to size
+
         // Ethylene
         .ethylene_starvation_rate = 0.3f,
         .ethylene_shade_rate = 0.2f,
@@ -177,7 +187,7 @@ inline Genome default_genome() {
         // Stress
         .wood_density = 50.0f,                    // g/dm³ — light deciduous wood
         .wood_flexibility = 0.5f,                 // droop starts at 50% of break stress
-        .stress_hormone_production_rate = 0.1f,   // moderate signaling
+        .stress_hormone_production_rate = 0.001f,  // low signaling — stress values are large numbers
         .stress_hormone_diffusion_rate = 0.15f,   // moderate local diffusion
         .stress_hormone_decay_rate = 0.2f,        // fades quickly — local signal
         .stress_thickening_boost = 1.0f,          // 1:1 hormone-to-thickening boost

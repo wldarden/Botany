@@ -202,11 +202,27 @@ void Node::transport_chemicals(const Genome& g) {
     if (parent) {
         for (const auto& dp : diffusion_params(g)) {
             if (dp.id == ChemicalID::Sugar) {
-                // Sugar transport: cap-aware to prevent annihilation.
-                // Limit flow by receiver's headroom so sugar isn't destroyed by cap clamp.
+                // Concentration-based sugar diffusion.
+                // Flow is driven by fullness (sugar/cap), not absolute amounts.
+                // This prevents large-cap nodes from draining small-cap nodes
+                // just because they hold more sugar in absolute terms.
                 float my_cap = sugar_cap(*this, g);
                 float parent_cap = sugar_cap(*parent, g);
-                float flow = (chemical(dp.id) - parent->chemical(dp.id)) * dp.diffusion_rate;
+                float my_conc = my_cap > 1e-9f ? chemical(dp.id) / my_cap : 0.0f;
+                float parent_conc = parent_cap > 1e-9f ? parent->chemical(dp.id) / parent_cap : 0.0f;
+
+                // Radius scaling: thicker connections transport more.
+                // Minimum radius ensures leaves/meristems always have some transport.
+                float min_radius = g.initial_radius * 0.2f;  // 20% of initial — nothing is fully cut off
+                float connection_radius = std::max(std::min(radius, parent->radius), min_radius);
+                float radius_factor = connection_radius / std::max(g.initial_radius, 1e-6f);
+
+                // Flow in grams: concentration gradient * rate * radius * average cap
+                // Average cap scales the unitless concentration gradient back to grams.
+                float avg_cap = (my_cap + parent_cap) * 0.5f;
+                float flow = (my_conc - parent_conc) * dp.diffusion_rate * radius_factor * avg_cap;
+
+                // Clamp: can't send more than you have, can't overfill receiver
                 if (flow > 0.0f) {
                     float headroom = std::max(0.0f, parent_cap - parent->chemical(dp.id));
                     flow = std::min({flow, chemical(dp.id), headroom});

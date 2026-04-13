@@ -137,6 +137,10 @@ void Renderer::draw_plant(const Plant& plant) {
                 glm::vec3 senesce_color = glm::mix(yellow, brown, progress);
                 leaf_color = glm::mix(leaf_color, senesce_color, progress);
             }
+            // Draw petiole (thin stalk from stem to leaf blade)
+            float petiole_radius = 0.005f;  // 0.5mm — thin stalk
+            glm::vec3 petiole_color = glm::vec3(0.3f, 0.45f, 0.12f) * color_tint_;  // green-brown
+            draw_cylinder(node.parent->position, node.position, petiole_radius, petiole_radius, petiole_color);
             draw_leaf(node.position, outward, leaf->facing, leaf->leaf_size, leaf_color * color_tint_);
             return;
         }
@@ -302,11 +306,13 @@ void Renderer::draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing
     }
     glm::vec3 width = glm::normalize(glm::cross(facing, proj));
 
-    // Leaf extends outward from attachment point, centered on width
-    glm::vec3 p0 = position - width * size * 0.5f;
-    glm::vec3 p1 = position + proj * size - width * size * 0.5f;
-    glm::vec3 p2 = position + proj * size + width * size * 0.5f;
-    glm::vec3 p3 = position + width * size * 0.5f;
+    // Diamond: rotated 45 degrees, stem-side corner at node position (petiole attachment)
+    float half = size * 0.70711f; // size * sqrt(2)/2
+    glm::vec3 base = position;                        // petiole tip = stem-side corner
+    glm::vec3 p0 = base;                              // stem-side corner (attachment point)
+    glm::vec3 p1 = base + proj * half + width * half; // right corner
+    glm::vec3 p2 = base + proj * (half * 2.0f);       // tip corner
+    glm::vec3 p3 = base + proj * half - width * half; // left corner
     glm::vec3 normal = facing;
 
     float vertices[] = {

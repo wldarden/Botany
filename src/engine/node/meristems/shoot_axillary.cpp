@@ -1,7 +1,9 @@
 #include "engine/node/meristems/shoot_axillary.h"
+#include "engine/node/meristems/shoot_apical.h"
 #include "engine/plant.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
+#include <glm/geometric.hpp>
 
 namespace botany {
 
@@ -36,6 +38,14 @@ bool ShootAxillaryNode::can_activate(const Genome& g, const WorldParams& world) 
 void ShootAxillaryNode::activate(Plant& plant, const Genome& g, const WorldParams& world) {
     Node* apical = plant.create_node(NodeType::SHOOT_APICAL, offset, g.initial_radius);
     apical->chemical(ChemicalID::Sugar) = chemical(ChemicalID::Sugar) - world.sugar_cost_activation;
+
+    // Set the branch's initial growth direction from the offset angle.
+    // Without this, the SA re-rolls direction from its tiny offset and
+    // quickly converges to vertical, making all branches parallel the trunk.
+    float olen = glm::length(offset);
+    if (olen > 1e-4f) {
+        apical->as_shoot_apical()->growth_dir = offset / olen;
+    }
 
     if (parent) {
         parent->replace_child(this, apical);

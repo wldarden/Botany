@@ -14,6 +14,7 @@
 #include "evolution/evolution_runner.h"
 #include "evolution/genome_bridge.h"
 #include "renderer/renderer.h"
+#include "format.h"
 
 using namespace botany;
 
@@ -51,11 +52,14 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "max_leaf_size=" << g.max_leaf_size << "\n";
     out << "leaf_growth_rate=" << g.leaf_growth_rate << "\n";
     out << "leaf_bud_size=" << g.leaf_bud_size << "\n";
+    out << "leaf_petiole_length=" << g.leaf_petiole_length << "\n";
     out << "initial_radius=" << g.initial_radius << "\n";
     out << "root_initial_radius=" << g.root_initial_radius << "\n";
     out << "tip_offset=" << g.tip_offset << "\n";
     out << "growth_noise=" << g.growth_noise << "\n";
     out << "leaf_phototropism_rate=" << g.leaf_phototropism_rate << "\n";
+    out << "leaf_abscission_ticks=" << g.leaf_abscission_ticks << "\n";
+    out << "min_leaf_age_before_abscission=" << g.min_leaf_age_before_abscission << "\n";
     out << "sugar_production_rate=" << g.sugar_production_rate << "\n";
     out << "sugar_diffusion_rate=" << g.sugar_diffusion_rate << "\n";
     out << "sugar_maintenance_leaf=" << g.sugar_maintenance_leaf << "\n";
@@ -266,19 +270,23 @@ int main() {
             display_plant_ids.push_back(display_engine.create_plant(default_genome(), glm::vec3(0.0f)));
         }
 
+        // --- Progress (always visible when running) ---
+        if (gen_in_progress) {
+            ImGui::SeparatorText("Progress");
+            ImGui::Text("Generation: %u", runner.generation() + 1);
+            uint32_t done = runner.evaluated_count();
+            uint32_t total = runner.config().population_size;
+            float frac = total > 0 ? static_cast<float>(done) / static_cast<float>(total) : 0.0f;
+            char overlay[32];
+            std::snprintf(overlay, sizeof(overlay), "%u / %u", done, total);
+            ImGui::ProgressBar(frac, ImVec2(-1, 0), overlay);
+        }
+
         // --- Stats ---
         if (runner.generation() > 0) {
             ImGui::SeparatorText("Stats");
             ImGui::Text("Generation: %u", runner.generation());
             ImGui::Text("Best Fitness: %.3f", runner.best_fitness());
-            if (gen_in_progress) {
-                uint32_t done = runner.evaluated_count();
-                uint32_t total = runner.config().population_size;
-                float frac = total > 0 ? static_cast<float>(done) / static_cast<float>(total) : 0.0f;
-                char overlay[32];
-                std::snprintf(overlay, sizeof(overlay), "%u / %u", done, total);
-                ImGui::ProgressBar(frac, ImVec2(-1, 0), overlay);
-            }
 
             const PlantStats& s = runner.best_stats();
             if (ImGui::BeginTable("stats", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
@@ -300,11 +308,11 @@ int main() {
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); ImGui::Text("Sugar");
-                ImGui::TableSetColumnIndex(1); ImGui::Text("%.1f g", s.total_sugar_produced);
+                ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_mass(s.total_sugar_produced));
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); ImGui::Text("Height");
-                ImGui::TableSetColumnIndex(1); ImGui::Text("%.2f dm", s.height);
+                ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_dist(s.height));
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); ImGui::Text("Crown Ratio");
@@ -316,7 +324,7 @@ int main() {
 
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0); ImGui::Text("Leaf Spread");
-                ImGui::TableSetColumnIndex(1); ImGui::Text("%.2f dm", s.leaf_height_spread);
+                ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_dist(s.leaf_height_spread));
 
                 ImGui::EndTable();
             }

@@ -33,9 +33,9 @@ struct WorldParams {
 
     // Stress physics
     float gravity = 9.81f;                  // m/s² — gravitational acceleration
-    float break_strength_factor = 5.0f;     // stress units per (g/dm³) of wood density
+    float break_strength_factor = 5000.0f;   // stress units per (g/dm³) of wood density — wood is strong
     float reference_wood_density = 50.0f;   // g/dm³ — density at which sugar costs are calibrated
-    float leaf_mass_density = 5.0f;         // g/dm² of leaf area
+    float leaf_mass_density = 1.0f;         // g/dm² of leaf area (~2g for a 15cm leaf)
     float meristem_mass = 0.1f;             // g — fixed mass for meristem tips
     float ground_support_height = 0.5f;     // dm — below this Y, stress is zeroed
     float droop_rate = 0.01f;               // radians/tick — max angular droop when overstressed

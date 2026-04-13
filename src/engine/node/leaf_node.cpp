@@ -27,10 +27,19 @@ void LeafNode::grow(Plant& plant, const WorldParams& world) {
     phototropism(g, world);
     grow_size(g, world);
 
-    // Abscission: ethylene triggers senescence, then leaf drop
-    if (senescence_ticks == 0 && chemical(ChemicalID::Ethylene) > g.ethylene_abscission_threshold) {
-        senescence_ticks = 1;
+    // Carbon-balance abscission: if production < maintenance for too long, senesce.
+    // Young leaves are immune — they're still growing and not yet net producers.
+    if (senescence_ticks == 0 && age >= g.min_leaf_age_before_abscission) {
+        float cost = maintenance_cost(g);
+        if (delta < cost) deficit_ticks++;
+        else              deficit_ticks = 0;
+
+        if (deficit_ticks >= g.leaf_abscission_ticks) {
+            senescence_ticks = 1;
+        }
     }
+
+    // Senescence countdown → leaf drop
     if (senescence_ticks > 0) {
         senescence_ticks++;
         if (senescence_ticks >= g.senescence_duration) {
@@ -112,6 +121,14 @@ void LeafNode::grow_size(const Genome& g, const WorldParams& world) {
 
     leaf_size += growth;
     chemical(ChemicalID::Sugar) -= cost;
+
+    // Extend petiole proportionally as leaf grows
+    // Target offset length = base_offset + petiole_length * (leaf_size / max_leaf_size)
+    float olen = glm::length(offset);
+    if (olen > 1e-4f) {
+        float petiole_growth = g.leaf_petiole_length * (growth / g.max_leaf_size);
+        offset += (offset / olen) * petiole_growth;
+    }
 }
 
 float LeafNode::maintenance_cost(const Genome& g) const {
