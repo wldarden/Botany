@@ -63,8 +63,10 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
     // Create new interior root node and insert it between us and our parent
     Node* internode = plant.create_node(NodeType::ROOT, offset, radius);
     parent->replace_child(this, internode);
+    internode->position = internode->parent->position + internode->offset;
     offset = growth_dir * g.tip_offset;
     internode->add_child(this);
+    position = internode->position + offset;
 
     // Lateral branching: compute offset and spawn axillary bud
     if (!plant.root_meristems_at_cap()) {
@@ -83,10 +85,11 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
 void RootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
     Node* axillary = plant.create_node(NodeType::ROOT_AXILLARY, lateral_offset, g.root_initial_radius * 0.5f);
     internode->add_child(axillary);
+    axillary->position = internode->position + axillary->offset;
 }
 
-float RootApicalNode::maintenance_cost(const Genome& g) const {
-    return g.sugar_maintenance_meristem;
+float RootApicalNode::maintenance_cost(const WorldParams& world) const {
+    return world.sugar_maintenance_meristem;
 }
 
 } // namespace botany

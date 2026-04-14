@@ -74,7 +74,8 @@ public:
 
     // --- Tick pipeline ---
     virtual void tick(Plant& plant, const WorldParams& world);
-    virtual float maintenance_cost(const struct Genome& g) const;
+    virtual float maintenance_cost(const struct WorldParams& world) const;
+    virtual void produce(Plant& plant, const WorldParams& world);
     virtual void grow(Plant& plant, const WorldParams& world);
     void transport_chemicals(const struct Genome& g);
     void die(Plant& plant);

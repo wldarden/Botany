@@ -96,6 +96,7 @@ TEST_CASE("Interior STEM nodes have at most 3 children", "[meristem]") {
         plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
+    fprintf(stderr, "ticks done, checking\n");
 
     // Every STEM node should have at most 3 children: continuation tip + axillary + LEAF
     plant.for_each_node([&](const Node& n) {
@@ -381,7 +382,7 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
 
     // Low sugar = slow growth, high sugar = full growth
     WorldParams w = default_world_params();
-    float max_cost = g.growth_rate * w.sugar_cost_shoot_growth;
+    float max_cost = g.growth_rate * w.sugar_cost_meristem_growth;
     tip1->chemical(ChemicalID::Sugar) = max_cost * 0.5f; // half growth
     tip2->chemical(ChemicalID::Sugar) = max_cost * 2.0f; // full growth (capped at 1.0)
     // Saturate cytokinin so it doesn't gate this test

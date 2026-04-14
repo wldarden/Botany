@@ -37,8 +37,8 @@ TEST_CASE("Genome round-trips through StructuredGenome", "[evolution]") {
                  WithinAbs(original.auxin_production_rate, 1e-6));
     REQUIRE_THAT(restored.branch_angle,
                  WithinAbs(original.branch_angle, 1e-6));
-    REQUIRE_THAT(restored.sugar_production_rate,
-                 WithinAbs(original.sugar_production_rate, 1e-6));
+    REQUIRE_THAT(restored.sugar_diffusion_rate,
+                 WithinAbs(original.sugar_diffusion_rate, 1e-6));
     REQUIRE_THAT(restored.ga_elongation_sensitivity,
                  WithinAbs(original.ga_elongation_sensitivity, 1e-6));
     REQUIRE_THAT(restored.ethylene_abscission_threshold,
@@ -54,14 +54,15 @@ TEST_CASE("Genome round-trips through StructuredGenome", "[evolution]") {
 TEST_CASE("Genome template has linkage groups", "[evolution]") {
     auto tmpl = botany::build_genome_template(botany::default_genome());
     auto& groups = tmpl.linkage_groups();
-    REQUIRE(groups.size() == 9);
+    REQUIRE(groups.size() == 10);
 
-    // Verify auxin group has 4 genes (production, diffusion, decay, threshold)
+    // Verify auxin group has 8 genes (production, diffusion, decay, threshold,
+    // shade_boost, sugar_half_saturation, age_half_life, bias)
     bool found_auxin = false;
     for (auto& g : groups) {
         if (g.name == "auxin") {
             found_auxin = true;
-            REQUIRE(g.gene_tags.size() == 4);
+            REQUIRE(g.gene_tags.size() == 8);
         }
     }
     REQUIRE(found_auxin);

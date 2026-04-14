@@ -3,6 +3,7 @@
 #include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/chemical/chemical_registry.h"
+#include "engine/perf_log.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
 #include "engine/node/leaf_node.h"
@@ -50,18 +51,24 @@ void Node::replace_child(Node* old_child, Node* new_child) {
 }
 
 void Node::tick(Plant& plant, const WorldParams& world) {
-    // Compute world position inline (parent is already ticked, so its position is current)
-    position = parent ? parent->position + offset : offset;
-    if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
-        position = parent ? parent->position : glm::vec3(0.0f);
+    PerfStats* perf = plant.perf();
+
+    {   // --- Position ---
+        ScopedTimer t(perf ? perf->node_position_ms : ScopedTimer::dummy);
+        position = parent ? parent->position + offset : offset;
+        if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
+            position = parent ? parent->position : glm::vec3(0.0f);
+        }
     }
 
     age++;
     const Genome& g = plant.genome();
 
-    // Maintenance sugar consumption
-    float cost = maintenance_cost(g);
-    chemical(ChemicalID::Sugar) = std::max(0.0f, chemical(ChemicalID::Sugar) - cost);
+    {   // --- Maintenance ---
+        ScopedTimer t(perf ? perf->node_maintenance_ms : ScopedTimer::dummy);
+        float cost = maintenance_cost(world);
+        chemical(ChemicalID::Sugar) = std::max(0.0f, chemical(ChemicalID::Sugar) - cost);
+    }
 
     // Cap clamp
     float cap = sugar_cap(*this, g);
@@ -76,95 +83,112 @@ void Node::tick(Plant& plant, const WorldParams& world) {
         return;
     }
 
-    // Grow before transport: leaves use sugar for expansion first, then
-    // export the surplus. Otherwise transport drains leaves dry and they
-    // never mature — the "tragedy of the commons" problem.
-    grow(plant, world);
+    {   // --- Produce ---
+        produce(plant, world);
+    }
 
-    // --- Mass & stress computation ---
-    float self_mass = 0.0f;
-    bool is_underground = (type == NodeType::ROOT || type == NodeType::ROOT_APICAL || type == NodeType::ROOT_AXILLARY);
+    {   // --- Grow ---
+        ScopedTimer t(perf ? perf->node_grow_ms : ScopedTimer::dummy);
+        grow(plant, world);
+    }
 
-    if (!is_underground) {
-        if (type == NodeType::LEAF) {
-            auto* leaf = as_leaf();
-            self_mass = leaf ? (leaf->leaf_size * leaf->leaf_size * world.leaf_mass_density) : 0.0f;
-        } else if (type == NodeType::STEM) {
-            float length = std::max(glm::length(offset), 0.01f);
-            self_mass = 3.14159f * radius * radius * length * g.wood_density;
-        } else if (is_meristem()) {
-            self_mass = world.meristem_mass;
+    {   // --- Mass & stress ---
+        ScopedTimer t(perf ? perf->node_mass_stress_ms : ScopedTimer::dummy);
+        float self_mass = 0.0f;
+        bool is_underground = (type == NodeType::ROOT || type == NodeType::ROOT_APICAL || type == NodeType::ROOT_AXILLARY);
+
+        if (!is_underground) {
+            if (type == NodeType::LEAF) {
+                auto* leaf = as_leaf();
+                self_mass = leaf ? (leaf->leaf_size * leaf->leaf_size * world.leaf_mass_density) : 0.0f;
+            } else if (type == NodeType::STEM) {
+                float length = std::max(glm::length(offset), 0.01f);
+                self_mass = 3.14159f * radius * radius * length * g.wood_density;
+            } else if (is_meristem()) {
+                self_mass = world.meristem_mass;
+            }
+        }
+
+        total_mass = self_mass;
+        mass_moment = self_mass * position;
+        for (const Node* child : children) {
+            total_mass += child->total_mass;
+            mass_moment += child->mass_moment;
+        }
+
+        stress = 0.0f;
+        if (!is_underground && position.y > world.ground_support_height) {
+            float child_mass = total_mass - self_mass;
+            if (child_mass > 1e-6f && radius > 1e-6f) {
+                glm::vec3 child_com = (mass_moment - self_mass * position) / child_mass;
+                float dx = child_com.x - position.x;
+                float dz = child_com.z - position.z;
+                float lever_arm = std::sqrt(dx * dx + dz * dz);
+                float torque = child_mass * world.gravity * lever_arm;
+                float cross_section = 3.14159f * radius * radius;
+                stress = torque / cross_section;
+            }
+        }
+
+        if (!is_underground && stress > 0.0f) {
+            float break_stress = g.wood_density * world.break_strength_factor;
+            float stress_ratio = stress / break_stress;  // 0 = no load, 1 = breaking
+            if (stress_ratio > g.stress_hormone_threshold) {
+                float excess = (stress_ratio - g.stress_hormone_threshold)
+                             / (1.0f - g.stress_hormone_threshold);  // normalize 0-1
+                chemical(ChemicalID::Stress) += excess * g.stress_hormone_production_rate;
+            }
         }
     }
 
-    // Accumulate subtree mass from direct children (their values are one tick stale)
-    total_mass = self_mass;
-    mass_moment = self_mass * position;
-    for (const Node* child : children) {
-        total_mass += child->total_mass;
-        mass_moment += child->mass_moment;
-    }
+    {   // --- Droop and break ---
+        ScopedTimer t(perf ? perf->node_droop_break_ms : ScopedTimer::dummy);
+        bool is_underground = (type == NodeType::ROOT || type == NodeType::ROOT_APICAL || type == NodeType::ROOT_AXILLARY);
+        if (type == NodeType::STEM && !is_underground && stress > 0.0f) {
+            float break_stress = g.wood_density * world.break_strength_factor;
+            float droop_threshold = break_stress * g.wood_flexibility;
 
-    // Stress computation (above-ground only, skip if near ground)
-    stress = 0.0f;
-    if (!is_underground && position.y > world.ground_support_height) {
-        float child_mass = total_mass - self_mass;
-        if (child_mass > 1e-6f && radius > 1e-6f) {
-            glm::vec3 child_com = (mass_moment - self_mass * position) / child_mass;
-            float dx = child_com.x - position.x;
-            float dz = child_com.z - position.z;
-            float lever_arm = std::sqrt(dx * dx + dz * dz);
-            float torque = child_mass * world.gravity * lever_arm;
-            float cross_section = 3.14159f * radius * radius;
-            stress = torque / cross_section;
-        }
-    }
+            // Ground-anchored stems can't snap — the root system holds them.
+            // Only break stems above ground support height with a parent that also has a parent (not trunk base).
+            bool can_break = position.y > world.ground_support_height && parent && parent->parent;
+            if (can_break && stress >= break_stress) {
+                die(plant);
+                return;
+            }
 
-    // Stress hormone production (above-ground only)
-    if (!is_underground && stress > 0.0f) {
-        chemical(ChemicalID::Stress) += stress * g.stress_hormone_production_rate;
-    }
-
-    // --- Droop and break (above-ground stems only) ---
-    if (type == NodeType::STEM && !is_underground && stress > 0.0f) {
-        float break_stress = g.wood_density * world.break_strength_factor;
-        float droop_threshold = break_stress * g.wood_flexibility;
-
-        if (stress >= break_stress) {
-            // Branch snaps — remove this node and entire subtree
-            die(plant);
-            return;  // node is dead, skip transport
-        }
-
-        if (stress > droop_threshold) {
-            // Branch droops toward gravity
-            float excess = (stress - droop_threshold) / (break_stress - droop_threshold);
-            float droop_angle = std::min(excess * world.droop_rate, world.droop_rate);
-            float len = glm::length(offset);
-            if (len > 1e-4f) {
-                glm::vec3 dir = offset / len;
-                glm::vec3 down(0.0f, -1.0f, 0.0f);
-                // Rotate dir toward down by droop_angle using Rodrigues' rotation
-                glm::vec3 axis = glm::cross(dir, down);
-                float axis_len = glm::length(axis);
-                if (axis_len > 1e-6f) {
-                    axis /= axis_len;
-                    float c = std::cos(droop_angle);
-                    float s = std::sin(droop_angle);
-                    glm::vec3 new_dir = dir * c
-                        + glm::cross(axis, dir) * s
-                        + axis * glm::dot(axis, dir) * (1.0f - c);
-                    offset = glm::normalize(new_dir) * len;
+            if (stress > droop_threshold) {
+                float excess = (stress - droop_threshold) / (break_stress - droop_threshold);
+                float droop_angle = std::min(excess * world.droop_rate, world.droop_rate);
+                float len = glm::length(offset);
+                if (len > 1e-4f) {
+                    glm::vec3 dir = offset / len;
+                    glm::vec3 down(0.0f, -1.0f, 0.0f);
+                    glm::vec3 axis = glm::cross(dir, down);
+                    float axis_len = glm::length(axis);
+                    if (axis_len > 1e-6f) {
+                        axis /= axis_len;
+                        float c = std::cos(droop_angle);
+                        float s = std::sin(droop_angle);
+                        glm::vec3 new_dir = dir * c
+                            + glm::cross(axis, dir) * s
+                            + axis * glm::dot(axis, dir) * (1.0f - c);
+                        offset = glm::normalize(new_dir) * len;
+                    }
                 }
             }
         }
     }
 
-    transport_chemicals(g);
+    {   // --- Transport ---
+        ScopedTimer t(perf ? perf->node_transport_ms : ScopedTimer::dummy);
+        transport_chemicals(g);
+    }
 
     // Re-clamp sugar after transport — diffusion can overfill small nodes
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
 }
+
+void Node::produce(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
 void Node::grow(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
@@ -194,53 +218,50 @@ void Node::die(Plant& plant) {
     }
 }
 
-float Node::maintenance_cost(const Genome& /*g*/) const {
+float Node::maintenance_cost(const WorldParams& /*world*/) const {
     return 0.0f;
 }
 
 void Node::transport_chemicals(const Genome& g) {
     if (parent) {
+        float ref_radius = g.initial_radius;
+
+        // Leaves use an effective petiole radius for transport.
+        // This guarantees they can export their full sugar production each tick.
+        // Petiole scales with leaf size — bigger leaves have thicker stalks.
+        float effective_radius = radius;
+        if (type == NodeType::LEAF) {
+            auto* leaf = as_leaf();
+            if (leaf) {
+                effective_radius = std::max(radius, leaf->leaf_size * ref_radius);
+            }
+        }
+
         for (const auto& dp : diffusion_params(g)) {
+            // Sugar uses volume-based capacity; hormones have no cap (0 = raw values).
+            float my_cap = 0.0f, parent_cap = 0.0f;
             if (dp.id == ChemicalID::Sugar) {
-                // Concentration-based sugar diffusion.
-                // Flow is driven by fullness (sugar/cap), not absolute amounts.
-                // This prevents large-cap nodes from draining small-cap nodes
-                // just because they hold more sugar in absolute terms.
-                float my_cap = sugar_cap(*this, g);
-                float parent_cap = sugar_cap(*parent, g);
-                float my_conc = my_cap > 1e-9f ? chemical(dp.id) / my_cap : 0.0f;
-                float parent_conc = parent_cap > 1e-9f ? parent->chemical(dp.id) / parent_cap : 0.0f;
+                my_cap = sugar_cap(*this, g);
+                parent_cap = sugar_cap(*parent, g);
+            }
 
-                // Radius scaling: thicker connections transport more.
-                // Minimum radius ensures leaves/meristems always have some transport.
-                float min_radius = g.initial_radius * 0.2f;  // 20% of initial — nothing is fully cut off
-                float connection_radius = std::max(std::min(radius, parent->radius), min_radius);
-                float radius_factor = connection_radius / std::max(g.initial_radius, 1e-6f);
+            transport_chemical(
+                chemical(dp.id), parent->chemical(dp.id),
+                my_cap, parent_cap,
+                effective_radius, parent->radius, ref_radius,
+                dp);
 
-                // Flow in grams: concentration gradient * rate * radius * average cap
-                // Average cap scales the unitless concentration gradient back to grams.
-                float avg_cap = (my_cap + parent_cap) * 0.5f;
-                float flow = (my_conc - parent_conc) * dp.diffusion_rate * radius_factor * avg_cap;
-
-                // Clamp: can't send more than you have, can't overfill receiver
-                if (flow > 0.0f) {
-                    float headroom = std::max(0.0f, parent_cap - parent->chemical(dp.id));
-                    flow = std::min({flow, chemical(dp.id), headroom});
-                } else {
-                    float headroom = std::max(0.0f, my_cap - chemical(dp.id));
-                    flow = std::max({flow, -parent->chemical(dp.id), -headroom});
-                }
-                chemical(dp.id) -= flow;
-                parent->chemical(dp.id) += flow;
-            } else {
-                diffuse(chemical(dp.id), parent->chemical(dp.id), dp.diffusion_rate);
+            // Decay (sugar doesn't decay)
+            if (dp.decay_rate > 0.0f) {
                 chemical(dp.id) *= (1.0f - dp.decay_rate);
             }
         }
     } else {
         // Seed: just decay
         for (const auto& dp : diffusion_params(g)) {
-            chemical(dp.id) *= (1.0f - dp.decay_rate);
+            if (dp.decay_rate > 0.0f) {
+                chemical(dp.id) *= (1.0f - dp.decay_rate);
+            }
         }
     }
 }

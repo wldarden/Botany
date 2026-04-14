@@ -48,7 +48,7 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
 
         float sugar = node.chemical(ChemicalID::Sugar);
         float cap = sugar_cap(node, g);
-        float maint = node.maintenance_cost(g);
+        float maint = node.maintenance_cost(world);
         float parent_sugar = node.parent ? node.parent->chemical(ChemicalID::Sugar) : -1.0f;
 
         float light_exp = 0.0f;
@@ -70,7 +70,7 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
             } else {
                 angle_eff = 1.0f;
             }
-            production = light_exp * angle_eff * world.light_level * leaf_sz * g.sugar_production_rate;
+            production = light_exp * angle_eff * world.light_level * leaf_sz * world.sugar_production_rate;
         }
 
         int32_t parent_id = node.parent ? static_cast<int32_t>(node.parent->id) : -1;

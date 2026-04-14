@@ -60,12 +60,7 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "leaf_phototropism_rate=" << g.leaf_phototropism_rate << "\n";
     out << "leaf_abscission_ticks=" << g.leaf_abscission_ticks << "\n";
     out << "min_leaf_age_before_abscission=" << g.min_leaf_age_before_abscission << "\n";
-    out << "sugar_production_rate=" << g.sugar_production_rate << "\n";
     out << "sugar_diffusion_rate=" << g.sugar_diffusion_rate << "\n";
-    out << "sugar_maintenance_leaf=" << g.sugar_maintenance_leaf << "\n";
-    out << "sugar_maintenance_stem=" << g.sugar_maintenance_stem << "\n";
-    out << "sugar_maintenance_root=" << g.sugar_maintenance_root << "\n";
-    out << "sugar_maintenance_meristem=" << g.sugar_maintenance_meristem << "\n";
     out << "seed_sugar=" << g.seed_sugar << "\n";
     out << "sugar_storage_density_wood=" << g.sugar_storage_density_wood << "\n";
     out << "sugar_storage_density_leaf=" << g.sugar_storage_density_leaf << "\n";
@@ -90,6 +85,7 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "senescence_duration=" << g.senescence_duration << "\n";
     out << "wood_density=" << g.wood_density << "\n";
     out << "wood_flexibility=" << g.wood_flexibility << "\n";
+    out << "stress_hormone_threshold=" << g.stress_hormone_threshold << "\n";
     out << "stress_hormone_production_rate=" << g.stress_hormone_production_rate << "\n";
     out << "stress_hormone_diffusion_rate=" << g.stress_hormone_diffusion_rate << "\n";
     out << "stress_hormone_decay_rate=" << g.stress_hormone_decay_rate << "\n";

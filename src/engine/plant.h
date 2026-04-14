@@ -34,7 +34,7 @@ public:
     float total_sugar_produced() const { return total_sugar_produced_; }
     void add_sugar_produced(float amount) { total_sugar_produced_ += amount; }
 
-    void tick(const struct WorldParams& world);
+    void tick(const struct WorldParams& world, struct PerfStats* perf = nullptr);
     void remove_subtree(Node* node);
 
     void queue_removal(Node* node);
@@ -46,13 +46,17 @@ public:
     uint32_t next_id() { return next_id_++; }
 
 private:
-    void tick_tree(const WorldParams& world);
+    void tick_tree(const WorldParams& world, PerfStats* perf);
     Genome genome_;
     uint32_t next_id_ = 0;
     uint32_t root_meristem_count_ = 0;
     std::vector<std::unique_ptr<Node>> nodes_;
     std::vector<Node*> pending_removals_;
     float total_sugar_produced_ = 0.0f;
+    PerfStats* perf_ = nullptr;  // set during tick, null when no perf logging
+
+public:
+    PerfStats* perf() const { return perf_; }
 };
 
 } // namespace botany

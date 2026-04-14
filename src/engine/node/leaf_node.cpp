@@ -12,7 +12,7 @@ LeafNode::LeafNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::LEAF, position, radius)
 {}
 
-void LeafNode::grow(Plant& plant, const WorldParams& world) {
+void LeafNode::produce(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
     // Gibberellin production: young leaves produce GA on themselves
@@ -20,17 +20,16 @@ void LeafNode::grow(Plant& plant, const WorldParams& world) {
         chemical(ChemicalID::Gibberellin) += leaf_size * g.ga_production_rate;
     }
 
+    // Photosynthesis: sugar + cytokinin production
     float sugar_before = chemical(ChemicalID::Sugar);
     photosynthesize(g, world);
     float delta = chemical(ChemicalID::Sugar) - sugar_before;
     if (delta > 0.0f) plant.add_sugar_produced(delta);
-    phototropism(g, world);
-    grow_size(g, world);
 
     // Carbon-balance abscission: if production < maintenance for too long, senesce.
     // Young leaves are immune — they're still growing and not yet net producers.
     if (senescence_ticks == 0 && age >= g.min_leaf_age_before_abscission) {
-        float cost = maintenance_cost(g);
+        float cost = maintenance_cost(world);
         if (delta < cost) deficit_ticks++;
         else              deficit_ticks = 0;
 
@@ -49,6 +48,12 @@ void LeafNode::grow(Plant& plant, const WorldParams& world) {
     }
 }
 
+void LeafNode::grow(Plant& plant, const WorldParams& world) {
+    const Genome& g = plant.genome();
+    phototropism(g, world);
+    grow_size(g, world);
+}
+
 void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
     if (leaf_size <= 1e-6f || senescence_ticks != 0) return;
 
@@ -65,7 +70,7 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
     float leaf_area = leaf_size * leaf_size;
     float sugar_produced = light_exposure * angle_efficiency
            * world.light_level * leaf_area
-           * g.sugar_production_rate;
+           * world.sugar_production_rate;
     chemical(ChemicalID::Sugar) += sugar_produced;
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
 
@@ -131,8 +136,8 @@ void LeafNode::grow_size(const Genome& g, const WorldParams& world) {
     }
 }
 
-float LeafNode::maintenance_cost(const Genome& g) const {
-    return g.sugar_maintenance_leaf * leaf_size * leaf_size;
+float LeafNode::maintenance_cost(const WorldParams& world) const {
+    return world.sugar_maintenance_leaf * leaf_size * leaf_size;
 }
 
 } // namespace botany

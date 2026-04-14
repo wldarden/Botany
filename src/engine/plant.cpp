@@ -8,6 +8,7 @@
 #include "engine/node/meristems/root_apical.h"
 #include "engine/node/meristems/root_axillary.h"
 #include "engine/ethylene.h"
+#include "engine/perf_log.h"
 #include "engine/world_params.h"
 #include <algorithm>
 #include <unordered_set>
@@ -42,11 +43,10 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     root->position = seed->position + root->offset;
 }
 
-void Plant::tick(const WorldParams& world) {
-    // Auxin, cytokinin, sugar diffusion: now transported locally
-    // by each node during Node::transport_chemicals()
-    // compute_ethylene(*this, world);  // disabled: crowding kills leaves instantly
-    tick_tree(world);
+void Plant::tick(const WorldParams& world, PerfStats* perf) {
+    perf_ = perf;
+    tick_tree(world, perf);
+    perf_ = nullptr;
 }
 
 void Plant::remove_subtree(Node* node) {
@@ -127,7 +127,7 @@ static void tick_recursive(Node& node, Plant& plant, const WorldParams& world) {
     }
 }
 
-void Plant::tick_tree(const WorldParams& world) {
+void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
     tick_recursive(*nodes_[0], *this, world);
     flush_removals();
 }

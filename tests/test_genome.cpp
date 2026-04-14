@@ -38,17 +38,17 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
     }
 
     SECTION("sugar parameters are positive") {
-        REQUIRE(g.sugar_production_rate > 0.0f);
         REQUIRE(g.sugar_diffusion_rate > 0.0f);
-        REQUIRE(g.sugar_maintenance_leaf > 0.0f);
-        REQUIRE(g.sugar_maintenance_stem > 0.0f);
-        REQUIRE(g.sugar_maintenance_root > 0.0f);
-        REQUIRE(g.sugar_maintenance_meristem > 0.0f);
         WorldParams w = default_world_params();
+        REQUIRE(w.sugar_production_rate > 0.0f);
+        REQUIRE(w.sugar_maintenance_leaf > 0.0f);
+        REQUIRE(w.sugar_maintenance_stem > 0.0f);
+        REQUIRE(w.sugar_maintenance_root > 0.0f);
+        REQUIRE(w.sugar_maintenance_meristem > 0.0f);
         REQUIRE(w.sugar_cost_activation > 0.0f);
-        REQUIRE(w.sugar_cost_shoot_growth > 0.0f);
+        REQUIRE(w.sugar_cost_meristem_growth > 0.0f);
         REQUIRE(w.sugar_cost_root_growth > 0.0f);
-        REQUIRE(w.sugar_cost_thickening > 0.0f);
+        REQUIRE(w.sugar_cost_stem_growth > 0.0f);
         REQUIRE(g.cytokinin_growth_threshold > 0.0f);
     }
 }

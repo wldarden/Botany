@@ -22,11 +22,20 @@ inline constexpr std::array<ChemicalID, 6> all_chemical_ids = {
 // One entry per chemical — rate and decay from the genome.
 inline std::array<ChemicalDiffusionParams, 5> diffusion_params(const Genome& g) {
     return {{
-        {ChemicalID::Auxin,       g.auxin_diffusion_rate,     g.auxin_decay_rate},
-        {ChemicalID::Cytokinin,   g.cytokinin_diffusion_rate, g.cytokinin_decay_rate},
-        {ChemicalID::Gibberellin, g.ga_diffusion_rate,        g.ga_decay_rate},
-        {ChemicalID::Sugar,       g.sugar_diffusion_rate,     0.0f},  // sugar doesn't decay
-        {ChemicalID::Stress,      g.stress_hormone_diffusion_rate, g.stress_hormone_decay_rate},
+        {ChemicalID::Auxin,       g.auxin_diffusion_rate,     g.auxin_decay_rate,
+         g.auxin_bias,     g.hormone_base_transport, g.hormone_transport_scale},
+
+        {ChemicalID::Cytokinin,   g.cytokinin_diffusion_rate, g.cytokinin_decay_rate,
+         g.cytokinin_bias, g.hormone_base_transport, g.hormone_transport_scale},
+
+        {ChemicalID::Gibberellin, g.ga_diffusion_rate,        g.ga_decay_rate,
+         0.0f,             g.hormone_base_transport, g.hormone_transport_scale},
+
+        {ChemicalID::Sugar,       g.sugar_diffusion_rate,     0.0f,
+         0.0f,             g.sugar_base_transport,   g.sugar_transport_scale},
+
+        {ChemicalID::Stress,      g.stress_hormone_diffusion_rate, g.stress_hormone_decay_rate,
+         0.0f,             g.hormone_base_transport, g.hormone_transport_scale},
     }};
 }
 

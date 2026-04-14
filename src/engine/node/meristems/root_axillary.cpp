@@ -33,7 +33,9 @@ void RootAxillaryNode::activate(Plant& plant, const Genome& g, const WorldParams
     apical->chemical(ChemicalID::Sugar) = chemical(ChemicalID::Sugar) - world.sugar_cost_activation;
 
     if (parent) {
-        parent->replace_child(this, apical);
+        Node* stem = parent;  // save before replace_child nulls this->parent
+        stem->replace_child(this, apical);
+        apical->position = stem->position + apical->offset;
     }
     plant.queue_removal(this);
 }

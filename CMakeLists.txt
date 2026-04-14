@@ -127,6 +127,10 @@ add_library(botany_evolution STATIC
 target_include_directories(botany_evolution PUBLIC src)
 target_link_libraries(botany_evolution PUBLIC botany_engine evolve)
 
+# Sugar economy test (headless, no graphics)
+add_executable(botany_sugar_test src/app_sugar_test.cpp)
+target_link_libraries(botany_sugar_test PRIVATE botany_engine)
+
 # Evolution app
 add_executable(botany_evolve src/app_evolve.cpp)
 target_link_libraries(botany_evolve PRIVATE botany_engine botany_evolution botany_renderer imgui)

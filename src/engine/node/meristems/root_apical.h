@@ -9,7 +9,7 @@ public:
     // --- Node overrides ---
     RootApicalNode(uint32_t id, glm::vec3 position, float radius);
     void tick(Plant& plant, const WorldParams& world) override;
-    float maintenance_cost(const Genome& g) const override;
+    float maintenance_cost(const WorldParams& world) const override;
     void grow(Plant& plant, const WorldParams& world) override;
 
     // --- Meristem state ---

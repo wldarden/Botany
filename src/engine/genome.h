@@ -14,12 +14,23 @@ struct Genome {
     float auxin_diffusion_rate;       // fraction diffused per tick
     float auxin_decay_rate;
     float auxin_threshold;
+    float auxin_shade_boost;           // shade-avoidance: production multiplier boost in low light (0 = none)
+    float auxin_sugar_half_saturation; // g glucose — sugar level for half-max production (Michaelis-Menten)
+    float auxin_age_half_life;         // ticks — meristem age at which production halves
+    float auxin_bias;                  // equilibrium shift for basipetal flow (negative = toward root)
 
     float cytokinin_production_rate;    // cytokinin per g sugar produced by leaves (leaf productivity signal)
     float cytokinin_diffusion_rate;    // fraction diffused per tick
     float cytokinin_decay_rate;
     float cytokinin_threshold;
     float cytokinin_growth_threshold;  // cytokinin level for full-speed growth (gates all growth processes)
+    float cytokinin_bias;              // equilibrium shift for acropetal flow (positive = toward tips)
+
+    // Transport capacity — limits chemical throughput per connection per tick
+    float hormone_base_transport;      // throughput floor for hormone signals
+    float hormone_transport_scale;     // radius amplification for hormone throughput
+    float sugar_base_transport;        // throughput floor for sugar
+    float sugar_transport_scale;       // radius amplification for sugar throughput
 
     // Shoot growth
     float growth_rate;                // dm/hr — shoot tip extension speed
@@ -49,14 +60,8 @@ struct Genome {
     float tip_offset;                 // dm — small forward offset when chaining nodes
     float growth_noise;               // radians — max angular perturbation per segment
 
-    // Sugar / photosynthesis (g glucose)
-    float sugar_production_rate;      // g glucose / (dm² leaf area · hr) at full sun
+    // Sugar economy (g glucose)
     float sugar_diffusion_rate;       // fraction diffused per tick
-    float sugar_maintenance_leaf;     // g glucose / (dm² leaf area · hr)
-    float sugar_maintenance_stem;     // g glucose / (dm³ volume · hr)
-    float sugar_maintenance_root;     // g glucose / (dm³ volume · hr)
-    float sugar_maintenance_meristem; // g glucose / hr per active meristem tip
-
     float seed_sugar;                 // g glucose — initial reserves in the seed
 
     // Sugar storage caps — maximum sugar a node can hold, proportional to tissue volume.
@@ -97,7 +102,8 @@ struct Genome {
     // Stress — mechanical load response
     float wood_density;                   // g/dm³ — mass per volume, also determines strength
     float wood_flexibility;               // 0-1 — droop threshold as fraction of break threshold
-    float stress_hormone_production_rate; // hormone per unit stress
+    float stress_hormone_threshold;       // stress ratio (0-1) below which no hormone produced
+    float stress_hormone_production_rate; // hormone per unit excess stress ratio
     float stress_hormone_diffusion_rate;  // fraction diffused per tick
     float stress_hormone_decay_rate;      // fraction decayed per tick
     float stress_thickening_boost;        // thickening multiplier per unit stress hormone
@@ -111,12 +117,22 @@ inline Genome default_genome() {
         .auxin_diffusion_rate = 0.3f,
         .auxin_decay_rate = 0.15f,
         .auxin_threshold = 0.15f,
+        .auxin_shade_boost = 0.5f,           // shade can increase production by 50%
+        .auxin_sugar_half_saturation = 0.3f, // modest sugar needed for decent production
+        .auxin_age_half_life = 720.0f,       // 30 days — gradual decline
+        .auxin_bias = -0.1f,                  // gentle basipetal shift (auxin accumulates toward root)
 
         .cytokinin_production_rate = 5.0f,   // cytokinin per g sugar produced by leaves
         .cytokinin_diffusion_rate = 0.3f,
         .cytokinin_decay_rate = 0.05f,
         .cytokinin_threshold = 0.15f,
         .cytokinin_growth_threshold = 0.1f,
+        .cytokinin_bias = 0.1f,               // gentle acropetal shift (cytokinin accumulates toward tips)
+
+        .hormone_base_transport = 0.5f,      // generous floor — thin tips can still signal
+        .hormone_transport_scale = 1.0f,     // moderate radius scaling for hormones
+        .sugar_base_transport = 0.01f,       // small floor — sugar is radius-dependent
+        .sugar_transport_scale = 5.0f,       // strong radius dependence for sugar
 
         .growth_rate = 0.008f,              // ~2 cm/day = 0.8 mm/hr
         .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
@@ -143,13 +159,7 @@ inline Genome default_genome() {
         .tip_offset = 0.01f,
         .growth_noise = 0.26f,              // ~15 degrees
 
-        .sugar_production_rate = 0.02f,      // g glucose / (dm² leaf area · hr) — maintenance is ~5% of full-sun production
         .sugar_diffusion_rate = 0.8f,        // high base rate — radius scaling is the real throttle
-        .sugar_maintenance_leaf = 0.001f,    // g / (dm² · hr) — ~25% of gross production (realistic leaf respiration)
-        .sugar_maintenance_stem = 0.028f,   // g / (dm³ · hr) — wood is cheap per volume
-        .sugar_maintenance_root = 0.005f,   // g / (dm³ · hr) — fine roots expensive (high turnover)
-        .sugar_maintenance_meristem = 0.0001f, // tiny organ — costs ~1/3 of one mature leaf
-
         .seed_sugar = 48.0f,                 // ~15 days heterotrophic growth
 
         .sugar_storage_density_wood = 500.0f, // g glucose max / dm³ — high cap so stems can pass sugar through
@@ -187,7 +197,8 @@ inline Genome default_genome() {
         // Stress
         .wood_density = 50.0f,                    // g/dm³ — light deciduous wood
         .wood_flexibility = 0.5f,                 // droop starts at 50% of break stress
-        .stress_hormone_production_rate = 0.001f,  // low signaling — stress values are large numbers
+        .stress_hormone_threshold = 0.3f,            // no hormone below 30% of breaking capacity
+        .stress_hormone_production_rate = 0.5f,      // input is now 0-1 stress ratio excess
         .stress_hormone_diffusion_rate = 0.15f,   // moderate local diffusion
         .stress_hormone_decay_rate = 0.2f,        // fades quickly — local signal
         .stress_thickening_boost = 1.0f,          // 1:1 hormone-to-thickening boost

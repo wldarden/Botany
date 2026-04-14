@@ -29,7 +29,7 @@ TEST_CASE("LEAF nodes produce sugar proportional to light and leaf_size", "[suga
     leaf->tick(plant, wp);
 
     REQUIRE(leaf->chemical(ChemicalID::Sugar) > 0.0f);
-    float expected = wp.light_level * leaf->as_leaf()->leaf_size * g.sugar_production_rate;
+    float expected = wp.light_level * leaf->as_leaf()->leaf_size * wp.sugar_production_rate;
     REQUIRE_THAT(leaf->chemical(ChemicalID::Sugar), WithinAbs(expected, 0.01f));
 }
 
@@ -77,23 +77,25 @@ TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
 
 TEST_CASE("Stem maintenance_cost is volume-based", "[sugar]") {
     Genome g = default_genome();
+    WorldParams wp = default_world_params();
     Plant plant(g, glm::vec3(0.0f));
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
     float length = glm::length(stem->offset);
     float volume = 3.14159f * 0.1f * 0.1f * length;
-    float expected = g.sugar_maintenance_stem * volume;
-    REQUIRE_THAT(stem->maintenance_cost(g), WithinAbs(expected, 1e-6));
+    float expected = wp.sugar_maintenance_stem * volume;
+    REQUIRE_THAT(stem->maintenance_cost(wp), WithinAbs(expected, 1e-6));
 }
 
 TEST_CASE("Leaf maintenance_cost uses leaf area", "[sugar]") {
     Genome g = default_genome();
+    WorldParams wp = default_world_params();
     Plant plant(g, glm::vec3(0.0f));
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.5f;
-    float expected = g.sugar_maintenance_leaf * 0.5f * 0.5f;
-    REQUIRE_THAT(leaf->maintenance_cost(g), WithinAbs(expected, 1e-6));
+    float expected = wp.sugar_maintenance_leaf * 0.5f * 0.5f;
+    REQUIRE_THAT(leaf->maintenance_cost(wp), WithinAbs(expected, 1e-6));
 }
 
 TEST_CASE("Sugar cannot go below zero after maintenance", "[sugar]") {
@@ -118,7 +120,8 @@ TEST_CASE("Active meristem tip maintenance_cost", "[sugar]") {
         if (n.type == NodeType::SHOOT_APICAL) shoot_tip = &n;
     });
     REQUIRE(shoot_tip != nullptr);
-    REQUIRE_THAT(shoot_tip->maintenance_cost(g), WithinAbs(g.sugar_maintenance_meristem, 1e-6));
+    WorldParams wp = default_world_params();
+    REQUIRE_THAT(shoot_tip->maintenance_cost(wp), WithinAbs(wp.sugar_maintenance_meristem, 1e-6));
 }
 
 // === Diffusion tests ===

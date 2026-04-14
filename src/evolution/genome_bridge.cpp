@@ -16,18 +16,29 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     const float r = 0.1f;   // 10% chance of mutation per gene per generation
     const float p = mutation_pct;
 
-    // --- Auxin group (4 genes) ---
-    reg(sg, "auxin_production_rate",   g.auxin_production_rate,   r, 0.01f, 2.0f, p);
-    reg(sg, "auxin_diffusion_rate",    g.auxin_diffusion_rate,    r, 0.01f, 1.0f, p);
-    reg(sg, "auxin_decay_rate",        g.auxin_decay_rate,        r, 0.001f, 0.5f, p);
-    reg(sg, "auxin_threshold",         g.auxin_threshold,         r, 0.01f, 1.0f, p);
+    // --- Auxin group (7 genes) ---
+    reg(sg, "auxin_production_rate",      g.auxin_production_rate,      r, 0.01f, 2.0f, p);
+    reg(sg, "auxin_diffusion_rate",       g.auxin_diffusion_rate,       r, 0.01f, 1.0f, p);
+    reg(sg, "auxin_decay_rate",           g.auxin_decay_rate,           r, 0.001f, 0.5f, p);
+    reg(sg, "auxin_threshold",            g.auxin_threshold,            r, 0.01f, 1.0f, p);
+    reg(sg, "auxin_shade_boost",          g.auxin_shade_boost,          r, 0.0f, 2.0f, p);
+    reg(sg, "auxin_sugar_half_saturation", g.auxin_sugar_half_saturation, r, 0.01f, 5.0f, p);
+    reg(sg, "auxin_age_half_life",        g.auxin_age_half_life,        r, 24.0f, 4320.0f, p);
+    reg(sg, "auxin_bias",                g.auxin_bias,                r, -1.0f, 0.0f, p);
 
-    // --- Cytokinin group (5 genes) ---
+    // --- Cytokinin group (6 genes) ---
     reg(sg, "cytokinin_production_rate",  g.cytokinin_production_rate,  r, 0.01f, 2.0f, p);
     reg(sg, "cytokinin_diffusion_rate",   g.cytokinin_diffusion_rate,   r, 0.01f, 1.0f, p);
     reg(sg, "cytokinin_decay_rate",       g.cytokinin_decay_rate,       r, 0.001f, 0.5f, p);
     reg(sg, "cytokinin_threshold",        g.cytokinin_threshold,        r, 0.01f, 1.0f, p);
     reg(sg, "cytokinin_growth_threshold", g.cytokinin_growth_threshold, r, 0.01f, 1.0f, p);
+    reg(sg, "cytokinin_bias",            g.cytokinin_bias,            r, 0.0f, 1.0f, p);
+
+    // --- Transport capacity group (4 genes) ---
+    reg(sg, "hormone_base_transport",    g.hormone_base_transport,    r, 0.01f, 2.0f, p);
+    reg(sg, "hormone_transport_scale",   g.hormone_transport_scale,   r, 0.1f, 5.0f, p);
+    reg(sg, "sugar_base_transport",      g.sugar_base_transport,      r, 0.001f, 0.5f, p);
+    reg(sg, "sugar_transport_scale",     g.sugar_transport_scale,     r, 0.5f, 20.0f, p);
 
     // --- Shoot growth group ---
     reg(sg, "growth_rate",                g.growth_rate,                r, 0.001f, 0.05f, p);
@@ -65,12 +76,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
                                                                       r, 24.0f, 1000.0f, p);
 
     // --- Sugar economy group ---
-    reg(sg, "sugar_production_rate",       g.sugar_production_rate,       r, 0.001f,  0.1f, p);
     reg(sg, "sugar_diffusion_rate",        g.sugar_diffusion_rate,        r, 0.01f,   1.0f, p);
-    reg(sg, "sugar_maintenance_leaf",      g.sugar_maintenance_leaf,      r, 0.001f,  0.1f, p);
-    reg(sg, "sugar_maintenance_stem",      g.sugar_maintenance_stem,      r, 0.001f,  0.2f, p);
-    reg(sg, "sugar_maintenance_root",      g.sugar_maintenance_root,      r, 0.01f,   0.5f, p);
-    reg(sg, "sugar_maintenance_meristem",  g.sugar_maintenance_meristem,  r, 0.0001f, 0.01f, p);
     reg(sg, "seed_sugar",                  g.seed_sugar,                  r, 5.0f,    200.0f, p);
     reg(sg, "sugar_storage_density_wood",  g.sugar_storage_density_wood,  r, 50.0f,   2000.0f, p);
     reg(sg, "sugar_storage_density_leaf",  g.sugar_storage_density_leaf,  r, 0.05f,   5.0f, p);
@@ -100,10 +106,11 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "senescence_duration",            static_cast<float>(g.senescence_duration),
                                                                                 r, 12.0f,  500.0f, p);
 
-    // --- Stress group (8 genes) ---
+    // --- Stress group (9 genes) ---
     reg(sg, "wood_density",                    g.wood_density,                    r, 10.0f, 200.0f, p);
     reg(sg, "wood_flexibility",                g.wood_flexibility,                r, 0.1f,  1.0f, p);
-    reg(sg, "stress_hormone_production_rate",  g.stress_hormone_production_rate,  r, 0.0f,  1.0f, p);
+    reg(sg, "stress_hormone_threshold",        g.stress_hormone_threshold,        r, 0.0f,  0.8f, p);
+    reg(sg, "stress_hormone_production_rate",  g.stress_hormone_production_rate,  r, 0.01f, 2.0f, p);
     reg(sg, "stress_hormone_diffusion_rate",   g.stress_hormone_diffusion_rate,   r, 0.01f, 0.5f, p);
     reg(sg, "stress_hormone_decay_rate",       g.stress_hormone_decay_rate,       r, 0.01f, 0.5f, p);
     reg(sg, "stress_thickening_boost",         g.stress_thickening_boost,         r, 0.0f,  5.0f, p);
@@ -113,12 +120,20 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
         "auxin_production_rate", "auxin_diffusion_rate",
-        "auxin_decay_rate", "auxin_threshold"
+        "auxin_decay_rate", "auxin_threshold",
+        "auxin_shade_boost", "auxin_sugar_half_saturation", "auxin_age_half_life",
+        "auxin_bias"
     }});
 
     sg.add_linkage_group({"cytokinin", {
         "cytokinin_production_rate", "cytokinin_diffusion_rate",
-        "cytokinin_decay_rate", "cytokinin_threshold", "cytokinin_growth_threshold"
+        "cytokinin_decay_rate", "cytokinin_threshold", "cytokinin_growth_threshold",
+        "cytokinin_bias"
+    }});
+
+    sg.add_linkage_group({"transport", {
+        "hormone_base_transport", "hormone_transport_scale",
+        "sugar_base_transport", "sugar_transport_scale"
     }});
 
     sg.add_linkage_group({"shoot_growth", {
@@ -139,10 +154,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     }});
 
     sg.add_linkage_group({"sugar_economy", {
-        "sugar_production_rate", "sugar_diffusion_rate",
-        "sugar_maintenance_leaf", "sugar_maintenance_stem",
-        "sugar_maintenance_root", "sugar_maintenance_meristem",
-        "seed_sugar", "sugar_storage_density_wood", "sugar_storage_density_leaf",
+        "sugar_diffusion_rate", "seed_sugar",
+        "sugar_storage_density_wood", "sugar_storage_density_leaf",
         "sugar_cap_minimum", "sugar_cap_meristem"
     }});
 
@@ -161,6 +174,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     sg.add_linkage_group({"stress", {
         "wood_density", "wood_flexibility",
+        "stress_hormone_threshold",
         "stress_hormone_production_rate", "stress_hormone_diffusion_rate",
         "stress_hormone_decay_rate",
         "stress_thickening_boost", "stress_elongation_inhibition", "stress_gravitropism_boost"
@@ -180,7 +194,11 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.auxin_production_rate   = sg.get("auxin_production_rate");
     g.auxin_diffusion_rate    = sg.get("auxin_diffusion_rate");
     g.auxin_decay_rate        = sg.get("auxin_decay_rate");
-    g.auxin_threshold         = sg.get("auxin_threshold");
+    g.auxin_threshold              = sg.get("auxin_threshold");
+    g.auxin_shade_boost            = sg.get("auxin_shade_boost");
+    g.auxin_sugar_half_saturation  = sg.get("auxin_sugar_half_saturation");
+    g.auxin_age_half_life          = sg.get("auxin_age_half_life");
+    g.auxin_bias                   = sg.get("auxin_bias");
 
     // Cytokinin
     g.cytokinin_production_rate   = sg.get("cytokinin_production_rate");
@@ -188,6 +206,13 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.cytokinin_decay_rate        = sg.get("cytokinin_decay_rate");
     g.cytokinin_threshold         = sg.get("cytokinin_threshold");
     g.cytokinin_growth_threshold  = sg.get("cytokinin_growth_threshold");
+    g.cytokinin_bias              = sg.get("cytokinin_bias");
+
+    // Transport capacity
+    g.hormone_base_transport      = sg.get("hormone_base_transport");
+    g.hormone_transport_scale     = sg.get("hormone_transport_scale");
+    g.sugar_base_transport        = sg.get("sugar_base_transport");
+    g.sugar_transport_scale       = sg.get("sugar_transport_scale");
 
     // Shoot growth
     g.growth_rate                = sg.get("growth_rate");
@@ -221,12 +246,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.min_leaf_age_before_abscission = static_cast<uint32_t>(sg.get("min_leaf_age_before_abscission"));
 
     // Sugar economy
-    g.sugar_production_rate       = sg.get("sugar_production_rate");
     g.sugar_diffusion_rate        = sg.get("sugar_diffusion_rate");
-    g.sugar_maintenance_leaf      = sg.get("sugar_maintenance_leaf");
-    g.sugar_maintenance_stem      = sg.get("sugar_maintenance_stem");
-    g.sugar_maintenance_root      = sg.get("sugar_maintenance_root");
-    g.sugar_maintenance_meristem  = sg.get("sugar_maintenance_meristem");
     g.seed_sugar                  = sg.get("seed_sugar");
     g.sugar_storage_density_wood  = sg.get("sugar_storage_density_wood");
     g.sugar_storage_density_leaf  = sg.get("sugar_storage_density_leaf");
@@ -256,6 +276,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     // Stress
     g.wood_density                    = sg.get("wood_density");
     g.wood_flexibility                = sg.get("wood_flexibility");
+    g.stress_hormone_threshold        = sg.get("stress_hormone_threshold");
     g.stress_hormone_production_rate  = sg.get("stress_hormone_production_rate");
     g.stress_hormone_diffusion_rate   = sg.get("stress_hormone_diffusion_rate");
     g.stress_hormone_decay_rate       = sg.get("stress_hormone_decay_rate");

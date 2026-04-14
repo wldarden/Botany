@@ -48,7 +48,9 @@ void ShootAxillaryNode::activate(Plant& plant, const Genome& g, const WorldParam
     }
 
     if (parent) {
-        parent->replace_child(this, apical);
+        Node* stem = parent;  // save before replace_child nulls this->parent
+        stem->replace_child(this, apical);
+        apical->position = stem->position + apical->offset;
     }
     plant.queue_removal(this);
 }

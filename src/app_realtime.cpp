@@ -82,12 +82,7 @@ static Genome load_genome_file(const std::string& path) {
     get_f("tip_offset", g.tip_offset);
     get_f("growth_noise", g.growth_noise);
     get_f("leaf_phototropism_rate", g.leaf_phototropism_rate);
-    get_f("sugar_production_rate", g.sugar_production_rate);
     get_f("sugar_diffusion_rate", g.sugar_diffusion_rate);
-    get_f("sugar_maintenance_leaf", g.sugar_maintenance_leaf);
-    get_f("sugar_maintenance_stem", g.sugar_maintenance_stem);
-    get_f("sugar_maintenance_root", g.sugar_maintenance_root);
-    get_f("sugar_maintenance_meristem", g.sugar_maintenance_meristem);
     get_f("seed_sugar", g.seed_sugar);
     get_f("sugar_storage_density_wood", g.sugar_storage_density_wood);
     get_f("sugar_storage_density_leaf", g.sugar_storage_density_leaf);
@@ -112,6 +107,7 @@ static Genome load_genome_file(const std::string& path) {
     get_u("senescence_duration", g.senescence_duration);
     get_f("wood_density", g.wood_density);
     get_f("wood_flexibility", g.wood_flexibility);
+    get_f("stress_hormone_threshold", g.stress_hormone_threshold);
     get_f("stress_hormone_production_rate", g.stress_hormone_production_rate);
     get_f("stress_hormone_diffusion_rate", g.stress_hormone_diffusion_rate);
     get_f("stress_hormone_decay_rate", g.stress_hormone_decay_rate);
@@ -226,11 +222,14 @@ int main(int argc, char* argv[]) {
     std::string color_chemical;
     std::string world_path;
 
+    bool log_perf = false;
     for (int i = 1; i < argc; i++) {
         if (std::strcmp(argv[i], "--color") == 0 && i + 1 < argc) {
             color_chemical = argv[++i];
         } else if (std::strcmp(argv[i], "--world") == 0 && i + 1 < argc) {
             world_path = argv[++i];
+        } else if (std::strcmp(argv[i], "--logperf") == 0) {
+            log_perf = true;
         }
     }
 
@@ -245,6 +244,10 @@ int main(int argc, char* argv[]) {
     Genome g = default_genome();
     PlantID plant_id = engine.create_plant(g, glm::vec3(0.0f));
     engine.debug_log().open("debug_log.csv");
+    if (log_perf) {
+        engine.perf_log().open("perf_log.csv");
+        std::cout << "Performance logging enabled -> perf_log.csv" << std::endl;
+    }
 
     Renderer renderer;
     if (!renderer.init(1280, 800, "shaders")) {
@@ -385,7 +388,7 @@ int main(int argc, char* argv[]) {
         engine.get_plant(plant_id).for_each_node([&](const Node& n) {
             total_sugar += n.chemical(ChemicalID::Sugar);
             if (n.chemical(ChemicalID::Sugar) > max_sugar) max_sugar = n.chemical(ChemicalID::Sugar);
-            total_maintenance += n.maintenance_cost(pg);
+            total_maintenance += n.maintenance_cost(engine.world_params());
             switch (n.type) {
                 case NodeType::STEM: stem_count++; break;
                 case NodeType::ROOT: root_count++; break;
@@ -599,14 +602,14 @@ int main(int argc, char* argv[]) {
                 float produced = 0.0f, consumed = 0.0f;
 
                 if (chem == ChemicalID::Sugar) {
-                    consumed = n.maintenance_cost(eg);
+                    consumed = n.maintenance_cost(ew);
                     if (auto* leaf = n.as_leaf()) {
                         if (leaf->leaf_size > 1e-6f && leaf->senescence_ticks == 0) {
                             float angle_eff = 1.0f;
                             float flen = glm::length(leaf->facing);
                             if (flen > 1e-4f) angle_eff = std::max(0.0f, (leaf->facing / flen).y);
                             float area = leaf->leaf_size * leaf->leaf_size;
-                            produced = leaf->light_exposure * angle_eff * ew.light_level * area * eg.sugar_production_rate;
+                            produced = leaf->light_exposure * angle_eff * ew.light_level * area * ew.sugar_production_rate;
                         }
                     }
                 } else if (chem == ChemicalID::Auxin) {
@@ -620,7 +623,7 @@ int main(int argc, char* argv[]) {
                             float flen = glm::length(leaf->facing);
                             if (flen > 1e-4f) angle_eff = std::max(0.0f, (leaf->facing / flen).y);
                             float area = leaf->leaf_size * leaf->leaf_size;
-                            float sugar_prod = leaf->light_exposure * angle_eff * ew.light_level * area * eg.sugar_production_rate;
+                            float sugar_prod = leaf->light_exposure * angle_eff * ew.light_level * area * ew.sugar_production_rate;
                             produced = sugar_prod * eg.cytokinin_production_rate;
                         }
                     }
@@ -634,7 +637,13 @@ int main(int argc, char* argv[]) {
                     produced = level;
                 } else if (chem == ChemicalID::Stress) {
                     consumed = level * eg.stress_hormone_decay_rate;
-                    produced = n.stress * eg.stress_hormone_production_rate;
+                    float bs = eg.wood_density * ew.break_strength_factor;
+                    float sr = (bs > 1e-6f) ? n.stress / bs : 0.0f;
+                    if (sr > eg.stress_hormone_threshold) {
+                        float excess = (sr - eg.stress_hormone_threshold)
+                                     / (1.0f - eg.stress_hormone_threshold);
+                        produced = excess * eg.stress_hormone_production_rate;
+                    }
                 }
 
                 rows.push_back({&n, n.type, n.id, n.age, level, produced, consumed, produced - consumed});
@@ -781,7 +790,7 @@ int main(int argc, char* argv[]) {
                     float leaf_area = leaf->leaf_size * leaf->leaf_size;
                     float production = leaf->light_exposure * angle_eff
                         * engine.world_params().light_level * leaf_area
-                        * lg.sugar_production_rate;
+                        * engine.world_params().sugar_production_rate;
                     ImGui::Text("Sugar/tick: %s", fmt_mass_rate(production));
                     if (leaf->senescence_ticks > 0) {
                         ImGui::Text("Senescence: %u ticks", leaf->senescence_ticks);

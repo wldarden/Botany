@@ -21,15 +21,26 @@ struct WorldParams {
     // Derived from ~1.2-1.4 g glucose / g dry mass (includes 25% growth respiration
     // overhead), scaled by typical cross-section area at initial radius.
     // These are per-distance, not per-time — unchanged by tick rate.
-    float sugar_cost_shoot_growth = 1.5f;       // g glucose / dm of shoot extension
-    float sugar_cost_root_growth  = 1.5f;       // g glucose / dm of root extension (roots ~15% cheaper)
-    float sugar_cost_thickening   = 0.5f;       // g glucose / dm of radial thickening
-    float sugar_cost_elongation   = 1.0f;       // g glucose / dm of internode elongation (cell expansion, cheaper than new growth)
+    float sugar_production_rate    = 0.02f;      // g glucose / (dm² leaf area · hr) at full sun — photosynthetic constant
+    float sugar_cost_meristem_growth = 1.5f;    // g glucose / dm of shoot meristem tip extension
+    float sugar_cost_root_growth  = 1.5f;       // g glucose / dm of root tip extension
+    float sugar_cost_stem_growth  = 1.0f;       // g glucose / dm of stem/root internode growth (thickening + elongation)
     float sugar_cost_activation   = 0.3f;       // g glucose per meristem activation (bud break)
     float sugar_cost_leaf_growth  = 1.5f;       // g glucose / dm of leaf expansion (leaf tissue is expensive — 1.5 g/g dry mass)
     float sugar_cost_phototropism = 0.001f;      // g glucose / radian of leaf turning
+
+    // Maintenance costs — respiration energy per unit tissue per hour.
+    // Leaf: ~10% of gross photosynthesis. Stem: mid-range sapwood (mostly dead cells).
+    // Root: slightly below stem (fine roots are active but less dense).
+    // Meristem: metabolically active growing tissue.
+    float sugar_maintenance_leaf     = 0.002f;   // g glucose / (dm² leaf area · hr)
+    float sugar_maintenance_stem     = 0.01f;    // g glucose / (dm³ stem volume · hr)
+    float sugar_maintenance_root     = 0.004f;   // g glucose / (dm³ root volume · hr)
+    float sugar_maintenance_meristem = 0.0005f;  // g glucose / hr per active meristem tip
+
     float light_cell_size         = 0.075f;     // dm — shadow map cell size (smaller = higher resolution, more cells)
     glm::vec3 light_direction     = glm::vec3(0.0f, 1.0f, 0.0f); // unit vector pointing TOWARD light source
+    uint32_t light_update_interval = 10;  // ticks between shadow map recomputation
 
     // Stress physics
     float gravity = 9.81f;                  // m/s² — gravitational acceleration
@@ -45,13 +56,17 @@ inline WorldParams default_world_params() {
     return WorldParams{
         .light_level = 1.0f,
         .starvation_ticks_max = 1200,
-        .sugar_cost_shoot_growth = 2.0f,
+        .sugar_production_rate    = 0.02f,
+        .sugar_cost_meristem_growth = 2.0f,
         .sugar_cost_root_growth  = 1.5f,
-        .sugar_cost_thickening   = 0.5f,
-        .sugar_cost_elongation   = 1.0f,
+        .sugar_cost_stem_growth  = 1.0f,
         .sugar_cost_activation   = 0.3f,
         .sugar_cost_leaf_growth  = 1.5f,
         .sugar_cost_phototropism = 0.001f,
+        .sugar_maintenance_leaf     = 0.002f,
+        .sugar_maintenance_stem     = 0.01f,
+        .sugar_maintenance_root     = 0.004f,
+        .sugar_maintenance_meristem = 0.0005f,
         .light_cell_size         = 0.075f,
         .light_direction         = glm::vec3(0.0f, 1.0f, 0.0f),
         .gravity                 = 9.81f,

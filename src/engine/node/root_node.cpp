@@ -20,13 +20,13 @@ void RootNode::grow(Plant& plant, const WorldParams& world) {
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {
-    float max_cost = g.thickening_rate * world.sugar_cost_thickening;
+    float max_cost = g.thickening_rate * world.sugar_cost_stem_growth;
     float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf <= 1e-6f) return;
 
     float actual_rate = g.thickening_rate * gf;
-    chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_thickening;
+    chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
     radius += actual_rate;
 }
 
@@ -44,21 +44,21 @@ void RootNode::elongate(const Genome& g, const WorldParams& world) {
     if (current_len >= max_len) return;
 
     // Elongation is sugar-gated only (not cytokinin) — same reasoning as stems
-    float max_cost = effective_rate * world.sugar_cost_elongation;
+    float max_cost = effective_rate * world.sugar_cost_stem_growth;
     float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
     if (sugar_gf <= 1e-6f) return;
 
     float actual_rate = effective_rate * sugar_gf;
-    chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_elongation;
+    chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;
     }
 }
 
-float RootNode::maintenance_cost(const Genome& g) const {
+float RootNode::maintenance_cost(const WorldParams& world) const {
     float length = std::max(glm::length(offset), 0.01f);
     float volume = 3.14159f * radius * radius * length;
-    return g.sugar_maintenance_root * volume;
+    return world.sugar_maintenance_root * volume;
 }
 
 } // namespace botany
