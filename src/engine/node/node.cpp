@@ -144,7 +144,7 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     {   // --- Droop and break ---
         ScopedTimer t(perf ? perf->node_droop_break_ms : ScopedTimer::dummy);
         bool is_underground = (type == NodeType::ROOT || type == NodeType::ROOT_APICAL || type == NodeType::ROOT_AXILLARY);
-        if (type == NodeType::STEM && !is_underground && stress > 0.0f) {
+        if (type == NodeType::STEM && !is_underground) {
             float break_stress = g.wood_density * world.break_strength_factor;
             float droop_threshold = break_stress * g.wood_flexibility;
 
@@ -173,6 +173,36 @@ void Node::tick(Plant& plant, const WorldParams& world) {
                             + glm::cross(axis, dir) * s
                             + axis * glm::dot(axis, dir) * (1.0f - c);
                         offset = glm::normalize(new_dir) * len;
+                    }
+                }
+            }
+
+            // --- Elastic recovery ---
+            // When stress is below droop threshold, spring back toward rest direction.
+            // Thicker stems recover faster (stiffer wood).
+            float rest_len = glm::length(rest_offset);
+            if (rest_len > 1e-4f && stress < droop_threshold) {
+                glm::vec3 rest_dir = rest_offset / rest_len;
+                float len = glm::length(offset);
+                if (len > 1e-4f) {
+                    glm::vec3 cur_dir = offset / len;
+                    float cos_angle = glm::dot(cur_dir, rest_dir);
+                    if (cos_angle < 0.9999f) {
+                        float angle_gap = std::acos(std::min(cos_angle, 1.0f));
+                        float stiffness = std::min(radius * 10.0f, 2.0f);
+                        float recovery = std::min(g.elastic_recovery_rate * stiffness, angle_gap);
+
+                        glm::vec3 axis = glm::cross(cur_dir, rest_dir);
+                        float axis_len = glm::length(axis);
+                        if (axis_len > 1e-6f) {
+                            axis /= axis_len;
+                            float c = std::cos(recovery);
+                            float s = std::sin(recovery);
+                            glm::vec3 new_dir = cur_dir * c
+                                + glm::cross(axis, cur_dir) * s
+                                + axis * glm::dot(axis, cur_dir) * (1.0f - c);
+                            offset = glm::normalize(new_dir) * len;
+                        }
                     }
                 }
             }

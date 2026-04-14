@@ -72,6 +72,8 @@ struct Genome {
     float sugar_cap_meristem;         // g glucose — cap for meristem nodes (must hold growth sugar)
 
     float leaf_phototropism_rate;     // radians/hr — how fast leaves turn toward light
+    float meristem_gravitropism_rate; // base pull toward set-point angle (always-on plagiotropism)
+    float meristem_phototropism_rate; // shade-scaled pull toward light direction
 
     // Activation thresholds — parent node sugar needed for bud break (g glucose)
     // Gibberellin — promotes internode elongation, produced by young leaves
@@ -109,6 +111,7 @@ struct Genome {
     float stress_thickening_boost;        // thickening multiplier per unit stress hormone
     float stress_elongation_inhibition;   // elongation suppression per unit stress hormone
     float stress_gravitropism_boost;      // gravitropism pull per unit stress hormone
+    float elastic_recovery_rate;          // radians/tick — spring-back toward rest direction
 };
 
 inline Genome default_genome() {
@@ -131,10 +134,10 @@ inline Genome default_genome() {
 
         .hormone_base_transport = 0.5f,      // generous floor — thin tips can still signal
         .hormone_transport_scale = 1.0f,     // moderate radius scaling for hormones
-        .sugar_base_transport = 0.01f,       // small floor — sugar is radius-dependent
+        .sugar_base_transport = 0.1f,        // higher floor — reduces diffusion wave artifacts
         .sugar_transport_scale = 5.0f,       // strong radius dependence for sugar
 
-        .growth_rate = 0.008f,              // ~2 cm/day = 0.8 mm/hr
+        .growth_rate = 0.002f,              // ~5 mm/day = 0.2 mm/hr
         .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
         .branch_angle = 0.785f,             // ~45 degrees
         .thickening_rate = 0.00004f,        // ~3.5 mm radius/year
@@ -157,7 +160,7 @@ inline Genome default_genome() {
         .initial_radius = 0.05f,            // 5 mm
         .root_initial_radius = 0.025f,      // 2.5 mm
         .tip_offset = 0.01f,
-        .growth_noise = 0.26f,              // ~15 degrees
+        .growth_noise = 0.4f,               // ~23 degrees — larger than plagiotropism for organic shapes
 
         .sugar_diffusion_rate = 0.8f,        // high base rate — radius scaling is the real throttle
         .seed_sugar = 48.0f,                 // ~15 days heterotrophic growth
@@ -168,6 +171,8 @@ inline Genome default_genome() {
         .sugar_cap_meristem = 2.0f,           // meristem tips — must hold enough sugar for active growth
 
         .leaf_phototropism_rate = 0.02f,    // ~1.1 deg/hr — full correction in ~3 days
+        .meristem_gravitropism_rate = 0.02f, // gentle always-on pull toward set-point angle
+        .meristem_phototropism_rate = 0.1f,  // shade-scaled pull toward light
 
         // Gibberellin
         .ga_production_rate = 0.5f,
@@ -204,6 +209,7 @@ inline Genome default_genome() {
         .stress_thickening_boost = 1.0f,          // 1:1 hormone-to-thickening boost
         .stress_elongation_inhibition = 1.0f,     // 1:1 hormone-to-elongation suppression
         .stress_gravitropism_boost = 0.5f,        // moderate upward correction
+        .elastic_recovery_rate = 0.005f,          // slow spring-back (half of droop_rate)
     };
 }
 

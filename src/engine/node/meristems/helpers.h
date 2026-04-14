@@ -86,12 +86,15 @@ inline glm::vec3 perturb(const glm::vec3& dir, float max_angle) {
 
 // Compute growth fraction: sugar funds growth, cytokinin gates the rate.
 // Cytokinin is produced by photosynthesizing leaves — no producing leaves = no growth.
+// Cytokinin uses Michaelis-Menten kinetics: cyt / (cyt + Km). No hard cap —
+// more cytokinin always helps, but with diminishing returns. Meristems far
+// from roots get less cytokinin and grow proportionally slower.
 inline float growth_fraction(float sugar, float max_cost,
                              float cytokinin, float cyt_threshold) {
     if (max_cost < 1e-6f) return 1.0f;
     float sugar_gf = std::min(sugar / max_cost, 1.0f);
     if (sugar_gf < 1e-6f) return 0.0f;
-    float cyt_gf = std::min(cytokinin / std::max(cyt_threshold, 1e-6f), 1.0f);
+    float cyt_gf = cytokinin / (cytokinin + std::max(cyt_threshold, 1e-6f));
     return sugar_gf * cyt_gf;
 }
 

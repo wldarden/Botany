@@ -19,6 +19,22 @@ void ShootApicalNode::tick(Plant& plant, const WorldParams& world) {
     ticks_since_last_node++;
 }
 
+void ShootApicalNode::produce(Plant& plant, const WorldParams& world) {
+    // Green shoot tips photosynthesize at low efficiency — roughly enough
+    // to self-sustain in full light, but not enough to be net exporters.
+    float light = estimate_local_light() * world.light_level;
+    float production = light * world.sugar_maintenance_meristem * world.sugar_meristem_photosynthesis;
+    if (production > 0.0f) {
+        chemical(ChemicalID::Sugar) += production;
+        plant.add_sugar_produced(production);
+
+        // Tiny cytokinin from green tip photosynthesis — bootstrap signal.
+        // Lets a leafless branch resume growth when light returns.
+        const Genome& g = plant.genome();
+        chemical(ChemicalID::Cytokinin) += production * g.cytokinin_production_rate * 0.1f;
+    }
+}
+
 float ShootApicalNode::produce_auxin(const Plant& plant) const {
     const Genome& g = plant.genome();
     float base = g.auxin_production_rate;
@@ -65,14 +81,39 @@ void ShootApicalNode::grow(Plant& plant, const WorldParams& world) {
 
     // Time-based spawning (plastochron): create nodes at regular intervals,
     // like real meristems. Internode length comes from elongation afterward.
-    // Don't spawn if starving — a meristem with no sugar shouldn't create nodes it can't feed.
-    if (parent && ticks_since_last_node >= g.shoot_plastochron && starvation_ticks == 0) {
+    // Minimum distance gate: don't stack nodes on top of each other when
+    // growth is throttled. The meristem must move at least tip_offset before spawning.
+    float dist_from_parent = glm::length(offset);
+    if (parent && ticks_since_last_node >= g.shoot_plastochron
+        && dist_from_parent >= g.tip_offset
+        && starvation_ticks == 0) {
         spawn_internode(plant, g);
     }
 }
 
-void ShootApicalNode::roll_direction(const Genome& g) {
+void ShootApicalNode::roll_direction(const Genome& g, const WorldParams& world) {
     growth_dir = perturb(growth_direction(*this), g.growth_noise);
+
+    // Plagiotropism: pull toward set-point angle (vertical for trunk, branch angle for branches).
+    // Stress hormone boosts the correction.
+    {
+        float base_pull = g.meristem_gravitropism_rate;
+        float stress_pull = chemical(ChemicalID::Stress) * g.stress_gravitropism_boost;
+        float blend = std::min(base_pull + stress_pull, 0.5f);
+        if (blend > 1e-6f) {
+            growth_dir = glm::normalize(glm::mix(growth_dir, set_point_dir, blend));
+        }
+    }
+
+    // Phototropism: in shade, grow toward the light source.
+    {
+        float light = estimate_local_light() * world.light_level;
+        float shade = 1.0f - light;
+        float photo_blend = std::min(shade * g.meristem_phototropism_rate, 0.3f);
+        if (photo_blend > 1e-6f) {
+            growth_dir = glm::normalize(glm::mix(growth_dir, world.light_direction, photo_blend));
+        }
+    }
 }
 
 void ShootApicalNode::grow_tip(Plant& plant, const Genome& g, const WorldParams& world) {
@@ -81,16 +122,8 @@ void ShootApicalNode::grow_tip(Plant& plant, const Genome& g, const WorldParams&
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf < 1e-6f) return;
 
-    // Roll a fresh direction each tick (small perturbation from parent direction)
-    if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
-
-    // Stress hormone pulls growth direction toward vertical
-    float stress_grav = chemical(ChemicalID::Stress) * g.stress_gravitropism_boost;
-    if (stress_grav > 1e-6f) {
-        glm::vec3 up(0.0f, 1.0f, 0.0f);
-        float blend = std::min(stress_grav, 0.5f);  // cap at 50% pull toward vertical
-        growth_dir = glm::normalize(glm::mix(growth_dir, up, blend));
-    }
+    // Roll a fresh direction on internode spawn (noise + plagiotropism + phototropism)
+    if (glm::length(growth_dir) < 1e-4f) roll_direction(g, world);
 
     // Deflect away from nearby non-ancestor stems to avoid growing through them.
     // Only meristems do this check — there are very few active at any time.
@@ -141,6 +174,7 @@ void ShootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
 
     // Create new interior stem node and insert it between us and our parent
     Node* internode = plant.create_node(NodeType::STEM, offset, radius);
+    internode->rest_offset = internode->offset;  // remember stress-free direction
     parent->replace_child(this, internode);
     internode->position = internode->parent->position + internode->offset;
     offset = growth_dir * g.tip_offset;

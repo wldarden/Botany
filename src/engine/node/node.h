@@ -40,6 +40,7 @@ public:
 
     // --- Spatial ---
     glm::vec3 offset;       // vector from parent to this node (seed: world position)
+    glm::vec3 rest_offset{0.0f};  // stress-free direction (for elastic recovery after droop)
     glm::vec3 position;     // cached world position (recomputed from offset chain)
     float radius;
 

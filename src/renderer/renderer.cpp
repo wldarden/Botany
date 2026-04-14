@@ -110,6 +110,9 @@ void Renderer::draw_plant(const Plant& plant) {
     plant.for_each_node([&](const Node& node) {
         if (!node.parent) return;
 
+        // Skip drawing dormant axillary buds — there are many and they're invisible
+        if (node.type == NodeType::SHOOT_AXILLARY || node.type == NodeType::ROOT_AXILLARY) return;
+
         if (auto* leaf = node.as_leaf()) {
             glm::vec3 outward = glm::normalize(node.position - node.parent->position);
             glm::vec3 leaf_color;
@@ -313,15 +316,26 @@ void Renderer::draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing
     glm::vec3 p1 = base + proj * half + width * half; // right corner
     glm::vec3 p2 = base + proj * (half * 2.0f);       // tip corner
     glm::vec3 p3 = base + proj * half - width * half; // left corner
-    glm::vec3 normal = facing;
+
+    // Droop side corners for a natural cupped leaf shape
+    glm::vec3 down(0.0f, -1.0f, 0.0f);
+    float droop = size * 0.15f;
+    p1 += down * droop;
+    p3 += down * droop;
+
+    // Per-triangle normals (halves are no longer coplanar)
+    glm::vec3 n0 = glm::normalize(glm::cross(p1 - p0, p2 - p0));
+    glm::vec3 n1 = glm::normalize(glm::cross(p2 - p0, p3 - p0));
+    if (glm::dot(n0, facing) < 0.0f) n0 = -n0;
+    if (glm::dot(n1, facing) < 0.0f) n1 = -n1;
 
     float vertices[] = {
-        p0.x, p0.y, p0.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,
-        p1.x, p1.y, p1.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,
-        p2.x, p2.y, p2.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,
-        p0.x, p0.y, p0.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,
-        p2.x, p2.y, p2.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,
-        p3.x, p3.y, p3.z, normal.x, normal.y, normal.z, color.x, color.y, color.z,
+        p0.x, p0.y, p0.z, n0.x, n0.y, n0.z, color.x, color.y, color.z,
+        p1.x, p1.y, p1.z, n0.x, n0.y, n0.z, color.x, color.y, color.z,
+        p2.x, p2.y, p2.z, n0.x, n0.y, n0.z, color.x, color.y, color.z,
+        p0.x, p0.y, p0.z, n1.x, n1.y, n1.z, color.x, color.y, color.z,
+        p2.x, p2.y, p2.z, n1.x, n1.y, n1.z, color.x, color.y, color.z,
+        p3.x, p3.y, p3.z, n1.x, n1.y, n1.z, color.x, color.y, color.z,
     };
 
     uint32_t vao, vbo;

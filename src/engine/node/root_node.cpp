@@ -1,13 +1,10 @@
 #include "engine/node/root_node.h"
 #include "engine/plant.h"
 #include "engine/world_params.h"
-#include "engine/node/meristems/helpers.h"
 #include <algorithm>
 #include <glm/geometric.hpp>
 
 namespace botany {
-
-using meristem_helpers::growth_fraction;
 
 RootNode::RootNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::ROOT, position, radius)
@@ -20,12 +17,19 @@ void RootNode::grow(Plant& plant, const WorldParams& world) {
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {
-    float max_cost = g.thickening_rate * world.sugar_cost_stem_growth;
-    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
-                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
-    if (gf <= 1e-6f) return;
+    float effective_rate = g.thickening_rate;
 
-    float actual_rate = g.thickening_rate * gf;
+    // Auxin-driven cambial growth: auxin flows basipetally from the canopy
+    // down into the root system — main root gets the most, thickens the most.
+    float auxin_gf = std::min(chemical(ChemicalID::Auxin) / std::max(g.auxin_threshold, 1e-6f), 1.0f);
+    effective_rate *= auxin_gf;
+
+    // Sugar funds the growth
+    float max_cost = effective_rate * world.sugar_cost_stem_growth;
+    float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+    if (sugar_gf <= 1e-6f) return;
+
+    float actual_rate = effective_rate * sugar_gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
     radius += actual_rate;
 }

@@ -62,6 +62,7 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
 
     // Create new interior root node and insert it between us and our parent
     Node* internode = plant.create_node(NodeType::ROOT, offset, radius);
+    internode->rest_offset = internode->offset;  // remember stress-free direction
     parent->replace_child(this, internode);
     internode->position = internode->parent->position + internode->offset;
     offset = growth_dir * g.tip_offset;

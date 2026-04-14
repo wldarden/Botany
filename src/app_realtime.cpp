@@ -779,6 +779,7 @@ int main(int argc, char* argv[]) {
 
                 ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);
                 ImGui::Text("Radius: %s", fmt_dist(sel.radius));
+                ImGui::Text("Length: %s", fmt_dist(glm::length(sel.offset)));
                 if (auto* leaf = sel.as_leaf()) {
                     ImGui::Text("Leaf Size: %s", fmt_dist(leaf->leaf_size));
                     ImGui::Text("Light Exposure: %.1f%%", leaf->light_exposure * 100.0f);

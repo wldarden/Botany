@@ -43,7 +43,10 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     float seed_r_before = seed->radius;
     float shoot_r_before = shoot->radius;
 
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Sugar) = 100.0f;
+        n.chemical(ChemicalID::Auxin) = 1.0f; // thickening is auxin-gated
+    });
     plant.tick(default_world_params());
 
     // Seed (interior node, no active meristem) should thicken
@@ -350,6 +353,7 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
 
     Node* seed = plant.seed_mut();
     seed->chemical(ChemicalID::Sugar) = 100.0f;
+    seed->chemical(ChemicalID::Auxin) = 1.0f; // thickening is auxin-gated
     float sugar_before = seed->chemical(ChemicalID::Sugar);
 
     plant.tick(default_world_params());
@@ -501,11 +505,18 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     // Thickening cost is tiny (~0.00002g). Need very low sugar so
     // reserve fraction actually limits growth.
     // Zero ALL sugar in plant1, then give seed barely any — prevents diffusion from children
-    plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-    seed1->chemical(ChemicalID::Sugar) = 0.00005f; // barely any
+    // Both plants get auxin so thickening isn't auxin-limited
+    plant1.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Sugar) = 0.0f;
+        n.chemical(ChemicalID::Auxin) = 1.0f;
+    });
+    seed1->chemical(ChemicalID::Sugar) = 0.00002f; // below thickening cost to force partial rate
 
     // Plant2 gets plenty everywhere so diffusion doesn't drain the seed
-    plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 1.0f; });
+    plant2.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Sugar) = 1.0f;
+        n.chemical(ChemicalID::Auxin) = 1.0f;
+    });
 
     float r1_before = seed1->radius;
     float r2_before = seed2->radius;
@@ -518,4 +529,61 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
 
     REQUIRE(thicken1 > 0.0f);
     REQUIRE(thicken2 > thicken1);
+}
+
+TEST_CASE("Elastic recovery rotates drooped stem toward rest_offset", "[meristem][stress]") {
+    Genome g = default_genome();
+    g.elastic_recovery_rate = 0.01f;  // fast recovery for test
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams w = default_world_params();
+
+    // Manually attach a stem node to seed with known offsets
+    Node* seed = plant.seed_mut();
+    glm::vec3 up_offset(0.0f, 0.1f, 0.0f);
+    glm::vec3 tilted_offset = glm::normalize(glm::vec3(0.3f, 0.7f, 0.0f)) * 0.1f;
+    Node* stem = plant.create_node(NodeType::STEM, tilted_offset, 0.05f);
+    stem->rest_offset = up_offset;  // wants to point straight up
+    seed->add_child(stem);
+    stem->position = seed->position + stem->offset;
+    stem->stress = 0.0f;
+    // Give sugar to entire plant so nothing starves
+    plant.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Sugar) = 10.0f;
+    });
+
+    float angle_before = std::acos(std::min(
+        glm::dot(glm::normalize(stem->offset), glm::normalize(stem->rest_offset)), 1.0f));
+    REQUIRE(angle_before > 0.01f);
+
+    plant.tick(w);
+
+    float angle_after = std::acos(std::min(
+        glm::dot(glm::normalize(stem->offset), glm::normalize(stem->rest_offset)), 1.0f));
+    REQUIRE(angle_after < angle_before);
+}
+
+TEST_CASE("Elastic recovery stops when offset matches rest_offset", "[meristem][stress]") {
+    Genome g = default_genome();
+    g.elastic_recovery_rate = 0.01f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams w = default_world_params();
+
+    Node* seed = plant.seed_mut();
+    glm::vec3 up_offset(0.0f, 0.1f, 0.0f);
+    Node* stem = plant.create_node(NodeType::STEM, up_offset, 0.05f);
+    stem->rest_offset = up_offset;  // already aligned
+    seed->add_child(stem);
+    stem->position = seed->position + stem->offset;
+    stem->stress = 0.0f;
+    plant.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Sugar) = 10.0f;
+    });
+
+    glm::vec3 dir_before = glm::normalize(stem->offset);
+
+    plant.tick(w);
+
+    // Direction should be essentially unchanged (no recovery needed)
+    float dot = glm::dot(glm::normalize(stem->offset), dir_before);
+    REQUIRE(dot > 0.999f);
 }

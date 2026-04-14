@@ -70,6 +70,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "tip_offset",             g.tip_offset,             r, 0.001f,  0.1f, p);
     reg(sg, "growth_noise",           g.growth_noise,           r, 0.01f,   0.8f, p);
     reg(sg, "leaf_phototropism_rate", g.leaf_phototropism_rate, r, 0.001f,  0.1f, p);
+    reg(sg, "meristem_gravitropism_rate", g.meristem_gravitropism_rate, r, 0.001f, 0.2f, p);
+    reg(sg, "meristem_phototropism_rate", g.meristem_phototropism_rate, r, 0.01f, 0.5f, p);
     reg(sg, "leaf_abscission_ticks", static_cast<float>(g.leaf_abscission_ticks),
                                                                       r, 48.0f, 2000.0f, p);
     reg(sg, "min_leaf_age_before_abscission", static_cast<float>(g.min_leaf_age_before_abscission),
@@ -116,6 +118,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "stress_thickening_boost",         g.stress_thickening_boost,         r, 0.0f,  5.0f, p);
     reg(sg, "stress_elongation_inhibition",    g.stress_elongation_inhibition,    r, 0.0f,  5.0f, p);
     reg(sg, "stress_gravitropism_boost",       g.stress_gravitropism_boost,       r, 0.0f,  5.0f, p);
+    reg(sg, "elastic_recovery_rate",           g.elastic_recovery_rate,           r, 0.0f,  0.02f, p);
 
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
@@ -149,7 +152,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     sg.add_linkage_group({"geometry", {
         "max_leaf_size", "leaf_growth_rate", "leaf_bud_size", "leaf_petiole_length",
-        "initial_radius", "root_initial_radius", "tip_offset", "growth_noise", "leaf_phototropism_rate",
+        "initial_radius", "root_initial_radius", "tip_offset", "growth_noise",
+        "leaf_phototropism_rate", "meristem_gravitropism_rate", "meristem_phototropism_rate",
         "leaf_abscission_ticks", "min_leaf_age_before_abscission"
     }});
 
@@ -177,7 +181,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "stress_hormone_threshold",
         "stress_hormone_production_rate", "stress_hormone_diffusion_rate",
         "stress_hormone_decay_rate",
-        "stress_thickening_boost", "stress_elongation_inhibition", "stress_gravitropism_boost"
+        "stress_thickening_boost", "stress_elongation_inhibition", "stress_gravitropism_boost",
+        "elastic_recovery_rate"
     }});
 
     return sg;
@@ -241,7 +246,9 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.root_initial_radius     = sg.get("root_initial_radius");
     g.tip_offset              = sg.get("tip_offset");
     g.growth_noise            = sg.get("growth_noise");
-    g.leaf_phototropism_rate  = sg.get("leaf_phototropism_rate");
+    g.leaf_phototropism_rate       = sg.get("leaf_phototropism_rate");
+    g.meristem_gravitropism_rate   = sg.get("meristem_gravitropism_rate");
+    g.meristem_phototropism_rate   = sg.get("meristem_phototropism_rate");
     g.leaf_abscission_ticks  = static_cast<uint32_t>(sg.get("leaf_abscission_ticks"));
     g.min_leaf_age_before_abscission = static_cast<uint32_t>(sg.get("min_leaf_age_before_abscission"));
 
@@ -283,6 +290,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.stress_thickening_boost         = sg.get("stress_thickening_boost");
     g.stress_elongation_inhibition    = sg.get("stress_elongation_inhibition");
     g.stress_gravitropism_boost       = sg.get("stress_gravitropism_boost");
+    g.elastic_recovery_rate           = sg.get("elastic_recovery_rate");
 
     return g;
 }

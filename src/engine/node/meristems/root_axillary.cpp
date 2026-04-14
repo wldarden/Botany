@@ -10,10 +10,22 @@ RootAxillaryNode::RootAxillaryNode(uint32_t id, glm::vec3 position, float radius
 {}
 
 void RootAxillaryNode::tick(Plant& plant, const WorldParams& world) {
-    Node::tick(plant, world);
-    if (active) return;
+    if (active) {
+        Node::tick(plant, world);
+        return;
+    }
 
+    // Dormant fast path: skip mass/stress/droop (no children, tiny node).
+    // Just update position, age, transport (for sugar accumulation), and check activation.
+    position = parent ? parent->position + offset : offset;
+    age++;
     const Genome& g = plant.genome();
+    transport_chemicals(g);
+
+    // Mass bookkeeping (constant, no children)
+    total_mass = world.meristem_mass;
+    mass_moment = total_mass * position;
+
     if (!can_activate(g, world)) return;
     activate(plant, g, world);
 }

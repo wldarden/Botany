@@ -12,10 +12,22 @@ ShootAxillaryNode::ShootAxillaryNode(uint32_t id, glm::vec3 position, float radi
 {}
 
 void ShootAxillaryNode::tick(Plant& plant, const WorldParams& world) {
-    Node::tick(plant, world);
-    if (active) return;
+    if (active) {
+        Node::tick(plant, world);
+        return;
+    }
 
+    // Dormant fast path: skip mass/stress/droop (no children, tiny node).
+    // Just update position, age, transport (for sugar accumulation), and check activation.
+    position = parent ? parent->position + offset : offset;
+    age++;
     const Genome& g = plant.genome();
+    transport_chemicals(g);
+
+    // Mass bookkeeping (constant, no children)
+    total_mass = world.meristem_mass;
+    mass_moment = total_mass * position;
+
     if (!can_activate(g, world)) return;
     activate(plant, g, world);
 }
@@ -44,7 +56,9 @@ void ShootAxillaryNode::activate(Plant& plant, const Genome& g, const WorldParam
     // quickly converges to vertical, making all branches parallel the trunk.
     float olen = glm::length(offset);
     if (olen > 1e-4f) {
-        apical->as_shoot_apical()->growth_dir = offset / olen;
+        glm::vec3 branch_dir = offset / olen;
+        apical->as_shoot_apical()->growth_dir = branch_dir;
+        apical->as_shoot_apical()->set_point_dir = branch_dir;
     }
 
     if (parent) {
