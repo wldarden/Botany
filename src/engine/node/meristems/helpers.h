@@ -97,5 +97,14 @@ inline float growth_fraction(float sugar, float max_cost,
     return sugar_gf * cyt_gf;
 }
 
+// Saturating auxin growth multiplier (Michaelis-Menten).
+// Returns 1.0 at zero auxin, asymptotes to 1.0 + max_boost.
+// Positive max_boost = promotion, negative = inhibition.
+inline float auxin_growth_factor(float auxin, float max_boost, float half_sat) {
+    if (std::abs(max_boost) < 1e-8f) return 1.0f;
+    float saturation = auxin / (auxin + std::max(half_sat, 1e-6f));
+    return 1.0f + max_boost * saturation;
+}
+
 } // namespace meristem_helpers
 } // namespace botany
