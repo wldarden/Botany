@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include "engine/plant.h"
 #include "engine/world_params.h"
+#include "engine/node/tissues/leaf.h"
 
 using namespace botany;
 
@@ -191,4 +192,139 @@ TEST_CASE("Auxin: apical growth multiplier has no effect without sugar", "[hormo
     // Allow 20% tolerance for sugar_factor floor (0.1 minimum) interacting with multiplier
     float ratio = (total1 > 1e-8f) ? total2 / total1 : 1.0f;
     REQUIRE(ratio < 1.2f);
+}
+
+TEST_CASE("Auxin: growing leaf produces auxin", "[hormone]") {
+    Genome g = default_genome();
+    g.apical_auxin_baseline = 0.0f;          // disable meristem auxin
+    g.leaf_auxin_baseline = 1.0f;             // high for easy detection
+    g.leaf_growth_auxin_multiplier = 0.5f;
+    g.growth_rate = 0.5f;
+    g.shoot_plastochron = 1;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world_params();
+
+    // Grow plant until leaves exist
+    for (int i = 0; i < 5; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant.tick(world);
+    }
+
+    // Find a growing leaf
+    LeafNode* growing_leaf = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto* leaf = n.as_leaf()) {
+            if (leaf->leaf_size < g.max_leaf_size) growing_leaf = leaf;
+        }
+    });
+    REQUIRE(growing_leaf != nullptr);
+
+    // Zero all auxin, give sugar for leaf growth
+    plant.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Auxin) = 0.0f;
+        n.chemical(ChemicalID::Sugar) = 100.0f;
+    });
+
+    plant.tick(world);
+
+    // Growing leaf should have produced auxin (some may have transported, but should retain some)
+    REQUIRE(growing_leaf->chemical(ChemicalID::Auxin) > 0.0f);
+}
+
+TEST_CASE("Auxin: full-size leaf produces zero auxin", "[hormone]") {
+    Genome g = default_genome();
+    g.apical_auxin_baseline = 0.0f;          // disable meristem auxin
+    g.leaf_auxin_baseline = 1.0f;
+    g.leaf_growth_auxin_multiplier = 0.5f;
+    g.growth_rate = 0.5f;
+    g.shoot_plastochron = 1;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world_params();
+
+    // Grow plant until leaves exist
+    for (int i = 0; i < 5; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant.tick(world);
+    }
+
+    // Force ALL leaves to max size
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto* leaf = n.as_leaf()) {
+            leaf->leaf_size = g.max_leaf_size;
+        }
+    });
+
+    // Zero all auxin everywhere
+    plant.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Auxin) = 0.0f;
+        n.chemical(ChemicalID::Sugar) = 100.0f;
+    });
+
+    plant.tick(world);
+
+    // No auxin source anywhere → all auxin should be zero
+    float total_auxin = 0.0f;
+    plant.for_each_node([&](const Node& n) { total_auxin += n.chemical(ChemicalID::Auxin); });
+    REQUIRE(total_auxin < 1e-6f);
+}
+
+TEST_CASE("Auxin: leaf auxin scales with growth amount", "[hormone]") {
+    WorldParams world = default_world_params();
+
+    // Plant 1: low leaf multiplier
+    Genome g1 = default_genome();
+    g1.apical_auxin_baseline = 0.0f;
+    g1.leaf_auxin_baseline = 1.0f;
+    g1.leaf_growth_auxin_multiplier = 0.1f;
+    g1.growth_rate = 0.5f;
+    g1.shoot_plastochron = 1;
+    Plant plant1(g1, glm::vec3(0.0f));
+
+    // Plant 2: high leaf multiplier
+    Genome g2 = default_genome();
+    g2.apical_auxin_baseline = 0.0f;
+    g2.leaf_auxin_baseline = 1.0f;
+    g2.leaf_growth_auxin_multiplier = 0.9f;
+    g2.growth_rate = 0.5f;
+    g2.shoot_plastochron = 1;
+    Plant plant2(g2, glm::vec3(0.0f));
+
+    // Grow both until leaves exist, then measure auxin
+    for (int i = 0; i < 5; i++) {
+        plant1.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant2.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant1.tick(world);
+        plant2.tick(world);
+    }
+
+    // Zero auxin, give sugar, tick once more
+    plant1.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Auxin) = 0.0f;
+        n.chemical(ChemicalID::Sugar) = 100.0f;
+    });
+    plant2.for_each_node_mut([](Node& n) {
+        n.chemical(ChemicalID::Auxin) = 0.0f;
+        n.chemical(ChemicalID::Sugar) = 100.0f;
+    });
+    plant1.tick(world);
+    plant2.tick(world);
+
+    float total1 = 0.0f, total2 = 0.0f;
+    plant1.for_each_node([&](const Node& n) { total1 += n.chemical(ChemicalID::Auxin); });
+    plant2.for_each_node([&](const Node& n) { total2 += n.chemical(ChemicalID::Auxin); });
+
+    // Higher multiplier → more leaf auxin in the system
+    REQUIRE(total2 > total1 * 2.0f);
 }
