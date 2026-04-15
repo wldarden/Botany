@@ -103,7 +103,8 @@ Three mechanisms work together:
 
 **Auxin** (bias -0.1, basipetal):
 - **Persistent** across ticks (not reset)
-- Produced by active `ShootApicalNode` during its `tick()`
+- Produced by active `ShootApicalNode` during its `tick()`, modulated by growth rate (growth_gf multiplier)
+- Also produced by growing `LeafNode` during `grow_size()` — proportional to growth rate, zero when full-size
 - Shifted equilibrium pushes auxin root-ward; decay creates a gradient from apex to base
 - Decays by `auxin_decay_rate` per tick
 - Shoot axillary buds sense **parent's** auxin level; activate when low
@@ -181,6 +182,7 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 
 ## Tuning Parameters (genome.h)
 - `auxin_threshold` (0.15) - lower = fewer shoot branches, higher = more
+- `auxin_thickening_threshold` (0.03) - auxin level for full-speed cambial thickening (much lower than branching threshold — cambium is very sensitive to auxin)
 - `cytokinin_threshold` (0.15) - lower = fewer root branches, higher = more
 - `auxin_bias` (-0.1) - shifted equilibrium for basipetal flow (negative = toward root)
 - `cytokinin_bias` (0.1) - shifted equilibrium for acropetal flow (positive = toward tips)
@@ -189,6 +191,10 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `hormone_transport_scale` (1.0) - how much radius amplifies hormone throughput
 - `sugar_base_transport` (0.01) - throughput floor for sugar (small — sugar is radius-dependent)
 - `sugar_transport_scale` (5.0) - how much radius amplifies sugar throughput
+- `apical_auxin_baseline` (0.15) - base auxin output of shoot apical meristem per tick
+- `apical_growth_auxin_multiplier` (2.0) - growth bonus: total = baseline * (1 + multiplier * growth_fraction). 0 = no bonus, 2 = 3x at max growth
+- `leaf_auxin_baseline` (0.15) - scaling constant for leaf auxin production (decoupled from apical rate)
+- `leaf_growth_auxin_multiplier` (0.1) - fraction of leaf_auxin_baseline at max growth. Single leaf at max growth = 10% of apical baseline
 - `branch_angle` (0.785 rad / 45 deg) - angle of shoot branches from parent stem
 - `root_branch_angle` (0.35 rad / 20 deg) - angle of root branches
 - `ga_production_rate` (0.5) - GA per dm leaf_size per tick from young leaves
