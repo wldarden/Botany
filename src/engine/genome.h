@@ -132,6 +132,14 @@ struct Genome {
     float stress_elongation_inhibition;   // elongation suppression per unit stress hormone
     float stress_gravitropism_boost;      // gravitropism pull per unit stress hormone
     float elastic_recovery_rate;          // radians/tick — spring-back toward rest direction
+
+    // Canalization — auxin flow history biases transport
+    float transient_gain;                 // target bias per unit of auxin flux
+    float transient_rate;                 // how fast transient bias chases its target (0-1)
+    float structural_threshold;           // minimum auxin flux to grow structural bias
+    float structural_growth_rate;         // structural bias increment per tick above threshold
+    float structural_max;                 // cap on structural bias
+    float canalization_weight;            // global scaling on combined bias effect (0 = disabled)
 };
 
 inline Genome default_genome() {
@@ -246,6 +254,14 @@ inline Genome default_genome() {
         .stress_elongation_inhibition = 1.0f,     // 1:1 hormone-to-elongation suppression
         .stress_gravitropism_boost = 0.5f,        // moderate upward correction
         .elastic_recovery_rate = 0.005f,          // slow spring-back (half of droop_rate)
+
+        // Canalization
+        .transient_gain = 2.0f,               // target = flux * 2 — responsive
+        .transient_rate = 0.2f,               // ~87% in 8 hours
+        .structural_threshold = 0.05f,        // min flux for vascular development
+        .structural_growth_rate = 0.005f,     // ~8 days to reach 1.0
+        .structural_max = 2.0f,               // at max: 1 + 2.0 = 3.0x weight
+        .canalization_weight = 1.0f,          // full effect by default
     };
 }
 
