@@ -99,6 +99,17 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "sugar_storage_density_leaf",  g.sugar_storage_density_leaf,  r, 0.05f,   5.0f, p);
     reg(sg, "sugar_cap_minimum",           g.sugar_cap_minimum,           r, 0.005f,  0.5f, p);
     reg(sg, "sugar_cap_meristem",          g.sugar_cap_meristem,          r, 0.1f,    10.0f, p);
+    // --- Water economy group (10 genes) ---
+    reg(sg, "water_absorption_rate",       g.water_absorption_rate,       r, 0.001f,  0.5f, p);
+    reg(sg, "transpiration_rate",          g.transpiration_rate,          r, 0.001f,  0.5f, p);
+    reg(sg, "photosynthesis_water_ratio",  g.photosynthesis_water_ratio,  r, 0.01f,   5.0f, p);
+    reg(sg, "water_storage_density_stem",  g.water_storage_density_stem,  r, 100.0f,  2000.0f, p);
+    reg(sg, "water_storage_density_leaf",  g.water_storage_density_leaf,  r, 0.1f,    10.0f, p);
+    reg(sg, "water_cap_meristem",          g.water_cap_meristem,          r, 0.1f,    10.0f, p);
+    reg(sg, "water_diffusion_rate",        g.water_diffusion_rate,        r, 0.1f,    1.0f, p);
+    reg(sg, "water_bias",                  g.water_bias,                  r, 0.0f,    0.5f, p);
+    reg(sg, "water_base_transport",        g.water_base_transport,        r, 0.01f,   1.0f, p);
+    reg(sg, "water_transport_scale",       g.water_transport_scale,       r, 0.5f,    20.0f, p);
     // --- Gibberellin group (7 genes) ---
     reg(sg, "ga_production_rate",        g.ga_production_rate,        r, 0.01f,  2.0f, p);
     reg(sg, "ga_leaf_age_max",           static_cast<float>(g.ga_leaf_age_max),
@@ -193,6 +204,12 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "sugar_diffusion_rate", "seed_sugar",
         "sugar_storage_density_wood", "sugar_storage_density_leaf",
         "sugar_cap_minimum", "sugar_cap_meristem"
+    }});
+
+    sg.add_linkage_group({"water_economy", {
+        "water_absorption_rate", "transpiration_rate", "photosynthesis_water_ratio",
+        "water_storage_density_stem", "water_storage_density_leaf", "water_cap_meristem",
+        "water_diffusion_rate", "water_bias", "water_base_transport", "water_transport_scale"
     }});
 
     sg.add_linkage_group({"gibberellin", {
@@ -312,6 +329,17 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.sugar_storage_density_leaf  = sg.get("sugar_storage_density_leaf");
     g.sugar_cap_minimum           = sg.get("sugar_cap_minimum");
     g.sugar_cap_meristem          = sg.get("sugar_cap_meristem");
+    // Water economy
+    g.water_absorption_rate       = sg.get("water_absorption_rate");
+    g.transpiration_rate          = sg.get("transpiration_rate");
+    g.photosynthesis_water_ratio  = sg.get("photosynthesis_water_ratio");
+    g.water_storage_density_stem  = sg.get("water_storage_density_stem");
+    g.water_storage_density_leaf  = sg.get("water_storage_density_leaf");
+    g.water_cap_meristem          = sg.get("water_cap_meristem");
+    g.water_diffusion_rate        = sg.get("water_diffusion_rate");
+    g.water_bias                  = sg.get("water_bias");
+    g.water_base_transport        = sg.get("water_base_transport");
+    g.water_transport_scale       = sg.get("water_transport_scale");
     // Gibberellin
     g.ga_production_rate        = sg.get("ga_production_rate");
     g.ga_leaf_age_max           = static_cast<uint32_t>(sg.get("ga_leaf_age_max"));
