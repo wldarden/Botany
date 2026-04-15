@@ -9,13 +9,14 @@
 namespace botany {
 
 // All chemical IDs in the system. Add new chemicals here.
-inline constexpr std::array<ChemicalID, 6> all_chemical_ids = {
+inline constexpr std::array<ChemicalID, 7> all_chemical_ids = {
     ChemicalID::Auxin,
     ChemicalID::Cytokinin,
     ChemicalID::Gibberellin,
     ChemicalID::Sugar,
     ChemicalID::Ethylene,
     ChemicalID::Stress,
+    ChemicalID::Water,
 };
 
 // Chemicals that diffuse through the tree graph.

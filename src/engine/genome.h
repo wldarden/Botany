@@ -91,6 +91,18 @@ struct Genome {
     float sugar_cap_minimum;          // g glucose — floor for tiny/new stem/root/leaf nodes
     float sugar_cap_meristem;         // g glucose — cap for meristem nodes (must hold growth sugar)
 
+    // Water economy (ml)
+    float water_absorption_rate;          // ml / (dm² root surface · hr) per unit soil_moisture
+    float transpiration_rate;             // ml / (dm² leaf area · hr) at full light
+    float photosynthesis_water_ratio;     // ml water consumed per g sugar produced
+    float water_storage_density_stem;     // ml / dm³ of stem/root tissue
+    float water_storage_density_leaf;     // ml / dm² of leaf area
+    float water_cap_meristem;             // ml — fixed cap for meristem nodes
+    float water_diffusion_rate;           // fraction diffused per tick
+    float water_bias;                     // upward equilibrium shift (positive = toward tips)
+    float water_base_transport;           // throughput floor
+    float water_transport_scale;          // radius scaling on throughput
+
     float leaf_phototropism_rate;     // radians/hr — how fast leaves turn toward light
     float meristem_gravitropism_rate; // base pull toward set-point angle (always-on plagiotropism)
     float meristem_phototropism_rate; // shade-scaled pull toward light direction
@@ -146,8 +158,8 @@ inline Genome default_genome() {
     return Genome{
         .apical_auxin_baseline = 0.15f,
         .apical_growth_auxin_multiplier = 2.0f,  // total = baseline * 3 at max growth
-        .auxin_diffusion_rate = 0.3f,
-        .auxin_decay_rate = 0.15f,
+        .auxin_diffusion_rate = 0.1f,          // slow polar transport — maintains tip-to-trunk gradient
+        .auxin_decay_rate = 0.25f,             // strong decay prevents trunk pooling from branch funneling
         .auxin_threshold = 0.15f,
         .auxin_shade_boost = 0.5f,           // shade can increase production by 50%
         .auxin_sugar_half_saturation = 0.3f, // modest sugar needed for decent production
@@ -213,6 +225,18 @@ inline Genome default_genome() {
         .sugar_storage_density_leaf = 2.0f,   // g glucose max / dm² — enough buffer for export
         .sugar_cap_minimum = 0.1f,            // floor for tiny/new nodes
         .sugar_cap_meristem = 2.0f,           // meristem tips — must hold enough sugar for active growth
+
+        // Water economy
+        .water_absorption_rate = 0.05f,          // ml / (dm² · hr) — moderate absorption
+        .transpiration_rate = 0.04f,             // ml / (dm² · hr) — slightly less than absorption
+        .photosynthesis_water_ratio = 0.5f,      // 0.5 ml water per g sugar (small cost)
+        .water_storage_density_stem = 800.0f,    // ml / dm³ — wood is ~80% water by volume
+        .water_storage_density_leaf = 3.0f,      // ml / dm² — leaves hold water in vacuoles
+        .water_cap_meristem = 1.0f,              // ml — small active reserve
+        .water_diffusion_rate = 0.9f,            // faster than sugar (0.8) — water moves easily
+        .water_bias = 0.05f,                     // slight upward bias (transpiration pull)
+        .water_base_transport = 0.2f,            // higher floor than sugar — xylem is open pipes
+        .water_transport_scale = 4.0f,           // radius matters but less than sugar
 
         .leaf_phototropism_rate = 0.02f,    // ~1.1 deg/hr — full correction in ~3 days
         .meristem_gravitropism_rate = 0.02f, // gentle always-on pull toward set-point angle

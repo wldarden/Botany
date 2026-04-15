@@ -12,6 +12,7 @@ enum class ChemicalID : uint8_t {
     Sugar,
     Ethylene,
     Stress,
+    Water,
 };
 
 enum class ChemicalCategory : uint8_t {

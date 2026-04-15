@@ -15,6 +15,7 @@ namespace botany {
 
 struct WorldParams {
     float light_level = 1.0f;                   // fraction of full sun
+    float soil_moisture = 1.0f;                  // fraction of field capacity (1.0 = saturated)
     uint32_t starvation_ticks_max = 2200;       // hours (~50 days) until starvation death
 
     // Construction costs — energy required per unit of biological growth.
