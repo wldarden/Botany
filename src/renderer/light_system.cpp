@@ -410,7 +410,9 @@ void LightSystem::readback_results() {
     for (int i = 0; i < n_leaves_; i++) {
         float sum = 0.0f;
         for (int s = 0; s < SAMPLES_PER_LEAF; s++) {
-            sum += pixels[(i * SAMPLES_PER_LEAF + s) * 4];  // R channel
+            float val = pixels[(i * SAMPLES_PER_LEAF + s) * 4];  // R channel
+            leaf_ptrs_[i]->sample_exposure[s] = val;
+            sum += val;
         }
         leaf_ptrs_[i]->light_exposure = sum / static_cast<float>(SAMPLES_PER_LEAF);
     }

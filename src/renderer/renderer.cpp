@@ -131,35 +131,52 @@ void Renderer::draw_plant(const Plant& plant) {
         if (auto* leaf = node.as_leaf()) {
             glm::vec3 outward = glm::normalize(node.position - node.parent->position);
             glm::vec3 leaf_color;
+            const glm::vec3* vtx_ptr = nullptr;
+            glm::vec3 vtx_colors[4];
+
             if (chemical_accessor_) {
                 float v = chemical_accessor_(node);
                 leaf_color = heatmap(v / max_val);
+                // Chemical overlay → single color, no per-vertex shading
             } else {
-                // Sunlit leaves are bright green, shaded leaves darken
                 glm::vec3 sun_color(0.2f, 0.6f, 0.15f);
                 glm::vec3 shade_color(0.08f, 0.25f, 0.06f);
-                leaf_color = glm::mix(shade_color, sun_color, leaf->light_exposure);
-                if (node.starvation_ticks > 0) {
-                    float stress = static_cast<float>(node.starvation_ticks) / 50.0f;
-                    stress = glm::clamp(stress, 0.0f, 1.0f);
-                    glm::vec3 dead_color(0.4f, 0.3f, 0.1f);
-                    leaf_color = glm::mix(leaf_color, dead_color, stress);
+                glm::vec3 dead_color(0.4f, 0.3f, 0.1f);
+                float starvation_t = (node.starvation_ticks > 0)
+                    ? glm::clamp(static_cast<float>(node.starvation_ticks) / 50.0f, 0.0f, 1.0f)
+                    : 0.0f;
+                float senesce_t = (leaf->senescence_ticks > 0)
+                    ? glm::clamp(static_cast<float>(leaf->senescence_ticks) / 48.0f, 0.0f, 1.0f)
+                    : 0.0f;
+                glm::vec3 senesce_color = glm::mix(glm::vec3(0.8f, 0.7f, 0.1f),
+                                                   glm::vec3(0.4f, 0.25f, 0.05f), senesce_t);
+
+                // Per-corner shading using GPU sample_exposure[0..3] (p0,p1,p2,p3).
+                // sample_exposure defaults to 1.0, so this is safe even before first GPU update.
+                for (int i = 0; i < 4; i++) {
+                    glm::vec3 c = glm::mix(shade_color, sun_color, leaf->sample_exposure[i]);
+                    if (starvation_t > 0.0f) c = glm::mix(c, dead_color, starvation_t);
+                    if (senesce_t   > 0.0f) c = glm::mix(c, senesce_color, senesce_t);
+                    vtx_colors[i] = c * color_tint_;
                 }
+                vtx_ptr = vtx_colors;
+                leaf_color = vtx_colors[0];  // fallback for petiole color
             }
-            // Senescence: green -> yellow -> brown (overrides other coloring)
-            if (leaf->senescence_ticks > 0) {
-                float progress = static_cast<float>(leaf->senescence_ticks) / 48.0f;
-                progress = glm::clamp(progress, 0.0f, 1.0f);
-                glm::vec3 yellow(0.8f, 0.7f, 0.1f);
-                glm::vec3 brown(0.4f, 0.25f, 0.05f);
-                glm::vec3 senesce_color = glm::mix(yellow, brown, progress);
+
+            // Senescence overlay for chemical-accessor case (uniform across leaf)
+            if (chemical_accessor_ && leaf->senescence_ticks > 0) {
+                float progress = glm::clamp(static_cast<float>(leaf->senescence_ticks) / 48.0f, 0.0f, 1.0f);
+                glm::vec3 senesce_color = glm::mix(glm::vec3(0.8f, 0.7f, 0.1f),
+                                                   glm::vec3(0.4f, 0.25f, 0.05f), progress);
                 leaf_color = glm::mix(leaf_color, senesce_color, progress);
             }
+
             // Draw petiole (thin stalk from stem to leaf blade)
             float petiole_radius = 0.005f;  // 0.5mm — thin stalk
             glm::vec3 petiole_color = glm::vec3(0.3f, 0.45f, 0.12f) * color_tint_;  // green-brown
             draw_cylinder(node.parent->position, node.position, petiole_radius, petiole_radius, petiole_color);
-            draw_leaf(node.position, outward, leaf->facing, leaf->leaf_size, leaf_color * color_tint_);
+            draw_leaf(node.position, outward, leaf->facing, leaf->leaf_size,
+                      leaf_color * (chemical_accessor_ ? color_tint_ : 1.0f), vtx_ptr);
             return;
         }
 
@@ -304,7 +321,8 @@ void Renderer::draw_cylinder(glm::vec3 start, glm::vec3 end,
     glDeleteBuffers(1, &vbo);
 }
 
-void Renderer::draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing, float size, glm::vec3 color) {
+void Renderer::draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing, float size,
+                          glm::vec3 color, const glm::vec3* vertex_colors) {
     // Project outward onto the leaf blade plane (perpendicular to facing)
     glm::vec3 proj = outward - facing * glm::dot(outward, facing);
     float proj_len = glm::length(proj);
@@ -340,13 +358,20 @@ void Renderer::draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing
     if (glm::dot(n0, facing) < 0.0f) n0 = -n0;
     if (glm::dot(n1, facing) < 0.0f) n1 = -n1;
 
+    // Per-vertex colors: use vertex_colors[0..3] for p0,p1,p2,p3 if provided,
+    // otherwise fall back to the single uniform color.
+    glm::vec3 c0 = vertex_colors ? vertex_colors[0] : color;
+    glm::vec3 c1 = vertex_colors ? vertex_colors[1] : color;
+    glm::vec3 c2 = vertex_colors ? vertex_colors[2] : color;
+    glm::vec3 c3 = vertex_colors ? vertex_colors[3] : color;
+
     float vertices[] = {
-        p0.x, p0.y, p0.z, n0.x, n0.y, n0.z, color.x, color.y, color.z,
-        p1.x, p1.y, p1.z, n0.x, n0.y, n0.z, color.x, color.y, color.z,
-        p2.x, p2.y, p2.z, n0.x, n0.y, n0.z, color.x, color.y, color.z,
-        p0.x, p0.y, p0.z, n1.x, n1.y, n1.z, color.x, color.y, color.z,
-        p2.x, p2.y, p2.z, n1.x, n1.y, n1.z, color.x, color.y, color.z,
-        p3.x, p3.y, p3.z, n1.x, n1.y, n1.z, color.x, color.y, color.z,
+        p0.x, p0.y, p0.z, n0.x, n0.y, n0.z, c0.x, c0.y, c0.z,
+        p1.x, p1.y, p1.z, n0.x, n0.y, n0.z, c1.x, c1.y, c1.z,
+        p2.x, p2.y, p2.z, n0.x, n0.y, n0.z, c2.x, c2.y, c2.z,
+        p0.x, p0.y, p0.z, n1.x, n1.y, n1.z, c0.x, c0.y, c0.z,
+        p2.x, p2.y, p2.z, n1.x, n1.y, n1.z, c2.x, c2.y, c2.z,
+        p3.x, p3.y, p3.z, n1.x, n1.y, n1.z, c3.x, c3.y, c3.z,
     };
 
     uint32_t vao, vbo;

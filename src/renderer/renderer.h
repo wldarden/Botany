@@ -63,7 +63,9 @@ private:
     void draw_cylinder(glm::vec3 start, glm::vec3 end,
                        float r_start, float r_end,
                        glm::vec3 color, int segments = 8);
-    void draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing, float size, glm::vec3 color = glm::vec3(0.2f, 0.6f, 0.15f));
+    void draw_leaf(glm::vec3 position, glm::vec3 outward, glm::vec3 facing, float size,
+                   glm::vec3 color = glm::vec3(0.2f, 0.6f, 0.15f),
+                   const glm::vec3* vertex_colors = nullptr);  // if set: per-corner colors for p0,p1,p2,p3
 };
 
 } // namespace botany
