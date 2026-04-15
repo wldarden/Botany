@@ -56,6 +56,8 @@ bool Renderer::init(int width, int height, const std::string& shader_dir) {
     if (!shader_.load(shader_dir + "/plant.vert", shader_dir + "/plant.frag")) {
         return false;
     }
+    // Non-fatal — falls back to plain ground rendering without shadows.
+    ground_shader_.load(shader_dir + "/ground.vert", shader_dir + "/ground.frag");
 
     setup_ground();
 
@@ -492,8 +494,28 @@ void Renderer::setup_ground() {
 }
 
 void Renderer::draw_ground() {
+    if (ground_shader_.is_loaded() && light_system_.is_initialized()) {
+        ground_shader_.use();
+        float aspect = static_cast<float>(width_) / static_cast<float>(height_);
+        ground_shader_.set_mat4("uView",       camera_.view_matrix());
+        ground_shader_.set_mat4("uProjection", camera_.projection_matrix(aspect));
+        ground_shader_.set_mat4("uModel",      glm::mat4(1.0f));
+        ground_shader_.set_vec3("uLightDir",   light_system_.sun_direction);
+        ground_shader_.set_vec3("uAmbient",    glm::vec3(0.3f, 0.3f, 0.3f));
+        ground_shader_.set_mat4("u_light_pv",  light_system_.light_pv());
+        ground_shader_.set_int("u_num_slices", LightSystem::NUM_SLICES);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, light_system_.slice_tex());
+        ground_shader_.set_int("u_slice_array", 0);
+    } else {
+        shader_.use();
+    }
+
     glBindVertexArray(ground_vao_);
     glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // Grid always uses the plant shader (thin lines, shadow not worth it).
+    shader_.use();
     draw_grid();
 }
 

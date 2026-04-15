@@ -45,6 +45,7 @@ public:
 private:
     GLFWwindow* window_ = nullptr;
     Shader shader_;
+    Shader ground_shader_;  // shadow-aware ground shader (optional — falls back to shader_)
     OrbitCamera camera_;
     LightSystem light_system_;
     int width_;

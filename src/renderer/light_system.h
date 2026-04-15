@@ -53,6 +53,8 @@ public:
     void draw_debug_slice(int slice_index = 0);
 
     bool is_initialized() const { return initialized_; }
+    uint32_t slice_tex() const { return slice_array_tex_; }
+    glm::mat4 light_pv() const { return light_proj_ * light_view_; }
 
 private:
     bool initialized_ = false;
