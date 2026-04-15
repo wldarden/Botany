@@ -271,14 +271,20 @@ void LightSystem::compute_leaf_corners(const Node& node,
 // ---------------------------------------------------------------------------
 
 void LightSystem::update_light_matrices() {
-    // For vertical sun, look from directly above scene center.
-    glm::vec3 scene_center(0.0f, 0.0f, 0.0f);
-    glm::vec3 sun_pos = scene_center + glm::vec3(0.0f, 100.0f, 0.0f);
-    light_view_ = glm::lookAt(sun_pos, scene_center, glm::vec3(0.0f, 0.0f, -1.0f));
-    // Orthographic frustum covers SCENE_HALF × SCENE_HALF, depth covers adaptive Y range.
-    float depth_range = max_y_ - min_y_;
+    // Eye just above the highest caster so the ortho near/far planes actually
+    // encompass the scene.  With eye at y=100 and near=0/far=6 the objects end
+    // up at view-z ≈ -95 to -100, entirely outside the frustum, so everything
+    // was silently clipped and nothing was ever written to the slice textures.
+    float eye_y      = max_y_ + 1.0f;          // 1 unit above tallest caster
+    float near_plane = 1.0f;                    // eye to top of canopy
+    float far_plane  = eye_y - min_y_ + 1.0f;  // eye to below deepest root + margin
+
+    glm::vec3 sun_pos(0.0f, eye_y, 0.0f);
+    light_view_ = glm::lookAt(sun_pos,
+                              glm::vec3(0.0f, 0.0f, 0.0f),
+                              glm::vec3(0.0f, 0.0f, -1.0f));
     light_proj_ = glm::ortho(-SCENE_HALF, SCENE_HALF, -SCENE_HALF, SCENE_HALF,
-                             0.0f, depth_range + 1.0f);
+                             near_plane, far_plane);
 }
 
 // ---------------------------------------------------------------------------
@@ -418,11 +424,17 @@ void LightSystem::draw_debug_slice(int slice_index) {
     if (!debug_shader_.is_loaded()) return;
     slice_index = std::max(0, std::min(slice_index, NUM_SLICES - 1));
 
+    // Query current viewport to pass correct screen size to shader.
+    GLint vp[4];
+    glGetIntegerv(GL_VIEWPORT, vp);
+
     debug_shader_.use();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, slice_array_tex_);
     debug_shader_.set_int("u_slice_array", 0);
     debug_shader_.set_int("u_slice_index", slice_index);
+    glUniform2f(glGetUniformLocation(debug_shader_.id(), "u_screen_size"),
+                static_cast<float>(vp[2]), static_cast<float>(vp[3]));
 
     glDisable(GL_DEPTH_TEST);
     glBindVertexArray(debug_vao_);
