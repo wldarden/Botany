@@ -10,7 +10,7 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
     Genome g = default_genome();
 
     SECTION("hormone rates are positive") {
-        REQUIRE(g.auxin_production_rate > 0.0f);
+        REQUIRE(g.apical_auxin_baseline > 0.0f);
         REQUIRE(g.auxin_diffusion_rate > 0.0f);
         REQUIRE(g.auxin_decay_rate > 0.0f);
         REQUIRE(g.cytokinin_production_rate > 0.0f);

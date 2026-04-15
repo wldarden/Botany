@@ -34,7 +34,7 @@ static const char* node_type_str(NodeType t) {
 
 static void print_genome(const Genome& g) {
     std::cout << "=== GENOME ===" << std::endl;
-    std::cout << "  auxin_production_rate:    " << g.auxin_production_rate << std::endl;
+    std::cout << "  apical_auxin_baseline:    " << g.apical_auxin_baseline << std::endl;
     std::cout << "  auxin_diffusion_rate:     " << g.auxin_diffusion_rate << std::endl;
     std::cout << "  auxin_decay_rate:         " << g.auxin_decay_rate << std::endl;
     std::cout << "  auxin_threshold:          " << g.auxin_threshold << std::endl;

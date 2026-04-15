@@ -1,0 +1,196 @@
+🌱 AUXIN SYSTEM — CONCEPTUAL ROADMAP
+
+Think of this as the real-world system you’re trying to approximate, not an implementation.
+
+🧠 1. What auxin is in the plant
+
+At a high level:
+
+Auxin is a directional signaling field that encodes “where growth should be prioritized” and “which structures dominate.”
+
+It is not:
+
+energy
+a static concentration field
+a global broadcast signal
+
+It is:
+
+produced locally
+transported directionally
+self-reinforcing along successful paths
+🌿 2. Where auxin comes from (production system)
+
+Auxin production is not centralized.
+
+Primary sources:
+- Apical meristems (shoot tips) → strong, continuous
+- Young, expanding leaves → distributed, moderate
+Weak/negligible sources:
+- Mature leaves
+- Old tissue
+
+Key consequence:
+A large branch produces more auxin not because it’s long,
+but because it has more active growing tissue near its tip.
+
+So dominance scales with:
+
+number of active sites
+not distance from the root
+
+🚚 3. How auxin moves (transport system)
+
+Auxin transport is:
+
+Directional (polar)
+Strong bias downward (shoot → root)
+Weak upward/backflow
+Active (not diffusion)
+Controlled by transport proteins (PINs)
+Cells choose where auxin exits
+Key consequence
+
+Auxin forms a persistent gradient, not an equilibrium field
+
+High near tips
+Lower toward roots
+Never equalizes
+
+🔁 4. Canalization (the core dynamic)
+
+This is the most important mechanism.
+
+Auxin flow reinforces its own transport pathways
+
+Biologically:
+
+Cells experiencing auxin flux increase transport capacity in that direction
+
+System-level effect:
+
+Frequently used paths become easier to flow through
+Rarely used paths weaken
+Key consequence
+
+The plant builds a transport network shaped by history of flow
+
+This is how you get:
+
+trunks
+dominant branches
+stable architecture
+🌳 5. Two layers of transport (critical distinction)
+Fast layer — signaling (auxin conductance)
+Changes quickly
+Reversible
+Determines routing of auxin
+Slow layer — structure (vascular tissue)
+Builds over time
+Persistent
+Determines capacity for:
+water
+sugar
+nutrients
+Key consequence
+
+Auxin doesn’t just move through the plant—it builds the highways that everything else uses later.
+
+⚖️ 6. Competition between branches
+
+At any junction:
+
+Branches compete based on how effectively they export auxin into the shared network
+
+Not:
+
+who is closest
+who has highest local concentration
+
+But:
+
+who has the strongest flow + transport capacity
+Positive feedback loop
+Slight advantage in production or transport
+→ more auxin flow
+→ stronger transport path
+→ even more flow
+Key consequence
+
+Small differences become structural dominance
+
+🌞 7. Interaction with light and sugar (your new systems)
+
+Auxin does not directly sense light.
+
+Instead:
+
+Light → Sugar → Growth → Auxin → Transport → Resource allocation
+What actually happens
+Better-lit branch:
+produces more sugar
+grows more
+creates more young tissue
+produces more auxin
+strengthens its transport path
+Key consequence
+
+Auxin translates resource success into structural dominance
+
+🌿 8. Apical dominance (branch suppression)
+
+Auxin from a dominant tip:
+
+suppresses nearby axillary buds
+prevents excessive branching near the top
+
+Mechanism:
+
+high auxin → low relative cytokinin effect → buds stay dormant
+Key consequence
+
+The plant maintains a hierarchical structure, not a bush of equal branches
+
+🌱 9. Node creation (plastochron + auxin spacing)
+
+Node formation is controlled by:
+
+Timing (plastochron)
+internal rhythm at meristem
+modulated by sugar and conditions
+Local auxin depletion
+existing primordia create local sinks
+prevents new nodes forming too close
+Key consequence
+
+The plant creates regular opportunities for growth, but spacing emerges from local interactions
+
+⚠️ 10. What auxin does not do (important constraints)
+It does NOT:
+act like a long-range attractor
+equalize via diffusion
+get significantly drained by primordia sinks
+maintain constant concentration over distance
+It DOES:
+operate via flow, not static levels
+encode relative dominance
+depend on network structure
+🧠 11. The real system in one sentence
+
+Auxin is a self-organizing, flow-based signaling system that converts local growth success into global structural dominance via transport reinforcement.
+
+🌳 12. What realism looks like when you get this right
+
+Your system should naturally produce:
+
+One branch becoming dominant without explicit rules
+Crown shifting toward better light
+Stable trunks that don’t collapse with distance
+Gradual takeover when conditions change
+Weak branches stalling or dying (with sugar coupling)
+🔥 Final insight (most important takeaway)
+
+Auxin is not about “how much is here”
+It’s about how effectively a region participates in the plant-wide flow network
+
+That’s the piece that usually gets missed.

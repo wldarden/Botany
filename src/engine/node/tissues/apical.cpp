@@ -51,7 +51,7 @@ void ApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
 
 float ApicalNode::produce_auxin(const Plant& plant) const {
     const Genome& g = plant.genome();
-    float base = g.auxin_production_rate;
+    float base = g.apical_auxin_baseline;
 
     // Light: shade boosts production (shade-avoidance / TAA-YUCCA upregulation)
     float local_light = estimate_local_light();

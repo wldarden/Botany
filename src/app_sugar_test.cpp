@@ -34,7 +34,7 @@ static Genome make_frozen_genome() {
     g.leaf_growth_rate = 0.0f;
     g.shoot_plastochron = 999999;
     g.root_plastochron = 999999;
-    g.auxin_production_rate = 0.0f;
+    g.apical_auxin_baseline = 0.0f;
     g.cytokinin_production_rate = 0.0f;
     g.ga_production_rate = 0.0f;
     g.leaf_phototropism_rate = 0.0f;

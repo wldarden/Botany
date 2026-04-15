@@ -50,7 +50,7 @@ static Genome load_genome_file(const std::string& path) {
         if (it != fields.end()) out = static_cast<uint32_t>(std::stoul(it->second));
     };
 
-    get_f("auxin_production_rate", g.auxin_production_rate);
+    get_f("apical_auxin_baseline", g.apical_auxin_baseline);
     get_f("auxin_diffusion_rate", g.auxin_diffusion_rate);
     get_f("auxin_decay_rate", g.auxin_decay_rate);
     get_f("auxin_threshold", g.auxin_threshold);
@@ -658,7 +658,7 @@ int main(int argc, char* argv[]) {
                     }
                 } else if (chem == ChemicalID::Auxin) {
                     consumed = level * eg.auxin_decay_rate;
-                    if (n.type == NodeType::APICAL) produced = eg.auxin_production_rate;
+                    if (n.type == NodeType::APICAL) produced = eg.apical_auxin_baseline;
                 } else if (chem == ChemicalID::Cytokinin) {
                     consumed = level * eg.cytokinin_decay_rate;
                     if (auto* leaf = n.as_leaf()) {

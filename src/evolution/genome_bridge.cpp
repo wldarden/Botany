@@ -17,7 +17,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     const float p = mutation_pct;
 
     // --- Auxin group (7 genes) ---
-    reg(sg, "auxin_production_rate",      g.auxin_production_rate,      r, 0.01f, 2.0f, p);
+    reg(sg, "apical_auxin_baseline",      g.apical_auxin_baseline,      r, 0.01f, 2.0f, p);
     reg(sg, "auxin_diffusion_rate",       g.auxin_diffusion_rate,       r, 0.01f, 1.0f, p);
     reg(sg, "auxin_decay_rate",           g.auxin_decay_rate,           r, 0.001f, 0.5f, p);
     reg(sg, "auxin_threshold",            g.auxin_threshold,            r, 0.01f, 1.0f, p);
@@ -124,7 +124,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
-        "auxin_production_rate", "auxin_diffusion_rate",
+        "apical_auxin_baseline", "auxin_diffusion_rate",
         "auxin_decay_rate", "auxin_threshold",
         "auxin_shade_boost", "auxin_sugar_half_saturation", "auxin_age_half_life",
         "auxin_bias"
@@ -200,7 +200,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     Genome g{};
 
     // Auxin
-    g.auxin_production_rate   = sg.get("auxin_production_rate");
+    g.apical_auxin_baseline   = sg.get("apical_auxin_baseline");
     g.auxin_diffusion_rate    = sg.get("auxin_diffusion_rate");
     g.auxin_decay_rate        = sg.get("auxin_decay_rate");
     g.auxin_threshold              = sg.get("auxin_threshold");

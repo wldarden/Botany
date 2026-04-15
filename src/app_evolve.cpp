@@ -27,7 +27,7 @@ static void scroll_callback(GLFWwindow*, double, double yoffset) {
 static void save_genome(const Genome& g, const std::string& path) {
     std::ofstream out(path);
     if (!out) return;
-    out << "auxin_production_rate=" << g.auxin_production_rate << "\n";
+    out << "apical_auxin_baseline=" << g.apical_auxin_baseline << "\n";
     out << "auxin_diffusion_rate=" << g.auxin_diffusion_rate << "\n";
     out << "auxin_decay_rate=" << g.auxin_decay_rate << "\n";
     out << "auxin_threshold=" << g.auxin_threshold << "\n";

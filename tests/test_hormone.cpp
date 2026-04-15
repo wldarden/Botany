@@ -18,7 +18,7 @@ static void tick_n(Plant& plant, const WorldParams& world, int n) {
 
 TEST_CASE("Auxin: shoot apical produces auxin", "[hormone]") {
     Genome g = default_genome();
-    g.auxin_production_rate = 1.0f;
+    g.apical_auxin_baseline = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world();
 
@@ -36,7 +36,7 @@ TEST_CASE("Auxin: shoot apical produces auxin", "[hormone]") {
 
 TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
     Genome g = default_genome();
-    g.auxin_production_rate = 1.0f;
+    g.apical_auxin_baseline = 1.0f;
     g.auxin_diffusion_rate = 0.5f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world();
@@ -50,7 +50,7 @@ TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
 
 TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
     Genome g = default_genome();
-    g.auxin_production_rate = 1.0f;
+    g.apical_auxin_baseline = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world();
 
@@ -71,7 +71,7 @@ TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
 
 TEST_CASE("Auxin: decays over time without production", "[hormone]") {
     Genome g = default_genome();
-    g.auxin_production_rate = 1.0f;
+    g.apical_auxin_baseline = 1.0f;
     g.auxin_decay_rate = 0.1f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world();

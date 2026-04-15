@@ -175,7 +175,7 @@ TEST_CASE("Chain growth: apical meristem transfers to new node after plastochron
 TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[meristem]") {
     Genome g = default_genome();
     g.auxin_threshold = 1.0f;
-    g.auxin_production_rate = 0.0f; // disable auxin production so manual values stick
+    g.apical_auxin_baseline = 0.0f; // disable auxin production so manual values stick
     g.cytokinin_threshold = 0.0f;   // low threshold so activation isn't blocked by cytokinin
     g.growth_rate = 0.5f;
     g.shoot_plastochron = 1; // spawn internode every tick for fast testing

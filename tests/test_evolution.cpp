@@ -33,8 +33,8 @@ TEST_CASE("Genome round-trips through StructuredGenome", "[evolution]") {
     botany::Genome restored = botany::from_structured(sg);
 
     // Spot-check representative fields from different groups
-    REQUIRE_THAT(restored.auxin_production_rate,
-                 WithinAbs(original.auxin_production_rate, 1e-6));
+    REQUIRE_THAT(restored.apical_auxin_baseline,
+                 WithinAbs(original.apical_auxin_baseline, 1e-6));
     REQUIRE_THAT(restored.branch_angle,
                  WithinAbs(original.branch_angle, 1e-6));
     REQUIRE_THAT(restored.sugar_diffusion_rate,

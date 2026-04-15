@@ -10,7 +10,9 @@ namespace botany {
 
 struct Genome {
     // Hormone production & sensitivity (dimensionless signaling units)
-    float auxin_production_rate;
+    // was: auxin_production_rate
+    float apical_auxin_baseline;
+    float apical_growth_auxin_multiplier; // growth-scaled bonus: total = baseline * (1 + multiplier * gf)
     float auxin_diffusion_rate;       // fraction diffused per tick
     float auxin_decay_rate;
     float auxin_threshold;
@@ -18,6 +20,8 @@ struct Genome {
     float auxin_sugar_half_saturation; // g glucose — sugar level for half-max production (Michaelis-Menten)
     float auxin_age_half_life;         // ticks — meristem age at which production halves
     float auxin_bias;                  // equilibrium shift for basipetal flow (negative = toward root)
+    float leaf_auxin_baseline;            // scaling constant for leaf auxin production (decoupled from apical)
+    float leaf_growth_auxin_multiplier;   // fraction of leaf_auxin_baseline produced at max leaf growth
 
     float cytokinin_production_rate;    // cytokinin per g sugar produced by leaves (leaf productivity signal)
     float cytokinin_diffusion_rate;    // fraction diffused per tick
@@ -118,7 +122,8 @@ struct Genome {
 
 inline Genome default_genome() {
     return Genome{
-        .auxin_production_rate = 0.15f,
+        .apical_auxin_baseline = 0.15f,
+        .apical_growth_auxin_multiplier = 2.0f,  // total = baseline * 3 at max growth
         .auxin_diffusion_rate = 0.3f,
         .auxin_decay_rate = 0.15f,
         .auxin_threshold = 0.15f,
@@ -126,6 +131,8 @@ inline Genome default_genome() {
         .auxin_sugar_half_saturation = 0.3f, // modest sugar needed for decent production
         .auxin_age_half_life = 720.0f,       // 30 days — gradual decline
         .auxin_bias = -0.1f,                  // gentle basipetal shift (auxin accumulates toward root)
+        .leaf_auxin_baseline = 0.15f,             // same scale as apical, but multiplier keeps it at 10%
+        .leaf_growth_auxin_multiplier = 0.1f,     // single leaf at max growth = 10% of apical baseline
 
         .cytokinin_production_rate = 5.0f,   // cytokinin per g sugar produced by leaves
         .cytokinin_diffusion_rate = 0.3f,
