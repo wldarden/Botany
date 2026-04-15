@@ -149,6 +149,22 @@ Ethylene is **reset to zero every tick** (signal model). Four production trigger
 
 **Abscission lifecycle:** ethylene > threshold → senescence flag set → leaf gradually yellows (visual only) → removed from graph after `senescence_duration` ticks have elapsed
 
+## Canalization Model
+
+Auxin flow through parent-child connections builds transport preference over time. Two layers of memory:
+
+**Transient bias (auxin_flow_bias)** — fast, reversible. Represents PIN protein polarization.
+- Each tick: `target = auxin_flux * transient_gain`, bias chases target exponentially at `transient_rate`
+- Decays toward 0 when flux stops. Responds within hours/days.
+
+**Structural bias (structural_flow_bias)** — slow, permanent. Represents built xylem/phloem.
+- Grows by `structural_growth_rate` per tick when auxin flux exceeds `structural_threshold`
+- Never decays. Capped at `structural_max`.
+
+**Effect on transport:** Both biases stored on the parent node, keyed by child pointer. During `transport_with_children()`, each child's proportional weight is multiplied by `1 + canalization_weight * (flow_bias + structural_bias)`. This redistributes chemical flow (all chemicals, not just auxin) among siblings — biased connections get a larger share of the same total. Does not amplify total flow.
+
+**Lifecycle:** Biases transfer on `replace_child` (chain growth preserves branch history). New children start at 0, 0. Cleaned up on `die()`.
+
 ## Tick Control Flow
 
 The recursive tick walks the tree from seed outward. Each node's `tick()`:
@@ -214,3 +230,9 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `ethylene_abscission_threshold` (0.5) - triggers leaf senescence
 - `ethylene_shade_threshold` (0.3) - light_exposure below which shade-ethylene kicks in
 - `senescence_duration` (48) - ticks from senescence to leaf drop
+- `transient_gain` (2.0) - target transient bias per unit of auxin flux. Higher = stronger short-term flow reinforcement
+- `transient_rate` (0.2) - exponential chase speed for transient bias (0.2 = ~87% in 8 hours)
+- `structural_threshold` (0.05) - minimum auxin flux to build structural bias (filters noise)
+- `structural_growth_rate` (0.005) - structural bias growth per tick when flux exceeds threshold (~8 days to reach 1.0)
+- `structural_max` (2.0) - cap on structural bias. At max: connection gets 1 + 2.0 = 3x weight
+- `canalization_weight` (1.0) - global scaling on bias effect. 0 = canalization disabled entirely
