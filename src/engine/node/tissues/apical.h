@@ -24,7 +24,7 @@ private:
     void activate(const Genome& g, const WorldParams& world);
 
     // --- Auxin production (environmentally modulated) ---
-    float produce_auxin(const Plant& plant) const;
+    float produce_auxin(const Plant& plant, float growth_gf) const;
     float estimate_local_light() const;
 
     // --- Chain growth ---

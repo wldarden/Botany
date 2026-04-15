@@ -21,8 +21,14 @@ void ApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
         return;
     }
 
-    // Auxin production
-    chemical(ChemicalID::Auxin) += produce_auxin(plant);
+    // Compute growth fraction before auxin production — same inputs grow_tip() will use
+    float max_cost = g.growth_rate * world.sugar_cost_meristem_growth;
+    float growth_gf = meristem_helpers::growth_fraction(
+        chemical(ChemicalID::Sugar), max_cost,
+        chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
+
+    // Auxin production (growth-modulated)
+    chemical(ChemicalID::Auxin) += produce_auxin(plant, growth_gf);
 
     // Green shoot tips photosynthesize at low efficiency — roughly enough
     // to self-sustain in full light, but not enough to be net exporters.
@@ -49,7 +55,7 @@ void ApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
     }
 }
 
-float ApicalNode::produce_auxin(const Plant& plant) const {
+float ApicalNode::produce_auxin(const Plant& plant, float growth_gf) const {
     const Genome& g = plant.genome();
     float base = g.apical_auxin_baseline;
 
@@ -65,7 +71,10 @@ float ApicalNode::produce_auxin(const Plant& plant) const {
     // Age: young meristems are more biosynthetically active
     float age_factor = 1.0f / (1.0f + static_cast<float>(age) / g.auxin_age_half_life);
 
-    return base * light_factor * sugar_factor * age_factor;
+    float modulated_baseline = base * light_factor * sugar_factor * age_factor;
+
+    // Growth modulation: actively growing meristems produce more auxin
+    return modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
 }
 
 float ApicalNode::estimate_local_light() const {

@@ -123,3 +123,72 @@ TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
     REQUIRE(shoot != nullptr);
     REQUIRE(shoot->chemical(ChemicalID::Cytokinin) > 0.0f);
 }
+
+TEST_CASE("Auxin: apical growth multiplier boosts production with sugar", "[hormone]") {
+    WorldParams world = default_world_params();
+
+    // Plant 1: growth multiplier disabled
+    Genome g1 = default_genome();
+    g1.apical_auxin_baseline = 1.0f;
+    g1.apical_growth_auxin_multiplier = 0.0f;  // no growth bonus
+    Plant plant1(g1, glm::vec3(0.0f));
+
+    // Plant 2: growth multiplier enabled
+    Genome g2 = default_genome();
+    g2.apical_auxin_baseline = 1.0f;
+    g2.apical_growth_auxin_multiplier = 5.0f;  // large for clear signal
+    Plant plant2(g2, glm::vec3(0.0f));
+
+    // Saturate sugar + cytokinin on both → max growth → max multiplier
+    for (int i = 0; i < 3; i++) {
+        plant1.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant2.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant1.tick(world);
+        plant2.tick(world);
+    }
+
+    // Sum total auxin in each plant
+    float total1 = 0.0f, total2 = 0.0f;
+    plant1.for_each_node([&](const Node& n) { total1 += n.chemical(ChemicalID::Auxin); });
+    plant2.for_each_node([&](const Node& n) { total2 += n.chemical(ChemicalID::Auxin); });
+
+    // Growth-boosted plant should have meaningfully more total auxin
+    REQUIRE(total2 > total1 * 1.5f);
+}
+
+TEST_CASE("Auxin: apical growth multiplier has no effect without sugar", "[hormone]") {
+    WorldParams world = default_world_params();
+
+    Genome g1 = default_genome();
+    g1.apical_auxin_baseline = 1.0f;
+    g1.apical_growth_auxin_multiplier = 0.0f;
+    Plant plant1(g1, glm::vec3(0.0f));
+
+    Genome g2 = default_genome();
+    g2.apical_auxin_baseline = 1.0f;
+    g2.apical_growth_auxin_multiplier = 5.0f;
+    Plant plant2(g2, glm::vec3(0.0f));
+
+    // Zero sugar → zero growth → multiplier should have no effect
+    for (int i = 0; i < 3; i++) {
+        plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+        plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+        plant1.tick(world);
+        plant2.tick(world);
+    }
+
+    float total1 = 0.0f, total2 = 0.0f;
+    plant1.for_each_node([&](const Node& n) { total1 += n.chemical(ChemicalID::Auxin); });
+    plant2.for_each_node([&](const Node& n) { total2 += n.chemical(ChemicalID::Auxin); });
+
+    // Both should produce similar auxin (baseline only, growth_gf ≈ 0)
+    // Allow 20% tolerance for sugar_factor floor (0.1 minimum) interacting with multiplier
+    float ratio = (total1 > 1e-8f) ? total2 / total1 : 1.0f;
+    REQUIRE(ratio < 1.2f);
+}
