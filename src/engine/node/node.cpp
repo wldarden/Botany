@@ -299,6 +299,7 @@ void Node::transport_with_children(const Genome& g) {
             Node* child;
             float desired;   // positive = child wants to receive, negative = child wants to give
             float child_cap;
+            float bias_mult; // canalization weight multiplier for this connection
         };
         std::vector<ChildFlow> flows;
         flows.reserve(children.size());
@@ -322,27 +323,30 @@ void Node::transport_with_children(const Genome& g) {
                 child_radius, radius, ref_radius, dp);
 
             if (std::abs(desired) > 1e-8f) {
-                flows.push_back({child, desired, child_cap});
+                float bm = get_bias_multiplier(child, g);
+                flows.push_back({child, desired, child_cap, bm});
             }
         }
 
         if (flows.empty()) continue;
 
         // --- Phase 1: children giving to parent (desired < 0) ---
-        // Each child gives proportional to |desired|, limited by its supply.
-        // Parent receives, limited by its remaining capacity.
+        // Each child gives min(|desired| * bias_mult, supply). Bias-boosted children
+        // give more. If total exceeds parent headroom, scale back uniformly.
         float parent_val = chemical(dp.id);
         float parent_headroom = has_cap ? std::max(0.0f, parent_cap_sugar - parent_val) : 1e30f;
         float total_inflow = 0.0f;
 
         for (auto& cf : flows) {
             if (cf.desired >= 0.0f) continue; // skip receivers
-            float give = std::min(-cf.desired, cf.child->chemical(dp.id));
-            cf.desired = -give; // store actual (negative = giving)
-            total_inflow += give;
+            float raw_give = std::min(-cf.desired, cf.child->chemical(dp.id));
+            // Bias amplifies give amount, clamped by child's actual supply
+            float biased_give = std::min(raw_give * cf.bias_mult, cf.child->chemical(dp.id));
+            cf.desired = -biased_give; // store biased amount (negative = giving)
+            total_inflow += biased_give;
         }
 
-        // Scale if total exceeds parent's capacity
+        // Scale back uniformly if total exceeds parent's capacity
         if (total_inflow > parent_headroom && total_inflow > 1e-8f) {
             float scale = parent_headroom / total_inflow;
             for (auto& cf : flows) {
@@ -361,52 +365,36 @@ void Node::transport_with_children(const Genome& g) {
         chemical(dp.id) = parent_val;
 
         // --- Phase 2: parent giving to children (desired > 0) ---
-        // Distribute proportionally by weight. If a child fills up,
-        // redistribute its remainder among unfilled children.
+        // Each child receives desired * bias_mult. Bias amplifies the receive amount.
+        // If total biased demand exceeds available, scale back uniformly.
         float available = chemical(dp.id);
 
-        // Collect receivers
+        // Collect receivers with bias-adjusted demand
         struct Receiver {
             Node* child;
-            float weight;
-            float headroom; // how much this child can still accept
+            float raw_weight;   // unbiased desired flow
+            float weight;       // bias-adjusted demand (raw_weight * bias_mult)
         };
         std::vector<Receiver> receivers;
         for (auto& cf : flows) {
             if (cf.desired <= 0.0f) continue;
-            float headroom = has_cap
-                ? std::max(0.0f, cf.child_cap - cf.child->chemical(dp.id))
-                : 1e30f;
-            if (headroom > 1e-8f) {
-                receivers.push_back({cf.child, cf.desired, headroom});
-            }
+            receivers.push_back({cf.child, cf.desired, cf.desired * cf.bias_mult});
         }
 
-        // Iteratively distribute — redistribute remainder when a child fills
-        while (!receivers.empty() && available > 1e-8f) {
-            float total_weight = 0.0f;
-            for (const auto& r : receivers) total_weight += r.weight;
-            if (total_weight < 1e-8f) break;
+        if (!receivers.empty() && available > 1e-8f) {
+            float bias_total = 0.0f;
+            for (const auto& r : receivers) bias_total += r.weight;
 
-            float to_distribute = std::min(available, total_weight);
-            bool any_filled = false;
+            if (bias_total > 1e-8f) {
+                // Scale back uniformly if total biased demand exceeds available
+                float scale = (bias_total > available) ? (available / bias_total) : 1.0f;
 
-            for (auto& r : receivers) {
-                float share = to_distribute * (r.weight / total_weight);
-                float actual = std::min(share, r.headroom);
-                r.child->chemical(dp.id) += actual;
-                available -= actual;
-                r.headroom -= actual;
-                if (r.headroom < 1e-8f) any_filled = true;
+                for (auto& r : receivers) {
+                    float give = r.weight * scale;
+                    r.child->chemical(dp.id) += give;
+                    available -= give;
+                }
             }
-
-            if (!any_filled) break; // everyone got their share, done
-
-            // Remove filled children and retry with remainder
-            receivers.erase(
-                std::remove_if(receivers.begin(), receivers.end(),
-                    [](const Receiver& r) { return r.headroom < 1e-8f; }),
-                receivers.end());
         }
 
         chemical(dp.id) = available;

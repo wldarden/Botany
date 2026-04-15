@@ -126,3 +126,87 @@ TEST_CASE("Canalization: get_bias_multiplier scales with canalization_weight", "
     float expected = 1.0f + 2.0f * (0.5f + 0.3f);
     REQUIRE(parent_node->get_bias_multiplier(child_node, g) == expected);
 }
+
+TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]") {
+    Genome g = default_genome();
+    g.canalization_weight = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world_params();
+
+    Node* parent_node = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    Node* childA = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    Node* childB = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    plant.seed_mut()->add_child(parent_node);
+    parent_node->add_child(childA);
+    parent_node->add_child(childB);
+
+    parent_node->chemical(ChemicalID::Sugar) = 10.0f;
+    childA->chemical(ChemicalID::Sugar) = 0.0f;
+    childB->chemical(ChemicalID::Sugar) = 0.0f;
+
+    parent_node->auxin_flow_bias[childA] = 1.0f;
+    parent_node->auxin_flow_bias[childB] = 0.0f;
+
+    parent_node->transport_with_children(g);
+
+    REQUIRE(childA->chemical(ChemicalID::Sugar) > childB->chemical(ChemicalID::Sugar) * 1.5f);
+}
+
+TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization]") {
+    Genome g = default_genome();
+    g.canalization_weight = 0.0f;
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* parent_node = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    Node* childA = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    Node* childB = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    plant.seed_mut()->add_child(parent_node);
+    parent_node->add_child(childA);
+    parent_node->add_child(childB);
+
+    parent_node->chemical(ChemicalID::Sugar) = 10.0f;
+    childA->chemical(ChemicalID::Sugar) = 0.0f;
+    childB->chemical(ChemicalID::Sugar) = 0.0f;
+
+    parent_node->auxin_flow_bias[childA] = 5.0f;
+    parent_node->auxin_flow_bias[childB] = 0.0f;
+
+    parent_node->transport_with_children(g);
+
+    float ratio = childA->chemical(ChemicalID::Sugar) /
+                  std::max(childB->chemical(ChemicalID::Sugar), 1e-8f);
+    REQUIRE(ratio > 0.8f);
+    REQUIRE(ratio < 1.2f);
+}
+
+TEST_CASE("Canalization: bias affects Phase 1 (children giving to parent)", "[canalization]") {
+    Genome g = default_genome();
+    g.canalization_weight = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* parent_node = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    Node* childA = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    Node* childB = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
+    plant.seed_mut()->add_child(parent_node);
+    parent_node->add_child(childA);
+    parent_node->add_child(childB);
+
+    childA->chemical(ChemicalID::Auxin) = 5.0f;
+    childB->chemical(ChemicalID::Auxin) = 5.0f;
+    parent_node->chemical(ChemicalID::Auxin) = 0.0f;
+
+    parent_node->auxin_flow_bias[childA] = 2.0f;
+    parent_node->auxin_flow_bias[childB] = 0.0f;
+
+    float a_before = childA->chemical(ChemicalID::Auxin);
+    float b_before = childB->chemical(ChemicalID::Auxin);
+
+    parent_node->transport_with_children(g);
+
+    float a_gave = a_before - childA->chemical(ChemicalID::Auxin);
+    float b_gave = b_before - childB->chemical(ChemicalID::Auxin);
+
+    REQUIRE(a_gave > 0.0f);
+    REQUIRE(b_gave > 0.0f);
+    REQUIRE(a_gave > b_gave * 1.3f);
+}
