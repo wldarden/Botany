@@ -53,24 +53,31 @@ void Node::replace_child(Node* old_child, Node* new_child) {
 void Node::tick(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
-    update_position();
     age++;
-    pay_maintenance(world);
-    if (check_starvation(plant, world)) return;
-
+    sync_world_position();
+    if (handle_energy_cost(plant, world)) return;
     tissue_tick(plant, world);
     if (update_physics(plant, g, world)) return;
-    transport_with_children(g);
-    decay_chemicals(g);
+    update_chemicals(g);
 }
 
 // --- Tick helpers ---
 
-void Node::update_position() {
+void Node::sync_world_position() {
     position = parent ? parent->position + offset : offset;
     if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
         position = parent ? parent->position : glm::vec3(0.0f);
     }
+}
+
+bool Node::handle_energy_cost(Plant& plant, const WorldParams& world) {
+    pay_maintenance(world);
+    return check_starvation(plant, world);
+}
+
+void Node::update_chemicals(const Genome& g) {
+    transport_with_children(g);
+    decay_chemicals(g);
 }
 
 void Node::pay_maintenance(const WorldParams& world) {

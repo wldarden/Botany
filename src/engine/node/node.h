@@ -81,10 +81,12 @@ public:
 
 private:
     // --- Tick helpers (called by tick in order) ---
-    void update_position();
+    void sync_world_position();
+    bool handle_energy_cost(Plant& plant, const WorldParams& world);
+    bool update_physics(Plant& plant, const Genome& g, const WorldParams& world);
+    void update_chemicals(const Genome& g);
     void pay_maintenance(const WorldParams& world);
     bool check_starvation(Plant& plant, const WorldParams& world);
-    bool update_physics(Plant& plant, const Genome& g, const WorldParams& world);
     void compute_mass(const Genome& g, const WorldParams& world);
     void compute_stress(const Genome& g, const WorldParams& world);
     bool apply_droop_and_break(Plant& plant, const Genome& g, const WorldParams& world);
