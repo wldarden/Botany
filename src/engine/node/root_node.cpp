@@ -1,6 +1,7 @@
 #include "engine/node/root_node.h"
 #include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 #include <algorithm>
 #include <glm/geometric.hpp>
@@ -13,6 +14,14 @@ RootNode::RootNode(uint32_t id, glm::vec3 position, float radius)
 
 void RootNode::tissue_tick(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
+
+    // Water absorption: proportional to root surface area and soil moisture
+    float length = std::max(glm::length(offset), 0.01f);
+    float surface_area = 2.0f * 3.14159f * radius * length;
+    float absorbed = g.water_absorption_rate * surface_area * world.soil_moisture;
+    float cap = water_cap(*this, g);
+    chemical(ChemicalID::Water) = std::min(chemical(ChemicalID::Water) + absorbed, cap);
+
     thicken(g, world);
     elongate(g, world);
 }

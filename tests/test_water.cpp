@@ -2,8 +2,11 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <glm/geometric.hpp>
 #include "engine/plant.h"
+#include "engine/node/root_node.h"
+#include "engine/node/tissues/root_apical.h"
 #include "engine/node/tissues/leaf.h"
 #include "engine/genome.h"
+#include "engine/light.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
 #include "engine/chemical/chemical.h"
@@ -117,4 +120,87 @@ TEST_CASE("Water transport conserves total water", "[water]") {
     plant.for_each_node([&](const Node& n) { total_after += n.chemical(ChemicalID::Water); });
 
     REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
+}
+
+// === Task 6: Root water absorption tests ===
+
+TEST_CASE("Root nodes absorb water proportional to surface area", "[water]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* root = plant.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(root);
+    root->chemical(ChemicalID::Water) = 0.0f;
+    root->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp = default_world_params();
+    wp.soil_moisture = 1.0f;
+
+    root->tick(plant, wp);
+
+    REQUIRE(root->chemical(ChemicalID::Water) > 0.0f);
+}
+
+TEST_CASE("Root absorption scales with soil_moisture", "[water]") {
+    Genome g = default_genome();
+
+    Plant plant_wet(g, glm::vec3(0.0f));
+    Node* root_wet = plant_wet.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
+    plant_wet.seed_mut()->add_child(root_wet);
+    root_wet->chemical(ChemicalID::Water) = 0.0f;
+    root_wet->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp_wet = default_world_params();
+    wp_wet.soil_moisture = 1.0f;
+    root_wet->tick(plant_wet, wp_wet);
+
+    Plant plant_dry(g, glm::vec3(0.0f));
+    Node* root_dry = plant_dry.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
+    plant_dry.seed_mut()->add_child(root_dry);
+    root_dry->chemical(ChemicalID::Water) = 0.0f;
+    root_dry->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp_dry = default_world_params();
+    wp_dry.soil_moisture = 0.2f;
+    root_dry->tick(plant_dry, wp_dry);
+
+    REQUIRE(root_wet->chemical(ChemicalID::Water) > root_dry->chemical(ChemicalID::Water));
+}
+
+TEST_CASE("Zero soil_moisture means zero water absorption", "[water]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* root = plant.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
+    plant.seed_mut()->add_child(root);
+    root->chemical(ChemicalID::Water) = 0.0f;
+    root->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp = default_world_params();
+    wp.soil_moisture = 0.0f;
+
+    root->tick(plant, wp);
+
+    REQUIRE(root->chemical(ChemicalID::Water) < 1e-6f);
+}
+
+TEST_CASE("Root apical tips also absorb water", "[water]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* root_apical = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL) root_apical = &n;
+    });
+    REQUIRE(root_apical != nullptr);
+
+    root_apical->chemical(ChemicalID::Water) = 0.0f;
+    root_apical->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp = default_world_params();
+    wp.soil_moisture = 1.0f;
+
+    root_apical->tick(plant, wp);
+
+    REQUIRE(root_apical->chemical(ChemicalID::Water) > 0.0f);
 }

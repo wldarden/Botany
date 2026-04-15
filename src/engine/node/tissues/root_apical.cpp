@@ -1,6 +1,7 @@
 #include "engine/node/tissues/root_apical.h"
 #include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 #include <glm/geometric.hpp>
 
@@ -14,6 +15,12 @@ RootApicalNode::RootApicalNode(uint32_t id, glm::vec3 position, float radius)
 
 void RootApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
+
+    // Water absorption: hemisphere approximation for tip surface area
+    float surface_area = 2.0f * 3.14159f * radius * radius;
+    float absorbed = g.water_absorption_rate * surface_area * world.soil_moisture;
+    float cap = water_cap(*this, g);
+    chemical(ChemicalID::Water) = std::min(chemical(ChemicalID::Water) + absorbed, cap);
 
     if (!active) {
         if (can_activate(g, world)) activate(g, world);
