@@ -56,14 +56,12 @@ TEST_CASE("Genome template has linkage groups", "[evolution]") {
     auto& groups = tmpl.linkage_groups();
     REQUIRE(groups.size() == 10);
 
-    // Verify auxin group has 11 genes (production, apical_growth_multiplier, diffusion, decay,
-    // threshold, shade_boost, sugar_half_saturation, age_half_life, bias,
-    // leaf_auxin_baseline, leaf_growth_auxin_multiplier)
+    // Verify auxin group has 21 genes (7 original + 4 leaf/apical production + 10 growth sensitivity)
     bool found_auxin = false;
     for (auto& g : groups) {
         if (g.name == "auxin") {
             found_auxin = true;
-            REQUIRE(g.gene_tags.size() == 11);
+            REQUIRE(g.gene_tags.size() == 21);
         }
     }
     REQUIRE(found_auxin);

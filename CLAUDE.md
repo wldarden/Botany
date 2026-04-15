@@ -185,6 +185,16 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `auxin_thickening_threshold` (0.03) - auxin level for full-speed cambial thickening (much lower than branching threshold — cambium is very sensitive to auxin)
 - `cytokinin_threshold` (0.15) - lower = fewer root branches, higher = more
 - `auxin_bias` (-0.1) - shifted equilibrium for basipetal flow (negative = toward root)
+- `stem_auxin_max_boost` (0.5) - max elongation promotion from auxin (saturating)
+- `stem_auxin_half_saturation` (0.2) - auxin level for half-max stem effect
+- `root_auxin_max_boost` (-0.3) - max elongation inhibition from auxin (negative = inhibits)
+- `root_auxin_half_saturation` (0.1) - auxin level for half-max root effect (roots very sensitive)
+- `leaf_auxin_max_boost` (0.3) - max leaf expansion promotion from auxin
+- `leaf_auxin_half_saturation` (0.2) - auxin level for half-max leaf effect
+- `apical_auxin_max_boost` (0.2) - max tip extension promotion from auxin
+- `apical_auxin_half_saturation` (0.3) - auxin level for half-max apical effect
+- `root_apical_auxin_max_boost` (-0.2) - max root tip extension inhibition from auxin
+- `root_apical_auxin_half_saturation` (0.1) - auxin level for half-max root apical effect
 - `cytokinin_bias` (0.1) - shifted equilibrium for acropetal flow (positive = toward tips)
 - `auxin_diffusion_rate` / `cytokinin_diffusion_rate` (0.3) - gradient responsiveness
 - `hormone_base_transport` (0.5) - throughput floor for hormones (even thin tips can signal)

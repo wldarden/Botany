@@ -23,6 +23,20 @@ struct Genome {
     float leaf_auxin_baseline;            // scaling constant for leaf auxin production (decoupled from apical)
     float leaf_growth_auxin_multiplier;   // fraction of leaf_auxin_baseline produced at max leaf growth
 
+    // Auxin growth sensitivity — saturating Michaelis-Menten per tissue type.
+    // max_boost: signed ceiling (positive = promotes, negative = inhibits growth).
+    // half_saturation: auxin level for half-max effect.
+    float stem_auxin_max_boost;
+    float stem_auxin_half_saturation;
+    float root_auxin_max_boost;
+    float root_auxin_half_saturation;
+    float leaf_auxin_max_boost;
+    float leaf_auxin_half_saturation;
+    float apical_auxin_max_boost;
+    float apical_auxin_half_saturation;
+    float root_apical_auxin_max_boost;
+    float root_apical_auxin_half_saturation;
+
     float cytokinin_production_rate;    // cytokinin per g sugar produced by leaves (leaf productivity signal)
     float cytokinin_diffusion_rate;    // fraction diffused per tick
     float cytokinin_decay_rate;
@@ -133,6 +147,17 @@ inline Genome default_genome() {
         .auxin_bias = -0.1f,                  // gentle basipetal shift (auxin accumulates toward root)
         .leaf_auxin_baseline = 0.15f,             // same scale as apical, but multiplier keeps it at 10%
         .leaf_growth_auxin_multiplier = 0.1f,     // single leaf at max growth = 10% of apical baseline
+
+        .stem_auxin_max_boost = 0.5f,            // auxin promotes stem elongation by up to 50%
+        .stem_auxin_half_saturation = 0.2f,
+        .root_auxin_max_boost = -0.3f,            // auxin inhibits root elongation by up to 30%
+        .root_auxin_half_saturation = 0.1f,       // roots are very sensitive
+        .leaf_auxin_max_boost = 0.3f,             // auxin promotes leaf expansion by up to 30%
+        .leaf_auxin_half_saturation = 0.2f,
+        .apical_auxin_max_boost = 0.2f,           // mild promotion of tip extension
+        .apical_auxin_half_saturation = 0.3f,     // high half-sat — apicals sit in high auxin
+        .root_apical_auxin_max_boost = -0.2f,     // mild inhibition of root tip extension
+        .root_apical_auxin_half_saturation = 0.1f,
 
         .cytokinin_production_rate = 5.0f,   // cytokinin per g sugar produced by leaves
         .cytokinin_diffusion_rate = 0.3f,

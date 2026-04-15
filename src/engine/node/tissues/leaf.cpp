@@ -1,4 +1,5 @@
 #include "engine/node/tissues/leaf.h"
+#include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
@@ -111,7 +112,9 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
 void LeafNode::grow_size(const Genome& g, const WorldParams& world) {
     if (leaf_size >= g.max_leaf_size) return;
 
-    float max_growth = g.leaf_growth_rate;
+    float auxin_boost = meristem_helpers::auxin_growth_factor(
+        chemical(ChemicalID::Auxin), g.leaf_auxin_max_boost, g.leaf_auxin_half_saturation);
+    float max_growth = g.leaf_growth_rate * auxin_boost;
     float remaining = g.max_leaf_size - leaf_size;
     float growth = std::min(max_growth, remaining);
 
