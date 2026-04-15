@@ -64,6 +64,13 @@ public:
         return it != chemicals.end() ? it->second : 0.0f;
     }
 
+    // Canalization — per-child transport bias (stored on parent, keyed by child pointer)
+    std::unordered_map<Node*, float> auxin_flow_bias;       // transient — fast, decays
+    std::unordered_map<Node*, float> structural_flow_bias;  // persistent — slow, permanent
+    std::unordered_map<Node*, float> last_auxin_flux;       // transient per-tick: auxin moved per child
+
+    float get_bias_multiplier(Node* child, const Genome& g) const;
+
     // --- Lifecycle ---
     Node(uint32_t id, NodeType type, glm::vec3 position, float radius);
     virtual ~Node() = default;

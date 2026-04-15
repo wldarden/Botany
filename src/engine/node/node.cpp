@@ -45,6 +45,19 @@ void Node::replace_child(Node* old_child, Node* new_child) {
             c = new_child;
             new_child->parent = this;
             old_child->parent = nullptr;
+
+            // Transfer canalization biases to new child entry
+            auto it_flow = auxin_flow_bias.find(old_child);
+            if (it_flow != auxin_flow_bias.end()) {
+                auxin_flow_bias[new_child] = it_flow->second;
+                auxin_flow_bias.erase(it_flow);
+            }
+            auto it_struct = structural_flow_bias.find(old_child);
+            if (it_struct != structural_flow_bias.end()) {
+                structural_flow_bias[new_child] = it_struct->second;
+                structural_flow_bias.erase(it_struct);
+            }
+
             return;
         }
     }
@@ -231,9 +244,20 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
 
 void Node::tissue_tick(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
+float Node::get_bias_multiplier(Node* child, const Genome& g) const {
+    float flow = 0.0f, structural = 0.0f;
+    auto it_f = auxin_flow_bias.find(child);
+    if (it_f != auxin_flow_bias.end()) flow = it_f->second;
+    auto it_s = structural_flow_bias.find(child);
+    if (it_s != structural_flow_bias.end()) structural = it_s->second;
+    return 1.0f + g.canalization_weight * (flow + structural);
+}
+
 void Node::die(Plant& plant) {
     // Detach from parent
     if (parent) {
+        parent->auxin_flow_bias.erase(this);
+        parent->structural_flow_bias.erase(this);
         auto& siblings = parent->children;
         siblings.erase(std::remove(siblings.begin(), siblings.end(), this), siblings.end());
         parent = nullptr;
