@@ -21,7 +21,7 @@ inline constexpr std::array<ChemicalID, 7> all_chemical_ids = {
 
 // Chemicals that diffuse through the tree graph.
 // One entry per chemical — rate and decay from the genome.
-inline std::array<ChemicalDiffusionParams, 5> diffusion_params(const Genome& g) {
+inline std::array<ChemicalDiffusionParams, 6> diffusion_params(const Genome& g) {
     return {{
         {ChemicalID::Auxin,       g.auxin_diffusion_rate,     g.auxin_decay_rate,
          g.auxin_bias,     g.hormone_base_transport, g.hormone_transport_scale},
@@ -37,6 +37,9 @@ inline std::array<ChemicalDiffusionParams, 5> diffusion_params(const Genome& g) 
 
         {ChemicalID::Stress,      g.stress_hormone_diffusion_rate, g.stress_hormone_decay_rate,
          0.0f,             g.hormone_base_transport, g.hormone_transport_scale},
+
+        {ChemicalID::Water,       g.water_diffusion_rate,     0.0f,
+         g.water_bias,     g.water_base_transport,   g.water_transport_scale},
     }};
 }
 

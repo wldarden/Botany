@@ -294,9 +294,17 @@ void Node::transport_with_children(const Genome& g) {
 
     float ref_radius = g.initial_radius;
     float parent_cap_sugar = sugar_cap(*this, g);
+    float parent_cap_water = water_cap(*this, g);
 
     for (const auto& dp : diffusion_params(g)) {
-        bool has_cap = (dp.id == ChemicalID::Sugar);
+        bool has_cap = (dp.id == ChemicalID::Sugar || dp.id == ChemicalID::Water);
+
+        auto cap_for = [&](const Node& n) -> float {
+            if (dp.id == ChemicalID::Water) return water_cap(n, g);
+            if (dp.id == ChemicalID::Sugar) return sugar_cap(n, g);
+            return 0.0f;
+        };
+        float parent_cap = has_cap ? (dp.id == ChemicalID::Water ? parent_cap_water : parent_cap_sugar) : 0.0f;
 
         // --- Compute desired flow for each child ---
         struct ChildFlow {
@@ -318,8 +326,7 @@ void Node::transport_with_children(const Genome& g) {
                 }
             }
 
-            float child_cap = has_cap ? sugar_cap(*child, g) : 0.0f;
-            float parent_cap = has_cap ? parent_cap_sugar : 0.0f;
+            float child_cap = has_cap ? cap_for(*child) : 0.0f;
 
             float desired = compute_transport_flow(
                 child->chemical(dp.id), chemical(dp.id),
@@ -340,7 +347,7 @@ void Node::transport_with_children(const Genome& g) {
         // When headroom is constrained, bias-weighted proportional redistribution
         // determines who gets priority (redistribution, not amplification).
         float parent_val = chemical(dp.id);
-        float parent_headroom = has_cap ? std::max(0.0f, parent_cap_sugar - parent_val) : 1e30f;
+        float parent_headroom = has_cap ? std::max(0.0f, parent_cap - parent_val) : 1e30f;
         float total_inflow = 0.0f;
 
         for (auto& cf : flows) {
