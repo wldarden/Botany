@@ -54,7 +54,9 @@ void RootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
 
     if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
 
-    float actual_rate = g.root_growth_rate * gf;
+    float auxin_boost = meristem_helpers::auxin_growth_factor(
+        chemical(ChemicalID::Auxin), g.root_apical_auxin_max_boost, g.root_apical_auxin_half_saturation);
+    float actual_rate = g.root_growth_rate * gf * auxin_boost;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
     offset += growth_dir * actual_rate;
 }

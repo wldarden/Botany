@@ -1,4 +1,5 @@
 #include "engine/node/root_node.h"
+#include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
 #include "engine/world_params.h"
 #include <algorithm>
@@ -41,7 +42,9 @@ void RootNode::elongate(const Genome& g, const WorldParams& world) {
 
     float ga_boost = 1.0f + chemical(ChemicalID::Gibberellin) * g.ga_elongation_sensitivity;
     float eth_inhibit = std::max(0.0f, 1.0f - chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
-    float effective_rate = g.root_internode_elongation_rate * ga_boost * eth_inhibit;
+    float auxin_boost = meristem_helpers::auxin_growth_factor(
+        chemical(ChemicalID::Auxin), g.root_auxin_max_boost, g.root_auxin_half_saturation);
+    float effective_rate = g.root_internode_elongation_rate * ga_boost * eth_inhibit * auxin_boost;
 
     float max_len = g.max_internode_length * (1.0f + chemical(ChemicalID::Gibberellin) * g.ga_length_sensitivity);
     float current_len = glm::length(offset);

@@ -163,7 +163,9 @@ void ApicalNode::grow_tip(Plant& plant, const Genome& g, const WorldParams& worl
         }
     }
 
-    float actual_rate = g.growth_rate * gf;
+    float auxin_boost = meristem_helpers::auxin_growth_factor(
+        chemical(ChemicalID::Auxin), g.apical_auxin_max_boost, g.apical_auxin_half_saturation);
+    float actual_rate = g.growth_rate * gf * auxin_boost;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_meristem_growth;
     offset += growth_dir * actual_rate;
 }
