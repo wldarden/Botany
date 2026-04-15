@@ -84,7 +84,7 @@ void Renderer::begin_frame() {
     shader_.set_mat4("uView", camera_.view_matrix());
     shader_.set_mat4("uProjection", camera_.projection_matrix(aspect));
     shader_.set_mat4("uModel", glm::mat4(1.0f));
-    shader_.set_vec3("uLightDir", -light_system_.sun_direction);  // sun_direction points down; shader wants toward-light
+    shader_.set_vec3("uLightDir", light_system_.sun_direction);  // shader does -uLightDir internally; sun_direction already points toward surface
     shader_.set_vec3("uAmbient", glm::vec3(0.3f, 0.3f, 0.3f));
 }
 
