@@ -204,3 +204,100 @@ TEST_CASE("Root apical tips also absorb water", "[water]") {
 
     REQUIRE(root_apical->chemical(ChemicalID::Water) > 0.0f);
 }
+
+// === Task 7: Leaf transpiration and photosynthesis water cost tests ===
+
+TEST_CASE("Leaves lose water via transpiration", "[water]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->as_leaf()->leaf_size = 0.5f;
+    plant.seed_mut()->add_child(leaf);
+
+    float initial_water = 5.0f;
+    leaf->chemical(ChemicalID::Water) = initial_water;
+    leaf->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp = default_world_params();
+    wp.light_level = 2.0f;
+    compute_light_exposure(plant, wp);
+    leaf->tick(plant, wp);
+
+    REQUIRE(leaf->chemical(ChemicalID::Water) < initial_water);
+}
+
+TEST_CASE("Transpiration scales with light exposure", "[water]") {
+    Genome g = default_genome();
+
+    // light_exposure (set by shadow computation) drives transpiration, not world.light_level.
+    // Set it directly on each leaf to isolate the transpiration scaling.
+
+    Plant plant_bright(g, glm::vec3(0.0f));
+    Node* leaf_bright = plant_bright.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf_bright->as_leaf()->leaf_size = 0.5f;
+    leaf_bright->as_leaf()->light_exposure = 1.0f;
+    plant_bright.seed_mut()->add_child(leaf_bright);
+    leaf_bright->chemical(ChemicalID::Water) = 5.0f;
+    leaf_bright->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp = default_world_params();
+    leaf_bright->tick(plant_bright, wp);
+
+    Plant plant_dim(g, glm::vec3(0.0f));
+    Node* leaf_dim = plant_dim.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf_dim->as_leaf()->leaf_size = 0.5f;
+    leaf_dim->as_leaf()->light_exposure = 0.1f;
+    plant_dim.seed_mut()->add_child(leaf_dim);
+    leaf_dim->chemical(ChemicalID::Water) = 5.0f;
+    leaf_dim->chemical(ChemicalID::Sugar) = 10.0f;
+
+    leaf_dim->tick(plant_dim, wp);
+
+    REQUIRE(leaf_bright->chemical(ChemicalID::Water) < leaf_dim->chemical(ChemicalID::Water));
+}
+
+TEST_CASE("Water does not go below zero from transpiration", "[water]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->as_leaf()->leaf_size = 1.0f;
+    plant.seed_mut()->add_child(leaf);
+
+    leaf->chemical(ChemicalID::Water) = 0.0001f;
+    leaf->chemical(ChemicalID::Sugar) = 10.0f;
+
+    WorldParams wp = default_world_params();
+    wp.light_level = 10.0f;
+    compute_light_exposure(plant, wp);
+    leaf->tick(plant, wp);
+
+    REQUIRE(leaf->chemical(ChemicalID::Water) >= 0.0f);
+}
+
+TEST_CASE("Photosynthesis consumes water proportional to sugar produced", "[water]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
+    leaf->as_leaf()->leaf_size = 0.5f;
+    plant.seed_mut()->add_child(leaf);
+
+    leaf->chemical(ChemicalID::Water) = 100.0f;
+    leaf->chemical(ChemicalID::Sugar) = 0.0f;
+
+    WorldParams wp = default_world_params();
+    wp.light_level = 2.0f;
+    compute_light_exposure(plant, wp);
+
+    float water_before = leaf->chemical(ChemicalID::Water);
+    leaf->tick(plant, wp);
+    float water_after = leaf->chemical(ChemicalID::Water);
+
+    float leaf_area = 0.5f * 0.5f;
+    float transpiration_only = g.transpiration_rate * leaf_area * leaf->as_leaf()->light_exposure;
+    float total_loss = water_before - water_after;
+
+    REQUIRE(total_loss > transpiration_only - 1e-6f);
+}

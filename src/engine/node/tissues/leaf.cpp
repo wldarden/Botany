@@ -27,6 +27,11 @@ void LeafNode::tissue_tick(Plant& plant, const WorldParams& world) {
     float delta = chemical(ChemicalID::Sugar) - sugar_before;
     if (delta > 0.0f) plant.add_sugar_produced(delta);
 
+    // Transpiration: water loss proportional to leaf area and light exposure
+    float leaf_area_tr = leaf_size * leaf_size;
+    float transpired = g.transpiration_rate * leaf_area_tr * light_exposure;
+    chemical(ChemicalID::Water) = std::max(0.0f, chemical(ChemicalID::Water) - transpired);
+
     // Carbon-balance abscission: if production < maintenance for too long, senesce.
     // Young leaves are immune — they're still growing and not yet net producers.
     if (senescence_ticks == 0 && age >= g.min_leaf_age_before_abscission) {
@@ -72,6 +77,10 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
            * world.sugar_production_rate;
     chemical(ChemicalID::Sugar) += sugar_produced;
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
+
+    // Photosynthesis water cost: small deduction proportional to sugar produced
+    float water_cost = sugar_produced * g.photosynthesis_water_ratio;
+    chemical(ChemicalID::Water) = std::max(0.0f, chemical(ChemicalID::Water) - water_cost);
 
     // Cytokinin production: proportional to actual photosynthetic output.
     // This is the "I have producing leaves" signal that gates all growth.
