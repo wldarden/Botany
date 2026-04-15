@@ -1,6 +1,6 @@
 #include "engine/sugar.h"
 #include "engine/node/node.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/genome.h"
 #include <algorithm>
 #include <glm/geometric.hpp>
@@ -25,10 +25,8 @@ float sugar_cap(const Node& node, const Genome& g) {
             }
             return std::max(g.sugar_cap_minimum, cap);
         }
-        case NodeType::SHOOT_APICAL:
-        case NodeType::SHOOT_AXILLARY:
+        case NodeType::APICAL:
         case NodeType::ROOT_APICAL:
-        case NodeType::ROOT_AXILLARY:
             return g.sugar_cap_meristem;
     }
     return g.sugar_cap_minimum;

@@ -2,7 +2,7 @@
 #include "engine/plant.h"
 #include "engine/world_params.h"
 #include "engine/node/node.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include <cmath>
 #include <unordered_map>
 #include <vector>
@@ -44,21 +44,40 @@ void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants,
 
     std::unordered_map<CellKey, std::vector<CasterEntry>, CellKeyHash> grid;
 
+    // Compute the blade center for a leaf: offset from petiole (node.position)
+    // along the outward direction to the center of the diamond.
+    // blade_half = leaf_size * sqrt(2)/2 — half-diagonal of the diamond.
+    // blade_center = position + outward * blade_half
+    auto leaf_blade_center = [](const Node& node, const LeafNode* leaf) -> glm::vec3 {
+        float half = leaf->leaf_size * 0.70711f;
+        if (node.parent) {
+            glm::vec3 outward = node.position - node.parent->position;
+            float len = glm::length(outward);
+            if (len > 1e-4f) {
+                return node.position + (outward / len) * half;
+            }
+        }
+        return node.position;
+    };
+
     // Phase 1: Stamp all above-ground casters from all plants into the grid
     for (const auto& plant : plants) {
         plant->for_each_node_mut([&](Node& node) {
             if (node.type == NodeType::ROOT || node.is_meristem()) return;
 
             float shadow_radius = node.radius;
+            glm::vec3 cast_pos = node.position;
             if (auto* leaf = node.as_leaf()) {
                 leaf->light_exposure = 1.0f;
-                shadow_radius = leaf->leaf_size;
+                float half = leaf->leaf_size * 0.70711f;
+                shadow_radius = half;
+                cast_pos = leaf_blade_center(node, leaf);
             }
             if (shadow_radius <= 1e-6f) return;
 
-            float depth = glm::dot(node.position, L);
-            float proj_u = glm::dot(node.position, plane_u);
-            float proj_v = glm::dot(node.position, plane_v);
+            float depth = glm::dot(cast_pos, L);
+            float proj_u = glm::dot(cast_pos, plane_u);
+            float proj_v = glm::dot(cast_pos, plane_v);
 
             int r_cells = static_cast<int>(std::ceil(shadow_radius / cell));
             int cu = static_cast<int>(std::floor(proj_u / cell));
@@ -80,16 +99,23 @@ void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants,
     }
 
     // Phase 2: Query each leaf's exposure from the grid
+    // Minimum depth gap: casters must be meaningfully above a leaf to shadow it.
+    // Prevents sibling leaves on curved branches from shadowing each other
+    // when they differ by only a few mm in height.
+    const float min_shadow_gap = 0.1f;  // 1cm
+
     for (const auto& plant : plants) {
         plant->for_each_node_mut([&](Node& node) {
             auto* leaf = node.as_leaf();
             if (!leaf || leaf->leaf_size <= 1e-6f || leaf->senescence_ticks != 0) return;
 
-            float depth = glm::dot(node.position, L);
-            float proj_u = glm::dot(node.position, plane_u);
-            float proj_v = glm::dot(node.position, plane_v);
+            float half = leaf->leaf_size * 0.70711f;
+            glm::vec3 query_pos = leaf_blade_center(node, leaf);
+            float depth = glm::dot(query_pos, L);
+            float proj_u = glm::dot(query_pos, plane_u);
+            float proj_v = glm::dot(query_pos, plane_v);
 
-            int r_cells = static_cast<int>(std::ceil(leaf->leaf_size / cell));
+            int r_cells = static_cast<int>(std::ceil(half / cell));
             int cu = static_cast<int>(std::floor(proj_u / cell));
             int cv = static_cast<int>(std::floor(proj_v / cell));
 
@@ -103,7 +129,7 @@ void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants,
                     float dist_u = cell_center_u - proj_u;
                     float dist_v = cell_center_v - proj_v;
                     float dist = std::sqrt(dist_u * dist_u + dist_v * dist_v);
-                    if (dist >= leaf->leaf_size) continue;
+                    if (dist >= half) continue;
 
                     cell_count++;
 
@@ -115,7 +141,7 @@ void compute_light_exposure(const std::vector<std::unique_ptr<Plant>>& plants,
 
                     float coverage_above = 0.0f;
                     for (const auto& entry : it->second) {
-                        if (entry.depth > depth) {
+                        if (entry.depth > depth + min_shadow_gap) {
                             coverage_above += entry.coverage;
                         }
                     }

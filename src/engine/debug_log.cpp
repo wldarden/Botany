@@ -3,7 +3,7 @@
 #include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/node/node.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/chemical/chemical.h"
 #include <iomanip>
 #include <glm/geometric.hpp>
@@ -40,10 +40,8 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
             case NodeType::STEM: type_str = "STEM"; break;
             case NodeType::ROOT: type_str = "ROOT"; break;
             case NodeType::LEAF: type_str = "LEAF"; break;
-            case NodeType::SHOOT_APICAL: type_str = "SA"; break;
-            case NodeType::SHOOT_AXILLARY: type_str = "SX"; break;
+            case NodeType::APICAL: type_str = "SA"; break;
             case NodeType::ROOT_APICAL: type_str = "RA"; break;
-            case NodeType::ROOT_AXILLARY: type_str = "RX"; break;
         }
 
         float sugar = node.chemical(ChemicalID::Sugar);

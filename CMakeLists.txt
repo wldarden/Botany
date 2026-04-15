@@ -70,11 +70,9 @@ add_library(botany_engine STATIC
     src/engine/node/node.cpp
     src/engine/node/stem_node.cpp
     src/engine/node/root_node.cpp
-    src/engine/node/leaf_node.cpp
-    src/engine/node/meristems/shoot_apical.cpp
-    src/engine/node/meristems/shoot_axillary.cpp
-    src/engine/node/meristems/root_apical.cpp
-    src/engine/node/meristems/root_axillary.cpp
+    src/engine/node/tissues/leaf.cpp
+    src/engine/node/tissues/apical.cpp
+    src/engine/node/tissues/root_apical.cpp
     src/engine/plant.cpp
     src/engine/sugar.cpp
     src/engine/light.cpp

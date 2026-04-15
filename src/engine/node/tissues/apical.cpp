@@ -1,7 +1,7 @@
-#include "engine/node/meristems/shoot_apical.h"
+#include "engine/node/tissues/apical.h"
 #include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/world_params.h"
 #include <unordered_set>
 
@@ -9,17 +9,21 @@ namespace botany {
 
 using namespace meristem_helpers;
 
-ShootApicalNode::ShootApicalNode(uint32_t id, glm::vec3 position, float radius)
-    : Node(id, NodeType::SHOOT_APICAL, position, radius)
+ApicalNode::ApicalNode(uint32_t id, glm::vec3 position, float radius)
+    : Node(id, NodeType::APICAL, position, radius)
 {}
 
-void ShootApicalNode::tick(Plant& plant, const WorldParams& world) {
-    chemical(ChemicalID::Auxin) += produce_auxin(plant);
-    Node::tick(plant, world);
-    ticks_since_last_node++;
-}
+void ApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
+    const Genome& g = plant.genome();
 
-void ShootApicalNode::produce(Plant& plant, const WorldParams& world) {
+    if (!active) {
+        if (can_activate(g, world)) activate(g, world);
+        return;
+    }
+
+    // Auxin production
+    chemical(ChemicalID::Auxin) += produce_auxin(plant);
+
     // Green shoot tips photosynthesize at low efficiency — roughly enough
     // to self-sustain in full light, but not enough to be net exporters.
     float light = estimate_local_light() * world.light_level;
@@ -30,12 +34,22 @@ void ShootApicalNode::produce(Plant& plant, const WorldParams& world) {
 
         // Tiny cytokinin from green tip photosynthesis — bootstrap signal.
         // Lets a leafless branch resume growth when light returns.
-        const Genome& g = plant.genome();
         chemical(ChemicalID::Cytokinin) += production * g.cytokinin_production_rate * 0.1f;
+    }
+
+    // Chain growth
+    ticks_since_last_node++;
+    grow_tip(plant, g, world);
+
+    float dist_from_parent = glm::length(offset);
+    if (parent && ticks_since_last_node >= g.shoot_plastochron
+        && dist_from_parent >= g.tip_offset
+        && starvation_ticks == 0) {
+        spawn_internode(plant, g);
     }
 }
 
-float ShootApicalNode::produce_auxin(const Plant& plant) const {
+float ApicalNode::produce_auxin(const Plant& plant) const {
     const Genome& g = plant.genome();
     float base = g.auxin_production_rate;
 
@@ -54,7 +68,7 @@ float ShootApicalNode::produce_auxin(const Plant& plant) const {
     return base * light_factor * sugar_factor * age_factor;
 }
 
-float ShootApicalNode::estimate_local_light() const {
+float ApicalNode::estimate_local_light() const {
     // Average light_exposure of leaves on nearby internodes (parent chain).
     // Gives the meristem a local sense of canopy shade.
     float total_light = 0.0f;
@@ -74,24 +88,8 @@ float ShootApicalNode::estimate_local_light() const {
     return total_light / static_cast<float>(leaf_count);
 }
 
-void ShootApicalNode::grow(Plant& plant, const WorldParams& world) {
-    const Genome& g = plant.genome();
 
-    grow_tip(plant, g, world);
-
-    // Time-based spawning (plastochron): create nodes at regular intervals,
-    // like real meristems. Internode length comes from elongation afterward.
-    // Minimum distance gate: don't stack nodes on top of each other when
-    // growth is throttled. The meristem must move at least tip_offset before spawning.
-    float dist_from_parent = glm::length(offset);
-    if (parent && ticks_since_last_node >= g.shoot_plastochron
-        && dist_from_parent >= g.tip_offset
-        && starvation_ticks == 0) {
-        spawn_internode(plant, g);
-    }
-}
-
-void ShootApicalNode::roll_direction(const Genome& g, const WorldParams& world) {
+void ApicalNode::roll_direction(const Genome& g, const WorldParams& world) {
     growth_dir = perturb(growth_direction(*this), g.growth_noise);
 
     // Plagiotropism: pull toward set-point angle (vertical for trunk, branch angle for branches).
@@ -116,7 +114,7 @@ void ShootApicalNode::roll_direction(const Genome& g, const WorldParams& world) 
     }
 }
 
-void ShootApicalNode::grow_tip(Plant& plant, const Genome& g, const WorldParams& world) {
+void ApicalNode::grow_tip(Plant& plant, const Genome& g, const WorldParams& world) {
     float max_cost = g.growth_rate * world.sugar_cost_meristem_growth;
     float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
@@ -170,7 +168,7 @@ void ShootApicalNode::grow_tip(Plant& plant, const Genome& g, const WorldParams&
     offset += growth_dir * actual_rate;
 }
 
-void ShootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
+void ApicalNode::spawn_internode(Plant& plant, const Genome& g) {
 
     // Create new interior stem node and insert it between us and our parent
     Node* internode = plant.create_node(NodeType::STEM, offset, radius);
@@ -196,13 +194,14 @@ void ShootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
     growth_dir = glm::vec3(0.0f); // re-roll direction for next internode
 }
 
-void ShootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
-    Node* axillary = plant.create_node(NodeType::SHOOT_AXILLARY, lateral_offset, g.initial_radius * 0.5f);
-    internode->add_child(axillary);
-    axillary->position = internode->position + axillary->offset;
+void ApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
+    Node* bud = plant.create_node(NodeType::APICAL, lateral_offset, g.initial_radius * 0.5f);
+    bud->as_apical()->active = false;
+    internode->add_child(bud);
+    bud->position = internode->position + bud->offset;
 }
 
-void ShootApicalNode::spawn_leaf(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
+void ApicalNode::spawn_leaf(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
     // Start leaf close to stem — petiole grows with leaf size
     Node* leaf = plant.create_node(NodeType::LEAF, lateral_offset, 0.0f);
     leaf->as_leaf()->leaf_size = g.leaf_bud_size;
@@ -218,8 +217,36 @@ void ShootApicalNode::spawn_leaf(Plant& plant, Node* internode, const Genome& g,
     leaf->position = internode->position + leaf->offset;
 }
 
-float ShootApicalNode::maintenance_cost(const WorldParams& world) const {
+float ApicalNode::maintenance_cost(const WorldParams& world) const {
     return world.sugar_maintenance_meristem;
+}
+
+bool ApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
+    // Low auxin removes inhibition (apical dominance weakened)
+    float stem_auxin = parent ? parent->chemical(ChemicalID::Auxin) : chemical(ChemicalID::Auxin);
+    if (stem_auxin >= g.auxin_threshold) return false;
+
+    // Cytokinin from producing leaves signals "the plant can support a new branch."
+    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin) : chemical(ChemicalID::Cytokinin);
+    if (local_cyt < g.cytokinin_threshold) return false;
+
+    if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
+
+    return true;
+}
+
+void ApicalNode::activate(const Genome& g, const WorldParams& world) {
+    active = true;
+    chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
+    radius = g.initial_radius;
+
+    // Set growth direction from branch offset
+    float olen = glm::length(offset);
+    if (olen > 1e-4f) {
+        glm::vec3 branch_dir = offset / olen;
+        growth_dir = branch_dir;
+        set_point_dir = branch_dir;
+    }
 }
 
 } // namespace botany

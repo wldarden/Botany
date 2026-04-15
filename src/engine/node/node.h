@@ -18,18 +18,17 @@ namespace botany {
 
 enum class NodeType {
     STEM, ROOT, LEAF,
-    SHOOT_APICAL, SHOOT_AXILLARY, ROOT_APICAL, ROOT_AXILLARY
+    APICAL, ROOT_APICAL
 };
 
 class Plant;
 struct WorldParams;
+struct Genome;
 class StemNode;
 class RootNode;
 class LeafNode;
-class ShootApicalNode;
-class ShootAxillaryNode;
+class ApicalNode;
 class RootApicalNode;
-class RootAxillaryNode;
 
 class Node {
 public:
@@ -74,12 +73,23 @@ public:
     void replace_child(Node* old_child, Node* new_child);
 
     // --- Tick pipeline ---
-    virtual void tick(Plant& plant, const WorldParams& world);
-    virtual float maintenance_cost(const struct WorldParams& world) const;
-    virtual void produce(Plant& plant, const WorldParams& world);
-    virtual void grow(Plant& plant, const WorldParams& world);
-    void transport_chemicals(const struct Genome& g);
+    void tick(Plant& plant, const WorldParams& world);       // non-virtual: all universal processes
+    virtual float maintenance_cost(const WorldParams& world) const;
+    void transport_with_children(const Genome& g);
+    void decay_chemicals(const Genome& g);
     void die(Plant& plant);
+
+private:
+    // --- Tick helpers (called by tick in order) ---
+    void update_position();
+    void pay_maintenance(const WorldParams& world);
+    bool check_starvation(Plant& plant, const WorldParams& world);
+    bool update_physics(Plant& plant, const Genome& g, const WorldParams& world);
+    void compute_mass(const Genome& g, const WorldParams& world);
+    void compute_stress(const Genome& g, const WorldParams& world);
+    bool apply_droop_and_break(Plant& plant, const Genome& g, const WorldParams& world);
+
+public:
 
     // --- Type queries ---
     bool is_meristem() const;
@@ -91,14 +101,13 @@ public:
     const RootNode* as_root() const;
     LeafNode*       as_leaf();
     const LeafNode* as_leaf() const;
-    ShootApicalNode*       as_shoot_apical();
-    const ShootApicalNode* as_shoot_apical() const;
-    ShootAxillaryNode*       as_shoot_axillary();
-    const ShootAxillaryNode* as_shoot_axillary() const;
+    ApicalNode*       as_apical();
+    const ApicalNode* as_apical() const;
     RootApicalNode*       as_root_apical();
     const RootApicalNode* as_root_apical() const;
-    RootAxillaryNode*       as_root_axillary();
-    const RootAxillaryNode* as_root_axillary() const;
+
+protected:
+    virtual void tissue_tick(Plant& plant, const WorldParams& world);  // subclass entry point
 };
 
 } // namespace botany

@@ -25,8 +25,7 @@ inline glm::vec3 growth_direction(const Node& node) {
         }
     }
     bool root_type = node.type == NodeType::ROOT
-                  || node.type == NodeType::ROOT_APICAL
-                  || node.type == NodeType::ROOT_AXILLARY;
+                  || node.type == NodeType::ROOT_APICAL;
     return root_type ? glm::vec3(0.0f, -1.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
 }
 

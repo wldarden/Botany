@@ -28,7 +28,7 @@ TEST_CASE("Auxin: shoot apical produces auxin", "[hormone]") {
     const Node* seed = plant.seed();
     const Node* shoot = nullptr;
     for (const Node* c : seed->children) {
-        if (c->type == NodeType::SHOOT_APICAL) { shoot = c; break; }
+        if (c->type == NodeType::APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
     REQUIRE(shoot->chemical(ChemicalID::Auxin) > 0.0f);
@@ -41,7 +41,8 @@ TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world();
 
-    tick_n(plant, world, 1);
+    // 2 ticks: child produces auxin at tick 1, parent receives at tick 2
+    tick_n(plant, world, 2);
 
     // Seed should have received auxin from shoot apical child
     REQUIRE(plant.seed()->chemical(ChemicalID::Auxin) > 0.0f);
@@ -60,7 +61,7 @@ TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
     const Node* shoot = nullptr;
     for (const Node* c : seed->children) {
         if (c->type == NodeType::ROOT_APICAL) root = c;
-        if (c->type == NodeType::SHOOT_APICAL) shoot = c;
+        if (c->type == NodeType::APICAL) shoot = c;
     }
     REQUIRE(root != nullptr);
     REQUIRE(shoot != nullptr);
@@ -117,7 +118,7 @@ TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
     const Node* seed = plant.seed();
     const Node* shoot = nullptr;
     for (const Node* c : seed->children) {
-        if (c->type == NodeType::SHOOT_APICAL) { shoot = c; break; }
+        if (c->type == NodeType::APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
     REQUIRE(shoot->chemical(ChemicalID::Cytokinin) > 0.0f);

@@ -46,6 +46,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "max_internode_length",       g.max_internode_length,       r, 0.05f,  3.0f, p);
     reg(sg, "branch_angle",              g.branch_angle,              r, 0.05f,  1.57f, p);
     reg(sg, "thickening_rate",           g.thickening_rate,           r, 0.00001f, 0.001f, p);
+    reg(sg, "auxin_thickening_threshold", g.auxin_thickening_threshold, r, 0.005f, 0.2f, p);
     reg(sg, "internode_elongation_rate", g.internode_elongation_rate, r, 0.0005f, 0.02f, p);
     reg(sg, "internode_maturation_ticks", static_cast<float>(g.internode_maturation_ticks),
                                                                       r, 12.0f, 500.0f, p);
@@ -141,7 +142,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     sg.add_linkage_group({"shoot_growth", {
         "growth_rate", "shoot_plastochron", "max_internode_length", "branch_angle",
-        "thickening_rate", "internode_elongation_rate", "internode_maturation_ticks"
+        "thickening_rate", "auxin_thickening_threshold",
+        "internode_elongation_rate", "internode_maturation_ticks"
     }});
 
     sg.add_linkage_group({"root_growth", {
@@ -225,6 +227,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.max_internode_length       = sg.get("max_internode_length");
     g.branch_angle               = sg.get("branch_angle");
     g.thickening_rate            = sg.get("thickening_rate");
+    g.auxin_thickening_threshold = sg.get("auxin_thickening_threshold");
     g.internode_elongation_rate  = sg.get("internode_elongation_rate");
     g.internode_maturation_ticks = static_cast<uint32_t>(sg.get("internode_maturation_ticks"));
 

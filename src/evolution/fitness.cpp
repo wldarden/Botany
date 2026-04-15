@@ -1,7 +1,7 @@
 #include "evolution/fitness.h"
 #include "engine/engine.h"
 #include "engine/node/node.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -41,7 +41,7 @@ static uint32_t compute_branch_depth(const Plant& plant) {
 static bool has_active_meristems(const Plant& plant) {
     bool found = false;
     plant.for_each_node([&](const Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL || n.type == NodeType::ROOT_APICAL) {
+        if (n.type == NodeType::APICAL || n.type == NodeType::ROOT_APICAL) {
             found = true;
         }
     });

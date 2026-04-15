@@ -2,11 +2,9 @@
 #include "engine/plant.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
-#include "engine/node/leaf_node.h"
-#include "engine/node/meristems/shoot_apical.h"
-#include "engine/node/meristems/shoot_axillary.h"
-#include "engine/node/meristems/root_apical.h"
-#include "engine/node/meristems/root_axillary.h"
+#include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
 #include "engine/ethylene.h"
 #include "engine/perf_log.h"
 #include "engine/world_params.h"
@@ -28,7 +26,7 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     seed->chemical(ChemicalID::Cytokinin) = seed_cyt;
 
     // Shoot apical meristem node (child of seed)
-    Node* shoot = create_node(NodeType::SHOOT_APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
+    Node* shoot = create_node(NodeType::APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
     shoot->chemical(ChemicalID::Cytokinin) = seed_cyt;
     seed->add_child(shoot);
 
@@ -75,7 +73,7 @@ void Plant::remove_subtree(Node* node) {
 
     // Update root meristem count
     for (Node* n : to_remove) {
-        if (n->type == NodeType::ROOT_APICAL || n->type == NodeType::ROOT_AXILLARY) {
+        if (n->type == NodeType::ROOT_APICAL) {
             if (root_meristem_count_ > 0) root_meristem_count_--;
         }
     }
@@ -102,7 +100,7 @@ void Plant::flush_removals() {
 
     std::unordered_set<Node*> remove_set(pending_removals_.begin(), pending_removals_.end());
     for (Node* n : pending_removals_) {
-        if (n->type == NodeType::ROOT_APICAL || n->type == NodeType::ROOT_AXILLARY) {
+        if (n->type == NodeType::ROOT_APICAL) {
             if (root_meristem_count_ > 0) root_meristem_count_--;
         }
     }
@@ -140,14 +138,9 @@ Node* Plant::create_node(NodeType type, glm::vec3 position, float radius) {
         case NodeType::STEM: node = std::make_unique<StemNode>(id, position, radius); break;
         case NodeType::ROOT: node = std::make_unique<RootNode>(id, position, radius); break;
         case NodeType::LEAF: node = std::make_unique<LeafNode>(id, position, radius); break;
-        case NodeType::SHOOT_APICAL: node = std::make_unique<ShootApicalNode>(id, position, radius); break;
-        case NodeType::SHOOT_AXILLARY: node = std::make_unique<ShootAxillaryNode>(id, position, radius); break;
+        case NodeType::APICAL: node = std::make_unique<ApicalNode>(id, position, radius); break;
         case NodeType::ROOT_APICAL:
             node = std::make_unique<RootApicalNode>(id, position, radius);
-            root_meristem_count_++;
-            break;
-        case NodeType::ROOT_AXILLARY:
-            node = std::make_unique<RootAxillaryNode>(id, position, radius);
             root_meristem_count_++;
             break;
     }

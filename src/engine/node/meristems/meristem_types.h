@@ -2,7 +2,5 @@
 // Convenience umbrella — includes all concrete meristem subclasses.
 #pragma once
 
-#include "engine/node/meristems/shoot_apical.h"
-#include "engine/node/meristems/shoot_axillary.h"
-#include "engine/node/meristems/root_apical.h"
-#include "engine/node/meristems/root_axillary.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"

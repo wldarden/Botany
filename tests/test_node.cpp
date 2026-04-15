@@ -2,8 +2,8 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/node/node.h"
 #include "engine/node/stem_node.h"
-#include "engine/node/leaf_node.h"
-#include "engine/node/meristems/shoot_apical.h"
+#include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
 
 using namespace botany;
 
@@ -34,12 +34,12 @@ TEST_CASE("add_child establishes parent-child relationship", "[node]") {
     REQUIRE(child.parent == &parent);
 }
 
-TEST_CASE("ShootApicalNode has correct meristem properties", "[node]") {
-    ShootApicalNode node(1, glm::vec3(0.0f), 0.05f);
+TEST_CASE("ApicalNode has correct meristem properties", "[node]") {
+    ApicalNode node(1, glm::vec3(0.0f), 0.05f);
 
-    REQUIRE(node.type == NodeType::SHOOT_APICAL);
+    REQUIRE(node.type == NodeType::APICAL);
     REQUIRE(node.is_meristem() == true);
-    REQUIRE(node.as_shoot_apical() != nullptr);
+    REQUIRE(node.as_apical() != nullptr);
 }
 
 TEST_CASE("LEAF node stores leaf_size", "[node]") {
@@ -50,7 +50,6 @@ TEST_CASE("LEAF node stores leaf_size", "[node]") {
     REQUIRE(node.chemical(ChemicalID::Sugar) == 0.0f);
 }
 
-TEST_CASE("NodeType covers all four meristem variants", "[node]") {
-    REQUIRE(static_cast<int>(NodeType::SHOOT_APICAL) != static_cast<int>(NodeType::SHOOT_AXILLARY));
-    REQUIRE(static_cast<int>(NodeType::ROOT_APICAL) != static_cast<int>(NodeType::ROOT_AXILLARY));
+TEST_CASE("NodeType covers both meristem types", "[node]") {
+    REQUIRE(static_cast<int>(NodeType::APICAL) != static_cast<int>(NodeType::ROOT_APICAL));
 }

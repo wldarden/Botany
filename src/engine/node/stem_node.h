@@ -9,7 +9,7 @@ public:
     // --- Node overrides ---
     StemNode(uint32_t id, glm::vec3 position, float radius);
     float maintenance_cost(const WorldParams& world) const override;
-    void grow(Plant& plant, const WorldParams& world) override;
+    void tissue_tick(Plant& plant, const WorldParams& world) override;
 
 private:
     // --- Stem growth ---

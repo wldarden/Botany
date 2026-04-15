@@ -23,7 +23,7 @@ struct PerfStats {
     double node_transport_ms = 0;
 
     uint32_t node_count = 0;
-    uint32_t shoot_apical_count = 0;
+    uint32_t apical_count = 0;
 
     void reset() { *this = PerfStats{}; }
 };
@@ -48,7 +48,7 @@ public:
         double total = stats_.light_ms + stats_.plant_tick_ms + stats_.debug_log_ms;
         file_ << tick << ","
               << stats_.node_count << ","
-              << stats_.shoot_apical_count << ","
+              << stats_.apical_count << ","
               << total << ","
               << stats_.light_ms << ","
               << stats_.plant_tick_ms << ","

@@ -2,7 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "engine/plant.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 
 using namespace botany;
 
@@ -22,11 +22,11 @@ TEST_CASE("Plant seed initialization creates correct graph", "[plant]") {
         REQUIRE(seed->children.size() == 2);
     }
 
-    SECTION("one child is a SHOOT_APICAL meristem node") {
+    SECTION("one child is a APICAL meristem node") {
         const Node* seed = plant.seed();
         bool found_shoot = false;
         for (const Node* child : seed->children) {
-            if (child->type == NodeType::SHOOT_APICAL) {
+            if (child->type == NodeType::APICAL) {
                 found_shoot = true;
                 REQUIRE(child->is_meristem());
                 REQUIRE(child->position.y >= 0.0f);

@@ -16,65 +16,43 @@ struct ChemicalDiffusionParams {
     float transport_scale;  // radius amplification factor for throughput
 };
 
-// Unified transport: concentration-based with shifted equilibrium and throughput cap.
-//
-// my_cap / parent_cap: capacity for this chemical.
-//   > 0 = real capacity (sugar): concentration = level/cap, destination headroom clamped.
-//   <= 0 = no capacity (hormones): concentration = raw level, no headroom clamp.
-//
-// Flow sign: positive = toward parent (root-ward), negative = toward child (tip-ward).
-inline void transport_chemical(
-    float& my_val, float& parent_val,
-    float my_cap, float parent_cap,
-    float node_radius, float parent_radius,
+// Compute the desired transport flow between a parent and one child.
+// Returns a weight: positive = child wants to receive from parent,
+//                   negative = child wants to give to parent.
+// Pure function — does not mutate any values.
+inline float compute_transport_flow(
+    float child_val, float parent_val,
+    float child_cap, float parent_cap,
+    float child_radius, float parent_radius,
     float reference_radius,
     const ChemicalDiffusionParams& params)
 {
-    bool has_cap = (my_cap > 0.0f && parent_cap > 0.0f);
+    bool has_cap = (child_cap > 0.0f && parent_cap > 0.0f);
 
     // Concentrations
-    float my_conc, parent_conc;
+    float child_conc  = has_cap ? child_val / child_cap   : child_val;
+    float parent_conc = has_cap ? parent_val / parent_cap : parent_val;
+
+    // Shifted equilibrium: bias > 0 pushes toward tips, < 0 toward root.
+    // (parent_conc - child_conc) is positive when parent has more → child should receive.
+    // Subtracting bias: positive bias makes it easier for child to receive (acropetal).
+    float diff = (parent_conc - child_conc) - params.bias;
+    float desired = diff * params.diffusion_rate;
+
+    // Scale back to absolute units for capped chemicals
     if (has_cap) {
-        my_conc    = my_val / my_cap;
-        parent_conc = parent_val / parent_cap;
-    } else {
-        my_conc    = my_val;
-        parent_conc = parent_val;
-    }
-
-    // Shifted equilibrium: bias offsets where "equal" is
-    float effective_diff = (my_conc - parent_conc) - params.bias;
-
-    // Desired flow (positive = toward parent/root)
-    float desired_flow = effective_diff * params.diffusion_rate;
-
-    // Scale concentration gradient back to absolute units
-    if (has_cap) {
-        float avg_cap = (my_cap + parent_cap) * 0.5f;
-        desired_flow *= avg_cap;
+        desired *= (child_cap + parent_cap) * 0.5f;
     }
 
     // Radius scaling: thicker connections transport more
     float min_r = reference_radius * 0.2f;
-    float conn_r = std::max(std::min(node_radius, parent_radius), min_r);
+    float conn_r = std::max(std::min(child_radius, parent_radius), min_r);
     float radius_factor = conn_r / std::max(reference_radius, 1e-6f);
-    desired_flow *= radius_factor;
+    desired *= radius_factor;
 
-    // Throughput cap: bottlenecked by thinner pipe
+    // Throughput cap
     float max_transport = params.base_transport + radius_factor * params.transport_scale;
-    float flow = std::clamp(desired_flow, -max_transport, max_transport);
-
-    // Source clamp: can't send more than you have
-    if (flow > 0.0f) {
-        flow = std::min(flow, my_val);
-        if (has_cap) flow = std::min(flow, std::max(0.0f, parent_cap - parent_val));
-    } else {
-        flow = std::max(flow, -parent_val);
-        if (has_cap) flow = std::max(flow, -std::max(0.0f, my_cap - my_val));
-    }
-
-    my_val    -= flow;
-    parent_val += flow;
+    return std::clamp(desired, -max_transport, max_transport);
 }
 
 } // namespace botany

@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "engine/plant.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/chemical/chemical.h"
@@ -42,10 +42,9 @@ TEST_CASE("GA spreads to parent via transport", "[gibberellin]") {
 
     WorldParams wp = default_world_params();
 
-    // Tick the leaf a few times to produce and transport GA
-    for (int i = 0; i < 3; i++) {
-        leaf->tick(plant, wp);
-    }
+    // Tick the leaf to produce GA, then tick stem to transport it
+    leaf->tick(plant, wp);
+    stem->tick(plant, wp);  // stem transports with leaf child
 
     REQUIRE(stem->chemical(ChemicalID::Gibberellin) > 0.0f);
 }

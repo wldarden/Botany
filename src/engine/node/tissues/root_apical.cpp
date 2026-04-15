@@ -1,4 +1,4 @@
-#include "engine/node/meristems/root_apical.h"
+#include "engine/node/tissues/root_apical.h"
 #include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
 #include "engine/world_params.h"
@@ -12,15 +12,16 @@ RootApicalNode::RootApicalNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::ROOT_APICAL, position, radius)
 {}
 
-void RootApicalNode::tick(Plant& plant, const WorldParams& world) {
-    // Cytokinin production moved to leaves (proportional to sugar production)
-    Node::tick(plant, world);
-    ticks_since_last_node++;
-}
-
-void RootApicalNode::grow(Plant& plant, const WorldParams& world) {
+void RootApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
+    if (!active) {
+        if (can_activate(g, world)) activate(g, world);
+        return;
+    }
+
+    // Chain growth
+    ticks_since_last_node++;
     grow_tip(g, world);
 
     // Time-based spawning (plastochron). Don't spawn if starving.
@@ -84,13 +85,30 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
 }
 
 void RootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
-    Node* axillary = plant.create_node(NodeType::ROOT_AXILLARY, lateral_offset, g.root_initial_radius * 0.5f);
-    internode->add_child(axillary);
-    axillary->position = internode->position + axillary->offset;
+    Node* bud = plant.create_node(NodeType::ROOT_APICAL, lateral_offset, g.root_initial_radius * 0.5f);
+    bud->as_root_apical()->active = false;
+    internode->add_child(bud);
+    bud->position = internode->position + bud->offset;
 }
 
 float RootApicalNode::maintenance_cost(const WorldParams& world) const {
     return world.sugar_maintenance_meristem;
+}
+
+bool RootApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
+    // Cytokinin from producing leaves signals "the plant can support new roots"
+    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin) : chemical(ChemicalID::Cytokinin);
+    if (local_cyt < g.cytokinin_threshold) return false;
+
+    if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
+
+    return true;
+}
+
+void RootApicalNode::activate(const Genome& g, const WorldParams& world) {
+    active = true;
+    chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
+    radius = g.root_initial_radius;
 }
 
 } // namespace botany

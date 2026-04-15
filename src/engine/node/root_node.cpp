@@ -10,7 +10,7 @@ RootNode::RootNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::ROOT, position, radius)
 {}
 
-void RootNode::grow(Plant& plant, const WorldParams& world) {
+void RootNode::tissue_tick(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
     thicken(g, world);
     elongate(g, world);
@@ -21,7 +21,7 @@ void RootNode::thicken(const Genome& g, const WorldParams& world) {
 
     // Auxin-driven cambial growth: auxin flows basipetally from the canopy
     // down into the root system — main root gets the most, thickens the most.
-    float auxin_gf = std::min(chemical(ChemicalID::Auxin) / std::max(g.auxin_threshold, 1e-6f), 1.0f);
+    float auxin_gf = std::min(chemical(ChemicalID::Auxin) / std::max(g.auxin_thickening_threshold, 1e-6f), 1.0f);
     effective_rate *= auxin_gf;
 
     // Sugar funds the growth

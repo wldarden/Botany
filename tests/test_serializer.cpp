@@ -2,7 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <sstream>
 #include "engine/engine.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "serialization/serializer.h"
 
 using namespace botany;

@@ -26,10 +26,8 @@ static const char* node_type_str(NodeType t) {
         case NodeType::STEM:           return "STEM";
         case NodeType::ROOT:           return "ROOT";
         case NodeType::LEAF:           return "LEAF";
-        case NodeType::SHOOT_APICAL:   return "SHOOT_APICAL";
-        case NodeType::SHOOT_AXILLARY: return "SHOOT_AXILLARY";
+        case NodeType::APICAL:         return "APICAL";
         case NodeType::ROOT_APICAL:    return "ROOT_APICAL";
-        case NodeType::ROOT_AXILLARY:  return "ROOT_AXILLARY";
     }
     return "UNKNOWN";
 }

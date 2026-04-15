@@ -12,9 +12,9 @@
 #include <string>
 #include "engine/engine.h"
 #include "engine/node/node.h"
-#include "engine/node/leaf_node.h"
-#include "engine/node/meristems/shoot_axillary.h"
-#include "engine/node/meristems/root_axillary.h"
+#include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
 #include "engine/chemical/chemical_registry.h"
@@ -153,10 +153,8 @@ static const char* node_type_label(NodeType t) {
         case NodeType::STEM:           return "Stem";
         case NodeType::ROOT:           return "Root";
         case NodeType::LEAF:           return "Leaf";
-        case NodeType::SHOOT_APICAL:   return "SAM";
-        case NodeType::SHOOT_AXILLARY: return "SAx";
+        case NodeType::APICAL:         return "SAM";
         case NodeType::ROOT_APICAL:    return "RAM";
-        case NodeType::ROOT_AXILLARY:  return "RAx";
     }
     return "?";
 }
@@ -382,8 +380,8 @@ int main(int argc, char* argv[]) {
         float max_sugar = 0.0f;
         float total_maintenance = 0.0f;
         int stem_count = 0, root_count = 0, leaf_count = 0;
-        int apical_count = 0, axillary_count = 0;
-        int root_apical_count = 0, root_axillary_count = 0;
+        int shoot_active = 0, shoot_dormant = 0;
+        int root_active = 0, root_dormant = 0;
         const Genome& pg = engine.get_plant(plant_id).genome();
         engine.get_plant(plant_id).for_each_node([&](const Node& n) {
             total_sugar += n.chemical(ChemicalID::Sugar);
@@ -393,10 +391,12 @@ int main(int argc, char* argv[]) {
                 case NodeType::STEM: stem_count++; break;
                 case NodeType::ROOT: root_count++; break;
                 case NodeType::LEAF: leaf_count++; break;
-                case NodeType::SHOOT_APICAL:   apical_count++; break;
-                case NodeType::SHOOT_AXILLARY: axillary_count++; break;
-                case NodeType::ROOT_APICAL:    root_apical_count++; break;
-                case NodeType::ROOT_AXILLARY:  root_axillary_count++; break;
+                case NodeType::APICAL:
+                    if (n.as_apical()->active) shoot_active++; else shoot_dormant++;
+                    break;
+                case NodeType::ROOT_APICAL:
+                    if (n.as_root_apical()->active) root_active++; else root_dormant++;
+                    break;
             }
         });
 
@@ -407,8 +407,8 @@ int main(int argc, char* argv[]) {
         prev_produced = current_produced;
 
         ImGui::Text("Stem: %d  Root: %d  Leaf: %d", stem_count, root_count, leaf_count);
-        ImGui::Text("Meristems: SA:%d SX:%d RA:%d RX:%d",
-                     apical_count, axillary_count, root_apical_count, root_axillary_count);
+        ImGui::Text("Shoot: %d active %d dormant  Root: %d active %d dormant",
+                     shoot_active, shoot_dormant, root_active, root_dormant);
         ImGui::Text("Sugar: total=%s  max=%s", fmt_mass(total_sugar), fmt_mass(max_sugar));
         ImGui::Text("Production: %s  Maintenance: %s", fmt_mass_rate(last_tick_production), fmt_mass_rate(total_maintenance));
         ImGui::Separator();
@@ -614,7 +614,7 @@ int main(int argc, char* argv[]) {
                     }
                 } else if (chem == ChemicalID::Auxin) {
                     consumed = level * eg.auxin_decay_rate;
-                    if (n.type == NodeType::SHOOT_APICAL) produced = eg.auxin_production_rate;
+                    if (n.type == NodeType::APICAL) produced = eg.auxin_production_rate;
                 } else if (chem == ChemicalID::Cytokinin) {
                     consumed = level * eg.cytokinin_decay_rate;
                     if (auto* leaf = n.as_leaf()) {
@@ -761,20 +761,16 @@ int main(int argc, char* argv[]) {
                     case NodeType::STEM:           type_str = "STEM"; break;
                     case NodeType::ROOT:           type_str = "ROOT"; break;
                     case NodeType::LEAF:           type_str = "LEAF"; break;
-                    case NodeType::SHOOT_APICAL:   type_str = "SHOOT_APICAL"; break;
-                    case NodeType::SHOOT_AXILLARY: type_str = "SHOOT_AXILLARY"; break;
+                    case NodeType::APICAL:         type_str = "APICAL"; break;
                     case NodeType::ROOT_APICAL:    type_str = "ROOT_APICAL"; break;
-                    case NodeType::ROOT_AXILLARY:  type_str = "ROOT_AXILLARY"; break;
                 }
                 ImGui::Text("Type: %s", type_str);
 
                 // Meristem info
-                if (auto* ax = sel.as_shoot_axillary()) {
-                    ImGui::Text("Meristem: %s", ax->active ? "active" : "dormant");
-                } else if (auto* ax = sel.as_root_axillary()) {
-                    ImGui::Text("Meristem: %s", ax->active ? "active" : "dormant");
-                } else if (sel.is_meristem()) {
-                    ImGui::Text("Meristem: active");
+                if (auto* ap = sel.as_apical()) {
+                    ImGui::Text("Meristem: %s", ap->active ? "active" : "dormant");
+                } else if (auto* ra = sel.as_root_apical()) {
+                    ImGui::Text("Meristem: %s", ra->active ? "active" : "dormant");
                 }
 
                 ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);

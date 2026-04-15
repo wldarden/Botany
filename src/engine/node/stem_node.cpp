@@ -10,7 +10,7 @@ StemNode::StemNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::STEM, position, radius)
 {}
 
-void StemNode::grow(Plant& plant, const WorldParams& world) {
+void StemNode::tissue_tick(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
     thicken(g, world);
     elongate(g, world);
@@ -22,7 +22,7 @@ void StemNode::thicken(const Genome& g, const WorldParams& world) {
 
     // Auxin-driven cambial growth: auxin flows basipetally from the canopy,
     // so the trunk (funnel point) gets the most — thickens the most.
-    float auxin_gf = std::min(chemical(ChemicalID::Auxin) / std::max(g.auxin_threshold, 1e-6f), 1.0f);
+    float auxin_gf = std::min(chemical(ChemicalID::Auxin) / std::max(g.auxin_thickening_threshold, 1e-6f), 1.0f);
     effective_rate *= auxin_gf;
 
     // Sugar funds the growth

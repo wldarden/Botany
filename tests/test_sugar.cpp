@@ -2,7 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <glm/geometric.hpp>
 #include "engine/plant.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
@@ -117,7 +117,7 @@ TEST_CASE("Active meristem tip maintenance_cost", "[sugar]") {
 
     Node* shoot_tip = nullptr;
     plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::SHOOT_APICAL) shoot_tip = &n;
+        if (n.type == NodeType::APICAL) shoot_tip = &n;
     });
     REQUIRE(shoot_tip != nullptr);
     WorldParams wp = default_world_params();
@@ -134,10 +134,8 @@ TEST_CASE("Sugar diffuses from high to low concentration", "[sugar]") {
     seed->chemical(ChemicalID::Sugar) = 100.0f;
 
     float seed_before = seed->chemical(ChemicalID::Sugar);
-    // Transport chemicals locally on each child (pulls sugar from seed)
-    for (Node* child : seed->children) {
-        child->transport_chemicals(g);
-    }
+    // Parent distributes to children collectively
+    seed->transport_with_children(g);
 
     REQUIRE(seed->chemical(ChemicalID::Sugar) < seed_before);
     for (const Node* child : seed->children) {
@@ -157,7 +155,7 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
     // Run several rounds of local transport (one pass per round)
     for (int i = 0; i < 5; i++) {
         plant.for_each_node_mut([&](Node& n) {
-            n.transport_chemicals(g);
+            n.transport_with_children(g);
         });
     }
 
@@ -178,7 +176,7 @@ TEST_CASE("More transport ticks produce smoother distribution", "[sugar]") {
     }
     plant1.seed_mut()->chemical(ChemicalID::Sugar) = 10.0f;
     // 1 round of local transport
-    plant1.for_each_node_mut([&](Node& n) { n.transport_chemicals(g); });
+    plant1.for_each_node_mut([&](Node& n) { n.transport_with_children(g); });
 
     Plant plant2(g, glm::vec3(0.0f));
     for (int i = 0; i < 3; i++) {
@@ -188,7 +186,7 @@ TEST_CASE("More transport ticks produce smoother distribution", "[sugar]") {
     plant2.seed_mut()->chemical(ChemicalID::Sugar) = 10.0f;
     // 10 rounds of local transport
     for (int i = 0; i < 10; i++) {
-        plant2.for_each_node_mut([&](Node& n) { n.transport_chemicals(g); });
+        plant2.for_each_node_mut([&](Node& n) { n.transport_with_children(g); });
     }
 
     float child_sugar_1tick = 0.0f;
@@ -230,7 +228,7 @@ TEST_CASE("Sugar diffusion conserves total across many ticks", "[sugar]") {
 
         for (int t = 0; t < ticks; t++) {
             plant.for_each_node_mut([&](Node& n) {
-                n.transport_chemicals(g);
+                n.transport_with_children(g);
             });
         }
 
@@ -278,6 +276,8 @@ TEST_CASE("Starved non-seed nodes are pruned after max starvation ticks", "[suga
 
     uint32_t count_before = plant.node_count();
     child->starvation_ticks = 100; // way past max
+    // Zero all sugar so parent transport can't rescue the starving child
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
 
     WorldParams wp = default_world_params();
     wp.starvation_ticks_max = 50;
@@ -319,6 +319,7 @@ TEST_CASE("Subtree removal cleans up all descendants", "[sugar]") {
 
     // Starve A — should remove A, B, and C
     a->starvation_ticks = 100;
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
 
     WorldParams wp = default_world_params();
     wp.starvation_ticks_max = 50;
@@ -465,29 +466,37 @@ TEST_CASE("Sugar diffuses from high to low", "[sugar]") {
     plant.seed_mut()->chemical(ChemicalID::Sugar) = 100.0f;
     child->chemical(ChemicalID::Sugar) = 0.0f;
 
-    child->transport_chemicals(g);
+    plant.seed_mut()->transport_with_children(g);
 
     // Sugar should have flowed from seed to child
     REQUIRE(child->chemical(ChemicalID::Sugar) > 0.0f);
     REQUIRE(plant.seed()->chemical(ChemicalID::Sugar) < 100.0f);
 }
 
-TEST_CASE("Tick clamps sugar to cap", "[sugar]") {
+TEST_CASE("Transport conserves sugar — excess redistributes, not destroyed", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
     plant.seed_mut()->add_child(stem);
 
-    float cap = sugar_cap(*stem, g);
-    // Set sugar way above cap on the stem; zero everything else so
-    // diffusion from other nodes doesn't push the stem back above cap
+    // Give stem excess sugar, zero everything else
     plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-    stem->chemical(ChemicalID::Sugar) = cap * 10.0f;
+    stem->chemical(ChemicalID::Sugar) = 50.0f;
 
-    plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
+    float total_before = 0.0f;
+    plant.for_each_node([&](const Node& n) { total_before += n.chemical(ChemicalID::Sugar); });
 
-    REQUIRE(stem->chemical(ChemicalID::Sugar) <= cap + 1e-6f);
+    // Seed distributes with children — sugar flows from stem to seed via gradient
+    plant.seed_mut()->transport_with_children(g);
+
+    float total_after = 0.0f;
+    plant.for_each_node([&](const Node& n) { total_after += n.chemical(ChemicalID::Sugar); });
+
+    // Total sugar is conserved
+    REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
+    // Stem gave some sugar to seed
+    REQUIRE(stem->chemical(ChemicalID::Sugar) < 50.0f);
 }
 
 TEST_CASE("Senescing leaf produces no sugar", "[sugar]") {
@@ -531,7 +540,7 @@ TEST_CASE("Diffusion still conserves sugar when caps are not hit", "[sugar]") {
     // Run several rounds of local transport
     for (int i = 0; i < 10; i++) {
         plant.for_each_node_mut([&](Node& n) {
-            n.transport_chemicals(g);
+            n.transport_with_children(g);
         });
     }
 

@@ -8,7 +8,9 @@
 #include <unordered_map>
 #include <iostream>
 #include "engine/plant.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/node/node.h"
 #include "serialization/serializer.h"
 
@@ -110,8 +112,9 @@ void Renderer::draw_plant(const Plant& plant) {
     plant.for_each_node([&](const Node& node) {
         if (!node.parent) return;
 
-        // Skip drawing dormant axillary buds — there are many and they're invisible
-        if (node.type == NodeType::SHOOT_AXILLARY || node.type == NodeType::ROOT_AXILLARY) return;
+        // Skip drawing dormant meristems — there are many and they're invisible
+        if (auto* ap = node.as_apical()) { if (!ap->active) return; }
+        if (auto* ra = node.as_root_apical()) { if (!ra->active) return; }
 
         if (auto* leaf = node.as_leaf()) {
             glm::vec3 outward = glm::normalize(node.position - node.parent->position);
@@ -153,14 +156,10 @@ void Renderer::draw_plant(const Plant& plant) {
             float v = chemical_accessor_(node);
             color = heatmap(v / max_val);
         } else if (color_by_type_) {
-            if (node.type == NodeType::SHOOT_APICAL) {
+            if (node.type == NodeType::APICAL) {
                 color = glm::vec3(1.0f, 0.2f, 0.2f);   // red
-            } else if (node.type == NodeType::SHOOT_AXILLARY) {
-                color = glm::vec3(1.0f, 0.6f, 0.0f);   // orange
             } else if (node.type == NodeType::ROOT_APICAL) {
                 color = glm::vec3(0.2f, 0.4f, 1.0f);   // blue
-            } else if (node.type == NodeType::ROOT_AXILLARY) {
-                color = glm::vec3(0.6f, 0.2f, 0.8f);   // purple
             } else if (node.type == NodeType::STEM) {
                 glm::vec3 green(0.2f, 0.8f, 0.2f);
                 glm::vec3 brown(0.5f, 0.35f, 0.15f);

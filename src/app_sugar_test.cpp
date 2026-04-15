@@ -14,7 +14,7 @@
 #include <glm/geometric.hpp>
 #include "engine/plant.h"
 #include "engine/node/node.h"
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
@@ -186,7 +186,7 @@ static Plant build_seedling(const Genome& g) {
     Node* shoot = nullptr;
     Node* root_tip = nullptr;
     for (Node* c : seed->children) {
-        if (c->type == NodeType::SHOOT_APICAL) shoot = c;
+        if (c->type == NodeType::APICAL) shoot = c;
         if (c->type == NodeType::ROOT_APICAL) root_tip = c;
     }
 
@@ -223,7 +223,7 @@ static Plant build_medium(const Genome& g) {
     Node* shoot = nullptr;
     Node* root_tip = nullptr;
     for (Node* c : seed->children) {
-        if (c->type == NodeType::SHOOT_APICAL) shoot = c;
+        if (c->type == NodeType::APICAL) shoot = c;
         if (c->type == NodeType::ROOT_APICAL) root_tip = c;
     }
 
@@ -283,7 +283,7 @@ static Plant build_large(const Genome& g) {
     Node* shoot = nullptr;
     Node* root_tip = nullptr;
     for (Node* c : seed->children) {
-        if (c->type == NodeType::SHOOT_APICAL) shoot = c;
+        if (c->type == NodeType::APICAL) shoot = c;
         if (c->type == NodeType::ROOT_APICAL) root_tip = c;
     }
     auto& sc = seed->children;

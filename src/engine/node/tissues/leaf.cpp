@@ -1,4 +1,4 @@
-#include "engine/node/leaf_node.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/plant.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
@@ -12,7 +12,7 @@ LeafNode::LeafNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::LEAF, position, radius)
 {}
 
-void LeafNode::produce(Plant& plant, const WorldParams& world) {
+void LeafNode::tissue_tick(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
     // Gibberellin production: young leaves produce GA on themselves
@@ -46,10 +46,8 @@ void LeafNode::produce(Plant& plant, const WorldParams& world) {
             return;
         }
     }
-}
 
-void LeafNode::grow(Plant& plant, const WorldParams& world) {
-    const Genome& g = plant.genome();
+    // Growth
     phototropism(g, world);
     grow_size(g, world);
 }

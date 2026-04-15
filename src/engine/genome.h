@@ -37,6 +37,7 @@ struct Genome {
     uint32_t shoot_plastochron;       // ticks between node creation (time-based, like real meristems)
     float branch_angle;               // radians
     float thickening_rate;            // dm/hr — radial growth of interior nodes
+    float auxin_thickening_threshold; // auxin level for full-speed cambial growth (lower than branching threshold)
     float internode_elongation_rate;  // dm/hr — intercalary stretch of young internodes
     float max_internode_length;       // dm — max internode length (elongation target)
     uint32_t internode_maturation_ticks; // hours until internode stops elongating
@@ -141,6 +142,7 @@ inline Genome default_genome() {
         .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
         .branch_angle = 0.785f,             // ~45 degrees
         .thickening_rate = 0.00004f,        // ~3.5 mm radius/year
+        .auxin_thickening_threshold = 0.03f, // cambium responds to low auxin — mid-trunk gets near-full thickening
         .internode_elongation_rate = 0.004f, // dm/hr — intercalary stretch after creation
         .max_internode_length = 1.0f,       // 10 cm — elongation target
         .internode_maturation_ticks = 72,    // 3 days until lockout
