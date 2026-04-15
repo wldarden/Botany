@@ -8,6 +8,7 @@
 #include "engine/ethylene.h"
 #include "engine/perf_log.h"
 #include "engine/world_params.h"
+#include "engine/sugar.h"
 #include <algorithm>
 #include <unordered_set>
 
@@ -19,6 +20,7 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     // Seed node
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
     seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
+    seed->chemical(ChemicalID::Water) = water_cap(*seed, genome);
 
     // Bootstrap cytokinin: the embryo contains hormones throughout,
     // enough to start growth until leaves produce their own.

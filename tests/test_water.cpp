@@ -14,6 +14,13 @@
 using namespace botany;
 using Catch::Matchers::WithinAbs;
 
+TEST_CASE("Seed node starts with water", "[water]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    REQUIRE(plant.seed()->chemical(ChemicalID::Water) > 0.0f);
+}
+
 // === Water cap tests ===
 
 TEST_CASE("water_cap scales with stem volume", "[water]") {
