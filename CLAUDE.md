@@ -42,7 +42,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
 - **sugar.h/cpp** - `transport_sugar()` — sugar production (leaves), maintenance consumption, starvation pruning. Diffusion moved to `Node::transport_chemicals()`.
 - **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
-- **world_params.h** - `WorldParams` struct (light level, construction costs, sugar_production_rate, maintenance rates) — non-genetic physical constants
+- **world_params.h** - `WorldParams` struct (light level, construction costs, sugar_production_rate, maintenance rates, soil_moisture 0-1) — non-genetic physical constants
 - **plant.h/cpp** - `Plant` class owns all nodes, has root meristem cap (100). `Plant::tick()` orchestrates per-plant tick order: global chemical passes, then `tick_tree()` (recursive DFS walk from seed, snapshots children for safe reparenting, flushes removals). `queue_removal()` / `flush_removals()` for deferred node cleanup.
 - **engine.h/cpp** - `Engine` iterates plants and calls `plant.tick(world_params)`
 
@@ -165,6 +165,17 @@ Auxin flow through parent-child connections builds transport preference over tim
 
 **Lifecycle:** Biases transfer on `replace_child` (chain growth preserves branch history). New children start at 0, 0. Cleaned up on `die()`.
 
+## Water Model
+
+Water is a **persistent** capacity-based resource (like sugar):
+
+- **Absorbed** by all root tissue (`RootNode` + `RootApicalNode`) proportional to surface area and `soil_moisture`
+- **Lost** by leaves via transpiration (proportional to leaf area and light exposure) and photosynthesis water cost
+- **Transported** through the tree graph via the unified transport system with a slight upward bias
+- **No step-one effects** — water deficit does not gate growth or cause wilting (future enhancement)
+
+Surface area: `2 * pi * r * length` for root segments, `2 * pi * r * r` (hemisphere) for root apical tips.
+
 ## Tick Control Flow
 
 The recursive tick walks the tree from seed outward. Each node's `tick()`:
@@ -236,3 +247,13 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `structural_growth_rate` (0.005) - structural bias growth per tick when flux exceeds threshold (~8 days to reach 1.0)
 - `structural_max` (2.0) - cap on structural bias. At max: connection gets 1 + 2.0 = 3x weight
 - `canalization_weight` (1.0) - global scaling on bias effect. 0 = canalization disabled entirely
+- `water_absorption_rate` (0.05) - ml / (dm² root surface · hr) per unit soil moisture
+- `transpiration_rate` (0.04) - ml / (dm² leaf area · hr) at full light
+- `photosynthesis_water_ratio` (0.5) - ml water per g sugar produced
+- `water_storage_density_stem` (800.0) - ml / dm³ stem/root tissue
+- `water_storage_density_leaf` (3.0) - ml / dm² leaf area
+- `water_cap_meristem` (1.0) - ml fixed cap for meristems
+- `water_diffusion_rate` (0.9) - gradient responsiveness (faster than sugar's 0.8)
+- `water_bias` (0.05) - slight upward equilibrium shift
+- `water_base_transport` (0.2) - throughput floor (higher than sugar's 0.1)
+- `water_transport_scale` (4.0) - radius scaling on throughput
