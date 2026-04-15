@@ -68,4 +68,12 @@ void Shader::set_vec3(const std::string& name, const glm::vec3& vec) const {
     glUniform3fv(glGetUniformLocation(program_, name.c_str()), 1, glm::value_ptr(vec));
 }
 
+void Shader::set_float(const std::string& name, float val) const {
+    glUniform1f(glGetUniformLocation(program_, name.c_str()), val);
+}
+
+void Shader::set_int(const std::string& name, int val) const {
+    glUniform1i(glGetUniformLocation(program_, name.c_str()), val);
+}
+
 } // namespace botany

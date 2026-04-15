@@ -56,6 +56,7 @@ struct Genome {
     float leaf_growth_rate;           // dm/hr — how fast leaves grow from bud to max
     float leaf_bud_size;              // dm — initial size of a leaf bud
     float leaf_petiole_length;        // dm — stalk length holding leaf away from stem
+    float leaf_opacity;               // 0–1 — fraction of light blocked per leaf (0.85 blocks 85%, transmits 15%)
     float initial_radius;             // dm — stem radius at creation (~5mm)
     float root_initial_radius;        // dm — root radius at creation (~2.5mm)
     float tip_offset;                 // dm — small forward offset when chaining nodes
@@ -159,6 +160,7 @@ inline Genome default_genome() {
         .leaf_growth_rate = 0.005f,         // ~0.5 mm/hr — full size (1.5dm) in ~300 hrs (~12 days)
         .leaf_bud_size = 0.02f,             // 2 mm bud
         .leaf_petiole_length = 0.5f,        // 5 cm petiole (realistic for broad leaves)
+        .leaf_opacity = 0.85f,              // blocks 85%, transmits 15% — realistic for broadleaves
         .initial_radius = 0.05f,            // 5 mm
         .root_initial_radius = 0.025f,      // 2.5 mm
         .tip_offset = 0.01f,

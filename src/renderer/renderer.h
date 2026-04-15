@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include "renderer/shader.h"
 #include "renderer/camera.h"
+#include "renderer/light_system.h"
 #include "engine/light.h"
 
 struct GLFWwindow;
@@ -31,6 +32,8 @@ public:
     void set_color_by_type(bool enabled) { color_by_type_ = enabled; }
     void set_color_tint(float tint) { color_tint_ = tint; }  // 0-1 multiplier on all draw colors
 
+    LightSystem& light_system() { return light_system_; }
+
     void begin_frame();
     void draw_plant(const Plant& plant);
     void draw_snapshot(const TickSnapshot& snapshot);
@@ -43,6 +46,7 @@ private:
     GLFWwindow* window_ = nullptr;
     Shader shader_;
     OrbitCamera camera_;
+    LightSystem light_system_;
     int width_;
     int height_;
 

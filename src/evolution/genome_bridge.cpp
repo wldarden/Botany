@@ -66,6 +66,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "leaf_growth_rate",       g.leaf_growth_rate,       r, 0.0001f, 0.01f, p);
     reg(sg, "leaf_bud_size",          g.leaf_bud_size,          r, 0.005f,  0.1f, p);
     reg(sg, "leaf_petiole_length",   g.leaf_petiole_length,   r, 0.1f,    2.0f, p);
+    reg(sg, "leaf_opacity",           g.leaf_opacity,           r, 0.3f,    1.0f, p);
     reg(sg, "initial_radius",         g.initial_radius,         r, 0.01f,   0.2f, p);
     reg(sg, "root_initial_radius",    g.root_initial_radius,    r, 0.005f,  0.1f, p);
     reg(sg, "tip_offset",             g.tip_offset,             r, 0.001f,  0.1f, p);
@@ -154,6 +155,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     sg.add_linkage_group({"geometry", {
         "max_leaf_size", "leaf_growth_rate", "leaf_bud_size", "leaf_petiole_length",
+        "leaf_opacity",
         "initial_radius", "root_initial_radius", "tip_offset", "growth_noise",
         "leaf_phototropism_rate", "meristem_gravitropism_rate", "meristem_phototropism_rate",
         "leaf_abscission_ticks", "min_leaf_age_before_abscission"
@@ -245,6 +247,7 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.leaf_growth_rate        = sg.get("leaf_growth_rate");
     g.leaf_bud_size           = sg.get("leaf_bud_size");
     g.leaf_petiole_length     = sg.get("leaf_petiole_length");
+    g.leaf_opacity            = sg.get("leaf_opacity");
     g.initial_radius          = sg.get("initial_radius");
     g.root_initial_radius     = sg.get("root_initial_radius");
     g.tip_offset              = sg.get("tip_offset");
