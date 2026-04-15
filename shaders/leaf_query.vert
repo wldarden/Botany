@@ -11,6 +11,7 @@ uniform mat4  u_light_pv;
 uniform float u_min_y;
 uniform float u_max_y;
 uniform float u_inv_output_width;  // 1.0 / (n_leaves * SAMPLES_PER_LEAF)
+uniform vec3  u_sun_dir;           // normalized direction light travels (toward scene)
 
 out vec2  v_light_uv;     // [0,1]² in shadow map space → which texel column/row to sample
 out float v_leaf_depth;   // depth_01 for this sample point
@@ -21,8 +22,9 @@ void main() {
 
     v_light_uv = ndc.xy * 0.5 + 0.5;
 
+    float depth = dot(a_sample_pos, -u_sun_dir);
     float range = max(u_max_y - u_min_y, 0.01);
-    v_leaf_depth = clamp((u_max_y - a_sample_pos.y) / range, 0.0, 1.0);
+    v_leaf_depth = clamp((u_max_y - depth) / range, 0.0, 1.0);
 
     // Map output_index to a pixel position in the 1D output texture.
     // NDC x: center of texel a_output_index in [0, output_width).

@@ -150,6 +150,10 @@ void LightSystem::collect_casters(const std::vector<std::unique_ptr<Plant>>& pla
     caster_verts_.clear();
     float lo = +1e9f, hi = -1e9f;
 
+    // Depth along the sun axis: dot(pos, -sun_dir). Works for any sun angle.
+    glm::vec3 sun_norm = glm::normalize(sun_direction);
+    auto sun_depth = [&](const glm::vec3& p) { return glm::dot(p, -sun_norm); };
+
     for (const auto& plant : plants) {
         float opacity = plant->genome().leaf_opacity;
         plant->for_each_node([&](const Node& node) {
@@ -170,8 +174,9 @@ void LightSystem::collect_casters(const std::vector<std::unique_ptr<Plant>>& pla
                 // pts[4] = center (not emitted as geometry, only used for query)
                 auto push = [&](const glm::vec3& p) {
                     caster_verts_.push_back({p.x, p.y, p.z, opacity});
-                    lo = std::min(lo, p.y);
-                    hi = std::max(hi, p.y);
+                    float d = sun_depth(p);
+                    lo = std::min(lo, d);
+                    hi = std::max(hi, d);
                 };
                 push(pts[0]); push(pts[1]); push(pts[2]);
                 push(pts[0]); push(pts[2]); push(pts[3]);
@@ -198,8 +203,9 @@ void LightSystem::collect_casters(const std::vector<std::unique_ptr<Plant>>& pla
 
                 auto push = [&](const glm::vec3& p) {
                     caster_verts_.push_back({p.x, p.y, p.z, 1.0f});
-                    lo = std::min(lo, p.y);
-                    hi = std::max(hi, p.y);
+                    float d = sun_depth(p);
+                    lo = std::min(lo, d);
+                    hi = std::max(hi, d);
                 };
                 push(c0); push(c1); push(c2);
                 push(c0); push(c2); push(c3);
@@ -284,18 +290,22 @@ void LightSystem::compute_leaf_corners(const Node& node,
 // ---------------------------------------------------------------------------
 
 void LightSystem::update_light_matrices() {
-    // Eye just above the highest caster so the ortho near/far planes actually
-    // encompass the scene.  With eye at y=100 and near=0/far=6 the objects end
-    // up at view-z ≈ -95 to -100, entirely outside the frustum, so everything
-    // was silently clipped and nothing was ever written to the slice textures.
-    float eye_y      = max_y_ + 1.0f;          // 1 unit above tallest caster
-    float near_plane = 1.0f;                    // eye to top of canopy
-    float far_plane  = eye_y - min_y_ + 1.0f;  // eye to below deepest root + margin
+    // min_y_/max_y_ are depth along the sun axis (dot(pos, -sun_norm)).
+    // Position eye along -sun_direction at depth = max_y_ + 1.
+    glm::vec3 sun_norm = glm::normalize(sun_direction);
+    float eye_depth  = max_y_ + 1.0f;
+    float near_plane = 1.0f;
+    float far_plane  = eye_depth - min_y_ + 1.0f;
 
-    glm::vec3 sun_pos(0.0f, eye_y, 0.0f);
-    light_view_ = glm::lookAt(sun_pos,
-                              glm::vec3(0.0f, 0.0f, 0.0f),
-                              glm::vec3(0.0f, 0.0f, -1.0f));
+    // Eye sits along the incoming sun ray from the scene origin.
+    glm::vec3 sun_pos = -sun_norm * eye_depth;
+
+    // Up vector: avoid being parallel to sun_norm. Prefer world Z; fall back to X.
+    glm::vec3 up(0.0f, 0.0f, -1.0f);
+    if (std::abs(glm::dot(sun_norm, up)) > 0.9f)
+        up = glm::vec3(1.0f, 0.0f, 0.0f);
+
+    light_view_ = glm::lookAt(sun_pos, glm::vec3(0.0f), up);
     light_proj_ = glm::ortho(-SCENE_HALF, SCENE_HALF, -SCENE_HALF, SCENE_HALF,
                              near_plane, far_plane);
 }
@@ -346,6 +356,7 @@ void LightSystem::shadow_collect_pass() {
     shadow_shader_.set_mat4("u_light_pv", light_pv);
     shadow_shader_.set_float("u_min_y", min_y_);
     shadow_shader_.set_float("u_max_y", max_y_);
+    shadow_shader_.set_vec3("u_sun_dir", glm::normalize(sun_direction));
 
     glViewport(0, 0, SHADOW_RES, SHADOW_RES);
     glDisable(GL_DEPTH_TEST);
@@ -386,6 +397,7 @@ void LightSystem::leaf_query_pass() {
     query_shader_.set_float("u_min_y", min_y_);
     query_shader_.set_float("u_max_y", max_y_);
     query_shader_.set_float("u_inv_output_width", 1.0f / static_cast<float>(n_samples));
+    query_shader_.set_vec3("u_sun_dir", glm::normalize(sun_direction));
 
     // Bind the slice array texture on unit 0.
     glActiveTexture(GL_TEXTURE0);

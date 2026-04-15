@@ -38,8 +38,9 @@ public:
     static constexpr int SAMPLES_PER_LEAF = 5;    // sample points per leaf (center + 4 corners)
     static constexpr float SCENE_HALF   = 12.0f;  // scene footprint: ±12 dm = 24 dm × 24 dm
 
-    // Future: change to any unit direction for oblique sun angles.
-    glm::vec3 sun_direction = glm::vec3(0.0f, -1.0f, 0.0f);  // currently always vertical
+    // Sun direction: unit vector pointing TOWARD the scene (downward = overhead sun).
+    // Change to any direction for oblique angles / day-night cycle.
+    glm::vec3 sun_direction = glm::normalize(glm::vec3(-1.0f, -2.0f, 0.5f));  // angled test: ~60° from horizontal
 
     bool init(const std::string& shader_dir);
     void shutdown();
