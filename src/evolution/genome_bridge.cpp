@@ -135,6 +135,14 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "stress_gravitropism_boost",       g.stress_gravitropism_boost,       r, 0.0f,  5.0f, p);
     reg(sg, "elastic_recovery_rate",           g.elastic_recovery_rate,           r, 0.0f,  0.02f, p);
 
+    // --- Canalization group (6 genes) ---
+    reg(sg, "transient_gain",           g.transient_gain,           r, 0.0f, 20.0f, p);
+    reg(sg, "transient_rate",           g.transient_rate,           r, 0.0f, 1.0f, p);
+    reg(sg, "structural_threshold",     g.structural_threshold,     r, 0.0f, 1.0f, p);
+    reg(sg, "structural_growth_rate",   g.structural_growth_rate,   r, 0.0f, 0.1f, p);
+    reg(sg, "structural_max",           g.structural_max,           r, 0.0f, 10.0f, p);
+    reg(sg, "canalization_weight",      g.canalization_weight,      r, 0.0f, 5.0f, p);
+
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
         "apical_auxin_baseline", "apical_growth_auxin_multiplier",
@@ -207,6 +215,12 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "stress_hormone_decay_rate",
         "stress_thickening_boost", "stress_elongation_inhibition", "stress_gravitropism_boost",
         "elastic_recovery_rate"
+    }});
+
+    sg.add_linkage_group({"canalization", {
+        "transient_gain", "transient_rate",
+        "structural_threshold", "structural_growth_rate", "structural_max",
+        "canalization_weight"
     }});
 
     return sg;
@@ -330,6 +344,14 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.stress_elongation_inhibition    = sg.get("stress_elongation_inhibition");
     g.stress_gravitropism_boost       = sg.get("stress_gravitropism_boost");
     g.elastic_recovery_rate           = sg.get("elastic_recovery_rate");
+
+    // Canalization
+    g.transient_gain           = sg.get("transient_gain");
+    g.transient_rate           = sg.get("transient_rate");
+    g.structural_threshold     = sg.get("structural_threshold");
+    g.structural_growth_rate   = sg.get("structural_growth_rate");
+    g.structural_max           = sg.get("structural_max");
+    g.canalization_weight      = sg.get("canalization_weight");
 
     return g;
 }
