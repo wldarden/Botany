@@ -8,7 +8,8 @@ class LeafNode : public Node {
 public:
     // --- Leaf state ---
     float leaf_size = 0.0f;
-    float light_exposure = 1.0f;
+    float light_exposure = 1.0f;               // average of 5 GPU samples (used by sim)
+    float sample_exposure[5] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};  // per-corner GPU values (used by renderer)
     uint32_t senescence_ticks = 0;
     uint32_t deficit_ticks = 0;  // consecutive ticks where maintenance > production
     glm::vec3 facing = glm::vec3(0.0f, 1.0f, 0.0f);  // blade orientation (independent of attachment point)
