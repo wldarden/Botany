@@ -82,6 +82,12 @@ void Node::sync_world_position() {
     if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
         position = parent ? parent->position : glm::vec3(0.0f);
     }
+    // Shoot-side tissue can't penetrate the ground
+    bool is_underground_type = (type == NodeType::ROOT || type == NodeType::ROOT_APICAL);
+    if (!is_underground_type && position.y < 0.0f) {
+        offset.y -= position.y;  // adjust offset so position lands at y=0
+        position.y = 0.0f;
+    }
 }
 
 bool Node::handle_energy_cost(Plant& plant, const WorldParams& world) {
@@ -184,15 +190,18 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
     float break_stress = g.wood_density * world.break_strength_factor;
     float droop_threshold = break_stress * g.wood_flexibility;
 
-    // Break check — ground-anchored stems can't snap
-    bool can_break = position.y > world.ground_support_height && parent && parent->parent;
-    if (can_break && stress >= break_stress) {
+    // Ground support — stems at or below ground level rest on the surface,
+    // transferring their load to the ground. No droop, no break.
+    bool ground_supported = position.y <= world.ground_support_height;
+
+    // Break check — need at least a grandparent (don't snap the first internode)
+    if (!ground_supported && stress >= break_stress && parent && parent->parent) {
         die(plant);
         return true;
     }
 
-    // Droop — rotate offset toward gravity
-    if (stress > droop_threshold) {
+    // Droop — rotate offset toward gravity (ground-supported stems don't droop)
+    if (!ground_supported && stress > droop_threshold) {
         float excess = (stress - droop_threshold) / (break_stress - droop_threshold);
         float droop_angle = std::min(excess * world.droop_rate, world.droop_rate);
         float len = glm::length(offset);
