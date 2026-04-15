@@ -33,10 +33,11 @@ inline float compute_transport_flow(
     float child_conc  = has_cap ? child_val / child_cap   : child_val;
     float parent_conc = has_cap ? parent_val / parent_cap : parent_val;
 
-    // Shifted equilibrium: bias > 0 pushes toward tips, < 0 toward root.
-    // (parent_conc - child_conc) is positive when parent has more → child should receive.
-    // Subtracting bias: positive bias makes it easier for child to receive (acropetal).
-    float diff = (parent_conc - child_conc) - params.bias;
+    // Shifted equilibrium: bias < 0 pushes toward root (basipetal, e.g. auxin),
+    //                      bias > 0 pushes toward tips (acropetal, e.g. cytokinin).
+    // (parent_conc - child_conc) is positive when parent has more → child receives.
+    // Adding bias: negative bias makes diff more negative → child gives more easily (basipetal).
+    float diff = (parent_conc - child_conc) + params.bias;
     float desired = diff * params.diffusion_rate;
 
     // Scale back to absolute units for capped chemicals
