@@ -25,6 +25,16 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "auxin_sugar_half_saturation", g.auxin_sugar_half_saturation, r, 0.01f, 5.0f, p);
     reg(sg, "auxin_age_half_life",        g.auxin_age_half_life,        r, 24.0f, 4320.0f, p);
     reg(sg, "auxin_bias",                g.auxin_bias,                r, -1.0f, 0.0f, p);
+    reg(sg, "stem_auxin_max_boost",              g.stem_auxin_max_boost,              r, -1.0f, 2.0f, p);
+    reg(sg, "stem_auxin_half_saturation",        g.stem_auxin_half_saturation,        r, 0.01f, 1.0f, p);
+    reg(sg, "root_auxin_max_boost",              g.root_auxin_max_boost,              r, -1.0f, 2.0f, p);
+    reg(sg, "root_auxin_half_saturation",        g.root_auxin_half_saturation,        r, 0.01f, 1.0f, p);
+    reg(sg, "leaf_auxin_max_boost",              g.leaf_auxin_max_boost,              r, -1.0f, 2.0f, p);
+    reg(sg, "leaf_auxin_half_saturation",        g.leaf_auxin_half_saturation,        r, 0.01f, 1.0f, p);
+    reg(sg, "apical_auxin_max_boost",            g.apical_auxin_max_boost,            r, -1.0f, 2.0f, p);
+    reg(sg, "apical_auxin_half_saturation",      g.apical_auxin_half_saturation,      r, 0.01f, 1.0f, p);
+    reg(sg, "root_apical_auxin_max_boost",       g.root_apical_auxin_max_boost,       r, -1.0f, 2.0f, p);
+    reg(sg, "root_apical_auxin_half_saturation", g.root_apical_auxin_half_saturation, r, 0.01f, 1.0f, p);
 
     // --- Cytokinin group (6 genes) ---
     reg(sg, "cytokinin_production_rate",  g.cytokinin_production_rate,  r, 0.01f, 2.0f, p);
@@ -127,7 +137,12 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "auxin_production_rate", "auxin_diffusion_rate",
         "auxin_decay_rate", "auxin_threshold",
         "auxin_shade_boost", "auxin_sugar_half_saturation", "auxin_age_half_life",
-        "auxin_bias"
+        "auxin_bias",
+        "stem_auxin_max_boost", "stem_auxin_half_saturation",
+        "root_auxin_max_boost", "root_auxin_half_saturation",
+        "leaf_auxin_max_boost", "leaf_auxin_half_saturation",
+        "apical_auxin_max_boost", "apical_auxin_half_saturation",
+        "root_apical_auxin_max_boost", "root_apical_auxin_half_saturation"
     }});
 
     sg.add_linkage_group({"cytokinin", {
@@ -208,6 +223,16 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.auxin_sugar_half_saturation  = sg.get("auxin_sugar_half_saturation");
     g.auxin_age_half_life          = sg.get("auxin_age_half_life");
     g.auxin_bias                   = sg.get("auxin_bias");
+    g.stem_auxin_max_boost              = sg.get("stem_auxin_max_boost");
+    g.stem_auxin_half_saturation        = sg.get("stem_auxin_half_saturation");
+    g.root_auxin_max_boost              = sg.get("root_auxin_max_boost");
+    g.root_auxin_half_saturation        = sg.get("root_auxin_half_saturation");
+    g.leaf_auxin_max_boost              = sg.get("leaf_auxin_max_boost");
+    g.leaf_auxin_half_saturation        = sg.get("leaf_auxin_half_saturation");
+    g.apical_auxin_max_boost            = sg.get("apical_auxin_max_boost");
+    g.apical_auxin_half_saturation      = sg.get("apical_auxin_half_saturation");
+    g.root_apical_auxin_max_boost       = sg.get("root_apical_auxin_max_boost");
+    g.root_apical_auxin_half_saturation = sg.get("root_apical_auxin_half_saturation");
 
     // Cytokinin
     g.cytokinin_production_rate   = sg.get("cytokinin_production_rate");
