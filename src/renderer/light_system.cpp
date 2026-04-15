@@ -175,21 +175,34 @@ void LightSystem::collect_casters(const std::vector<std::unique_ptr<Plant>>& pla
                 };
                 push(pts[0]); push(pts[1]); push(pts[2]);
                 push(pts[0]); push(pts[2]); push(pts[3]);
-            } else {
-                // Stem/root node: emit a billboard quad facing the sun.
-                // For vertical sun, this is just a horizontal disc approximated
-                // as 2 triangles spanning ±radius in XZ.
+            } else if (node.parent) {
+                // Stem/root: emit a ribbon spanning the full segment parent→node
+                // with width 2*radius. For a vertical sun the shadow footprint is
+                // this ribbon's projection onto the XZ plane.
                 float r = node.radius;
-                glm::vec3 p = node.position;
-                // Simple horizontal quad: 2 triangles of a square with side 2r
-                auto push = [&](float dx, float dz) {
-                    float ny = p.y;
-                    caster_verts_.push_back({p.x + dx, ny, p.z + dz, 1.0f});
-                    lo = std::min(lo, ny);
-                    hi = std::max(hi, ny);
+                glm::vec3 pa = node.parent->position;
+                glm::vec3 pb = node.position;
+
+                // Perpendicular direction in XZ (width axis of the ribbon).
+                glm::vec2 seg2d(pb.x - pa.x, pb.z - pa.z);
+                float seg_len_2d = glm::length(seg2d);
+                glm::vec2 perp2d = (seg_len_2d > 1e-4f)
+                    ? glm::vec2(-seg2d.y, seg2d.x) / seg_len_2d
+                    : glm::vec2(1.0f, 0.0f);
+                glm::vec3 perp(perp2d.x * r, 0.0f, perp2d.y * r);
+
+                glm::vec3 c0 = pa - perp;
+                glm::vec3 c1 = pa + perp;
+                glm::vec3 c2 = pb + perp;
+                glm::vec3 c3 = pb - perp;
+
+                auto push = [&](const glm::vec3& p) {
+                    caster_verts_.push_back({p.x, p.y, p.z, 1.0f});
+                    lo = std::min(lo, p.y);
+                    hi = std::max(hi, p.y);
                 };
-                push(-r, -r); push(+r, -r); push(+r, +r);
-                push(-r, -r); push(+r, +r); push(-r, +r);
+                push(c0); push(c1); push(c2);
+                push(c0); push(c2); push(c3);
             }
         });
     }

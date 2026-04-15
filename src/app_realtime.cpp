@@ -184,23 +184,48 @@ static const Node* pick_node(const Plant& plant, const OrbitCamera& camera,
     const Node* closest = nullptr;
     float closest_ray_dist = FLT_MAX;
 
-    plant.for_each_node([&](const Node& node) {
-        glm::vec3 test_pos = node.position;
-        float effective_radius = node.radius;
-        if (auto* leaf = node.as_leaf()) {
-            if (leaf->leaf_size > 0.0f)
-                effective_radius = leaf->leaf_size * 0.5f;
+    // Min distance from ray to segment [seg_a, seg_b].
+    // Handles the segment as a whole, not just its endpoints.
+    auto ray_seg_dist = [&](glm::vec3 seg_a, glm::vec3 seg_b) -> float {
+        glm::vec3 e = seg_b - seg_a;
+        float e_len2 = glm::dot(e, e);
+        if (e_len2 < 1e-8f) {
+            float t = std::max(0.0f, glm::dot(seg_a - ray_origin, ray_dir));
+            return glm::length(ray_origin + t * ray_dir - seg_a);
         }
+        glm::vec3 w = ray_origin - seg_a;
+        float b    = glm::dot(ray_dir, e);
+        float ew   = glm::dot(w, e);
+        float dw   = glm::dot(ray_dir, w);
+        float denom = e_len2 - b * b;
+        float s = (std::abs(denom) < 1e-7f) ? 0.0f
+                : glm::clamp((ew - b * dw) / denom, 0.0f, 1.0f);
+        glm::vec3 seg_pt = seg_a + s * e;
+        float t = std::max(0.0f, glm::dot(seg_pt - ray_origin, ray_dir));
+        return glm::length(ray_origin + t * ray_dir - seg_pt);
+    };
 
-        glm::vec3 to_node = test_pos - ray_origin;
-        float t = glm::dot(to_node, ray_dir);
-        if (t < 0.0f) return;
+    plant.for_each_node([&](const Node& node) {
+        float dist, pick_radius;
 
-        glm::vec3 closest_on_ray = ray_origin + ray_dir * t;
-        float dist = glm::length(test_pos - closest_on_ray);
-
-        // Pick radius: generous for tiny nodes, proportional for larger ones
-        float pick_radius = std::max(effective_radius * 2.0f, 0.15f);
+        bool is_segment = node.parent &&
+                          (node.type == NodeType::STEM || node.type == NodeType::ROOT);
+        if (is_segment) {
+            // Test the full segment parent→node, not just the tip.
+            dist = ray_seg_dist(node.parent->position, node.position);
+            pick_radius = std::max(node.radius * 3.0f, 0.05f);
+        } else {
+            // Point/sphere test for leaves and meristems.
+            glm::vec3 to_node = node.position - ray_origin;
+            float t = glm::dot(to_node, ray_dir);
+            if (t < 0.0f) return;
+            dist = glm::length(node.position - (ray_origin + ray_dir * t));
+            float eff_r = node.radius;
+            if (auto* leaf = node.as_leaf()) {
+                if (leaf->leaf_size > 0.0f) eff_r = leaf->leaf_size * 0.5f;
+            }
+            pick_radius = std::max(eff_r * 2.0f, 0.15f);
+        }
 
         if (dist < pick_radius && dist < closest_ray_dist) {
             closest_ray_dist = dist;
