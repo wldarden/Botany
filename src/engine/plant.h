@@ -23,7 +23,7 @@ public:
     uint32_t node_count() const { return static_cast<uint32_t>(nodes_.size()); }
 
     uint32_t root_meristem_count() const { return root_meristem_count_; }
-    static constexpr uint32_t max_root_meristems = 100;
+    static constexpr uint32_t max_root_meristems = 10000;
 
     Node* create_node(NodeType type, glm::vec3 position, float radius);
 

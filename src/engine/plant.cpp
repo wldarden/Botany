@@ -20,7 +20,7 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     // Seed node
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
     seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
-    seed->chemical(ChemicalID::Water) = water_cap(*seed, genome);
+    seed->chemical(ChemicalID::Water) = genome.seed_sugar;  // reasonable starting reserve
 
     // Bootstrap cytokinin: the embryo contains hormones throughout,
     // enough to start growth until leaves produce their own.

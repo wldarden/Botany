@@ -227,8 +227,8 @@ inline Genome default_genome() {
         .sugar_cap_meristem = 2.0f,           // meristem tips — must hold enough sugar for active growth
 
         // Water economy
-        .water_absorption_rate = 0.05f,          // ml / (dm² · hr) — moderate absorption
-        .transpiration_rate = 0.04f,             // ml / (dm² · hr) — slightly less than absorption
+        .water_absorption_rate = 0.5f,           // ml / (dm² · hr) — roots must keep up with full canopy transpiration
+        .transpiration_rate = 0.04f,             // ml / (dm² · hr) — stomatal water loss
         .photosynthesis_water_ratio = 0.5f,      // 0.5 ml water per g sugar (small cost)
         .water_storage_density_stem = 800.0f,    // ml / dm³ — wood is ~80% water by volume
         .water_storage_density_leaf = 3.0f,      // ml / dm² — leaves hold water in vacuoles
