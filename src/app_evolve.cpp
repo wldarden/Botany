@@ -53,6 +53,7 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "leaf_growth_rate=" << g.leaf_growth_rate << "\n";
     out << "leaf_bud_size=" << g.leaf_bud_size << "\n";
     out << "leaf_petiole_length=" << g.leaf_petiole_length << "\n";
+    out << "leaf_opacity=" << g.leaf_opacity << "\n";
     out << "initial_radius=" << g.initial_radius << "\n";
     out << "root_initial_radius=" << g.root_initial_radius << "\n";
     out << "tip_offset=" << g.tip_offset << "\n";

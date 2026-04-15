@@ -96,6 +96,7 @@ add_library(botany_renderer STATIC
     src/renderer/shader.cpp
     src/renderer/camera.cpp
     src/renderer/renderer.cpp
+    src/renderer/light_system.cpp
 )
 target_include_directories(botany_renderer PUBLIC src)
 target_link_libraries(botany_renderer PUBLIC botany_engine glad_gl glfw glm::glm)

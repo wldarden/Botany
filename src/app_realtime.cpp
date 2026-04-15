@@ -77,6 +77,7 @@ static Genome load_genome_file(const std::string& path) {
     get_f("leaf_growth_rate", g.leaf_growth_rate);
     get_f("leaf_bud_size", g.leaf_bud_size);
     get_f("leaf_petiole_length", g.leaf_petiole_length);
+    get_f("leaf_opacity", g.leaf_opacity);
     get_f("initial_radius", g.initial_radius);
     get_f("root_initial_radius", g.root_initial_radius);
     get_f("tip_offset", g.tip_offset);
@@ -254,6 +255,11 @@ int main(int argc, char* argv[]) {
     }
     g_renderer = &renderer;
 
+    // If GPU shadow system initialized, disable the CPU fallback so they don't fight.
+    if (renderer.light_system().is_initialized()) {
+        engine.world_params_mut().cpu_light_enabled = false;
+    }
+
     if (!color_chemical.empty()) {
         if (color_chemical == "type") {
             renderer.set_color_by_type(true);
@@ -341,6 +347,13 @@ int main(int argc, char* argv[]) {
             steps_remaining--;
         }
 
+        // GPU light update — every 24 ticks (once per sim-day)
+        static int last_light_update = 0;
+        if (renderer.light_system().is_initialized() && (total_ticks - last_light_update) >= 24) {
+            last_light_update = total_ticks;
+            renderer.light_system().update(engine.all_plants());
+        }
+
         // ImGui
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -415,6 +428,12 @@ int main(int argc, char* argv[]) {
         ImGui::SliderFloat("Light Level", &engine.world_params_mut().light_level, 0.0f, 2.0f);
         static bool show_shadow_map = false;
         ImGui::Checkbox("Show Shadow Map", &show_shadow_map);
+        static bool show_gpu_shadow_debug = false;
+        static int debug_slice_idx = 0;
+        ImGui::Checkbox("GPU Shadow Debug", &show_gpu_shadow_debug);
+        if (show_gpu_shadow_debug && renderer.light_system().is_initialized()) {
+            ImGui::SliderInt("Slice", &debug_slice_idx, 0, LightSystem::NUM_SLICES - 1);
+        }
         ImGui::SeparatorText("Time");
         if (ImGui::Button("Step 1")) {
             playing = false;
@@ -897,6 +916,9 @@ int main(int argc, char* argv[]) {
         renderer.draw_plant(engine.get_plant(plant_id));
         if (g_hovered_node) renderer.draw_highlight(*g_hovered_node);
         if (g_selected_node && g_selected_node != g_hovered_node) renderer.draw_highlight(*g_selected_node);
+        if (show_gpu_shadow_debug && renderer.light_system().is_initialized()) {
+            renderer.light_system().draw_debug_slice(debug_slice_idx);
+        }
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         renderer.end_frame();
     }

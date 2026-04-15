@@ -29,6 +29,7 @@ public:
 
     uint32_t get_tick() const { return tick_; }
     uint32_t plant_count() const { return static_cast<uint32_t>(plants_.size()); }
+    const std::vector<std::unique_ptr<Plant>>& all_plants() const { return plants_; }
 
     const WorldParams& world_params() const { return world_params_; }
     WorldParams& world_params_mut() { return world_params_; }

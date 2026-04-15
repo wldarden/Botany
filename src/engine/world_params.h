@@ -42,6 +42,7 @@ struct WorldParams {
     float light_cell_size         = 0.075f;     // dm — shadow map cell size (smaller = higher resolution, more cells)
     glm::vec3 light_direction     = glm::vec3(0.0f, 1.0f, 0.0f); // unit vector pointing TOWARD light source
     uint32_t light_update_interval = 10;  // ticks between shadow map recomputation
+    bool cpu_light_enabled        = true;  // set false when GPU LightSystem is active
 
     // Stress physics
     float gravity = 9.81f;                  // m/s² — gravitational acceleration

@@ -44,6 +44,12 @@ bool Renderer::init(int width, int height, const std::string& shader_dir) {
         return false;
     }
 
+    // Report actual context version — macOS may give us less than we asked for.
+    const char* gl_version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+    const char* gl_renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+    std::cout << "OpenGL: " << (gl_version ? gl_version : "unknown")
+              << "  Renderer: " << (gl_renderer ? gl_renderer : "unknown") << std::endl;
+
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
 
@@ -52,10 +58,16 @@ bool Renderer::init(int width, int height, const std::string& shader_dir) {
     }
 
     setup_ground();
+
+    if (!light_system_.init(shader_dir)) {
+        std::cerr << "Warning: LightSystem GPU shadows unavailable" << std::endl;
+    }
+
     return true;
 }
 
 void Renderer::shutdown() {
+    light_system_.shutdown();
     if (ground_vao_) { glDeleteVertexArrays(1, &ground_vao_); ground_vao_ = 0; }
     if (ground_vbo_) { glDeleteBuffers(1, &ground_vbo_); ground_vbo_ = 0; }
     if (window_) { glfwDestroyWindow(window_); window_ = nullptr; }

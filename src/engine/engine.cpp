@@ -15,10 +15,13 @@ void Engine::tick() {
 
     // World-level light computation — skip on non-update ticks for performance.
     // Light/shadow changes slowly; recomputing every tick is wasteful.
-    uint32_t interval = std::max(1u, world_params_.light_update_interval);
-    if (tick_ % interval == 0) {
-        ScopedTimer t(perf_log_.stats().light_ms);
-        compute_light_exposure(plants_, world_params_, &shadow_map_);
+    // Skipped entirely when the GPU LightSystem is driving light_exposure instead.
+    if (world_params_.cpu_light_enabled) {
+        uint32_t interval = std::max(1u, world_params_.light_update_interval);
+        if (tick_ % interval == 0) {
+            ScopedTimer t(perf_log_.stats().light_ms);
+            compute_light_exposure(plants_, world_params_, &shadow_map_);
+        }
     }
 
     {
