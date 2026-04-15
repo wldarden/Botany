@@ -90,6 +90,7 @@ bool Node::handle_energy_cost(Plant& plant, const WorldParams& world) {
 
 void Node::update_chemicals(const Genome& g) {
     transport_with_children(g);
+    update_canalization(g);
     decay_chemicals(g);
 }
 
@@ -288,6 +289,8 @@ float Node::maintenance_cost(const WorldParams& /*world*/) const {
 void Node::transport_with_children(const Genome& g) {
     if (children.empty()) return;
 
+    last_auxin_flux.clear();
+
     float ref_radius = g.initial_radius;
     float parent_cap_sugar = sugar_cap(*this, g);
 
@@ -370,6 +373,10 @@ void Node::transport_with_children(const Genome& g) {
             float give = -cf.desired;
             cf.child->chemical(dp.id) -= give;
             parent_val += give;
+            // Capture auxin flux for canalization
+            if (dp.id == ChemicalID::Auxin) {
+                last_auxin_flux[cf.child] += give;
+            }
         }
         chemical(dp.id) = parent_val;
 
@@ -417,6 +424,9 @@ void Node::transport_with_children(const Genome& g) {
                 available -= actual;
                 r.headroom -= actual;
                 if (r.headroom < 1e-8f) any_filled = true;
+                if (dp.id == ChemicalID::Auxin) {
+                    last_auxin_flux[r.child] += actual;
+                }
             }
 
             if (!any_filled) break; // everyone got their share, done
@@ -429,6 +439,27 @@ void Node::transport_with_children(const Genome& g) {
         }
 
         chemical(dp.id) = available;
+    }
+}
+
+void Node::update_canalization(const Genome& g) {
+    for (Node* child : children) {
+        // Get auxin flux for this child (0 if none recorded)
+        float flux = 0.0f;
+        auto it = last_auxin_flux.find(child);
+        if (it != last_auxin_flux.end()) flux = it->second;
+
+        // Transient bias: exponential chase toward flux-derived target
+        float target = flux * g.transient_gain;
+        float& flow_bias = auxin_flow_bias[child];
+        flow_bias += (target - flow_bias) * g.transient_rate;
+
+        // Structural bias: slow ratchet, never decays
+        float& struct_bias = structural_flow_bias[child];
+        if (flux > g.structural_threshold) {
+            struct_bias += g.structural_growth_rate;
+        }
+        struct_bias = std::min(struct_bias, g.structural_max);
     }
 }
 

@@ -215,3 +215,135 @@ TEST_CASE("Canalization: transport with biases doesn't break child-to-parent flo
     REQUIRE(childA->chemical(ChemicalID::Auxin) < 5.0f);
     REQUIRE(childB->chemical(ChemicalID::Auxin) < 5.0f);
 }
+
+TEST_CASE("Canalization: transient bias builds from auxin flux", "[canalization]") {
+    Genome g = default_genome();
+    g.transient_gain = 2.0f;
+    g.transient_rate = 0.5f;  // fast for testing
+    g.canalization_weight = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world_params();
+
+    // Give shoot apical lots of sugar so it produces auxin and grows
+    for (int i = 0; i < 10; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant.tick(world);
+    }
+
+    // The seed should have non-zero transient bias toward the shoot apical child
+    bool found_nonzero_bias = false;
+    Node* seed = plant.seed_mut();
+    for (auto& [child, bias] : seed->auxin_flow_bias) {
+        if (bias > 0.01f) found_nonzero_bias = true;
+    }
+    REQUIRE(found_nonzero_bias);
+}
+
+TEST_CASE("Canalization: transient bias decays without flux", "[canalization]") {
+    Genome g = default_genome();
+    g.transient_gain = 2.0f;
+    g.transient_rate = 0.5f;
+    g.apical_auxin_baseline = 0.0f;  // no auxin production
+    g.canalization_weight = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* seed = plant.seed_mut();
+    Node* child = nullptr;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::APICAL) { child = c; break; }
+    }
+    REQUIRE(child != nullptr);
+
+    // Manually set a transient bias
+    seed->auxin_flow_bias[child] = 1.0f;
+
+    // Tick with no auxin production — bias should decay toward 0
+    WorldParams world = default_world_params();
+    for (int i = 0; i < 10; i++) {
+        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+        plant.tick(world);
+    }
+
+    // Bias should have decayed significantly (target=0, rate=0.5)
+    REQUIRE(seed->auxin_flow_bias[child] < 0.1f);
+}
+
+TEST_CASE("Canalization: structural bias builds with sustained flux", "[canalization]") {
+    Genome g = default_genome();
+    g.structural_threshold = 0.01f;  // low for testing
+    g.structural_growth_rate = 0.1f; // fast for testing
+    g.structural_max = 5.0f;
+    g.canalization_weight = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world_params();
+
+    for (int i = 0; i < 10; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+        });
+        plant.tick(world);
+    }
+
+    bool found_structural = false;
+    Node* seed = plant.seed_mut();
+    for (auto& [child, bias] : seed->structural_flow_bias) {
+        if (bias > 0.01f) found_structural = true;
+    }
+    REQUIRE(found_structural);
+}
+
+TEST_CASE("Canalization: structural bias does NOT decay", "[canalization]") {
+    Genome g = default_genome();
+    g.structural_threshold = 0.01f;
+    g.structural_growth_rate = 0.1f;
+    g.structural_max = 5.0f;
+    g.apical_auxin_baseline = 0.0f;  // disable auxin production for decay test
+    g.canalization_weight = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* seed = plant.seed_mut();
+    Node* shoot = nullptr;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::APICAL) { shoot = c; break; }
+    }
+    REQUIRE(shoot != nullptr);
+
+    // Manually set structural bias
+    seed->structural_flow_bias[shoot] = 1.5f;
+    float bias_before = seed->structural_flow_bias[shoot];
+
+    // Tick with zero auxin — no flux, structural should NOT decay
+    WorldParams world = default_world_params();
+    for (int i = 0; i < 20; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Auxin) = 0.0f;
+        });
+        plant.tick(world);
+    }
+
+    REQUIRE(seed->structural_flow_bias[shoot] >= bias_before);
+}
+
+TEST_CASE("Canalization: structural bias capped at structural_max", "[canalization]") {
+    Genome g = default_genome();
+    g.structural_max = 1.0f;
+    Plant plant(g, glm::vec3(0.0f));
+
+    Node* seed = plant.seed_mut();
+    Node* child = nullptr;
+    for (Node* c : seed->children) { child = c; break; }
+    REQUIRE(child != nullptr);
+
+    // Set bias above max
+    seed->structural_flow_bias[child] = 5.0f;
+
+    // update_canalization should clamp to max
+    seed->update_canalization(plant.genome());
+
+    REQUIRE(seed->structural_flow_bias[child] <= g.structural_max);
+}

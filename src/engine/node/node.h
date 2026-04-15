@@ -83,6 +83,7 @@ public:
     void tick(Plant& plant, const WorldParams& world);       // non-virtual: all universal processes
     virtual float maintenance_cost(const WorldParams& world) const;
     void transport_with_children(const Genome& g);
+    void update_canalization(const Genome& g);
     void decay_chemicals(const Genome& g);
     void die(Plant& plant);
 
