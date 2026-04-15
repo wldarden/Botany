@@ -421,13 +421,15 @@ void LightSystem::readback_results() {
     glBindTexture(GL_TEXTURE_2D, 0);
 
     for (int i = 0; i < n_leaves_; i++) {
-        float sum = 0.0f;
         for (int s = 0; s < SAMPLES_PER_LEAF; s++) {
-            float val = pixels[(i * SAMPLES_PER_LEAF + s) * 4];  // R channel
-            leaf_ptrs_[i]->sample_exposure[s] = val;
-            sum += val;
+            leaf_ptrs_[i]->sample_exposure[s] = pixels[(i * SAMPLES_PER_LEAF + s) * 4];
         }
-        leaf_ptrs_[i]->light_exposure = sum / static_cast<float>(SAMPLES_PER_LEAF);
+        // Center sample (index 4) is fully interior to the leaf so its reading is
+        // unbiased. Corner samples straddle the leaf edge and partially sample open
+        // sky, so they read higher than the true leaf-interior value. Weight center
+        // at 2x to correct for this: (s0+s1+s2+s3 + 2*s4) / 6.
+        const float* se = leaf_ptrs_[i]->sample_exposure;
+        leaf_ptrs_[i]->light_exposure = (se[0] + se[1] + se[2] + se[3] + 2.0f * se[4]) / 6.0f;
     }
 }
 
