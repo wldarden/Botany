@@ -8,5 +8,6 @@ struct Node;
 struct Genome;
 
 float sugar_cap(const Node& node, const Genome& g);
+float water_cap(const Node& node, const Genome& g);
 
 } // namespace botany

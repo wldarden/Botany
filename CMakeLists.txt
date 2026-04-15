@@ -144,6 +144,7 @@ add_executable(botany_tests
     tests/test_meristem.cpp
     tests/test_engine.cpp
     tests/test_sugar.cpp
+    tests/test_water.cpp
     tests/test_gibberellin.cpp
     tests/test_ethylene.cpp
     tests/test_serializer.cpp
