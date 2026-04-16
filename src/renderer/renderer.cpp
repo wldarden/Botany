@@ -212,6 +212,8 @@ void Renderer::draw_plant(const Plant& plant) {
             float age_mat = static_cast<float>(node.age) / 360.0f; // 15 days
             float maturity = glm::clamp(std::max(radius_mat, age_mat), 0.0f, 1.0f);
             color = glm::mix(green, brown, maturity);
+        } else if (node.type == NodeType::ROOT || node.type == NodeType::ROOT_APICAL) {
+            color = glm::vec3(0.76f, 0.60f, 0.42f);  // tan — earthy, distinct from stem brown
         } else {
             color = glm::vec3(0.35f, 0.2f, 0.1f);
         }
