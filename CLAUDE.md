@@ -94,7 +94,7 @@ flow = clamp(flow, source_available, destination_headroom)
 Three mechanisms work together:
 
 1. **Concentration gradient** — flow driven by relative fullness (sugar) or raw level (hormones). Prevents large nodes from draining small ones at equal concentration.
-2. **Shifted equilibrium (bias)** — offsets where "equal" is. `bias < 0` = chemical accumulates root-ward (auxin). `bias > 0` = chemical accumulates tip-ward (cytokinin). Self-correcting: gradient still governs flow, just from an offset resting point.
+2. **Shifted equilibrium (bias)** — offsets where "equal" is. `bias < 0` = chemical accumulates root-ward (auxin). `bias > 0` = chemical accumulates tip-ward (cytokinin). Self-correcting: gradient still governs flow, just from an offset resting point. **Root-type inversion:** for `ROOT` and `ROOT_APICAL` children, the bias is negated during `transport_with_children`. Root apices are at the bottom of the plant, so "acropetal" in the whole-plant sense means toward the seed for root-side nodes. This makes the seed a correct transit junction: cytokinin flows root-tip → seed → shoot, auxin flows shoot → seed → root-tip, without cycling.
 3. **Throughput cap** — `max_transport = base_transport + radius_factor * transport_scale`. Bottlenecked by the thinner of two connected nodes. `base_transport` floor ensures even thin tips can transport.
 
 **Capacity model:**
@@ -222,7 +222,11 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `apical_auxin_half_saturation` (0.3) - auxin level for half-max apical effect
 - `root_apical_auxin_max_boost` (-0.2) - max root tip extension inhibition from auxin
 - `root_apical_auxin_half_saturation` (0.1) - auxin level for half-max root apical effect
-- `cytokinin_bias` (0.1) - shifted equilibrium for acropetal flow (positive = toward tips)
+- `cytokinin_bias` (0.1) - shifted equilibrium for acropetal flow (positive = toward tips); negated for root-type children (see transport model)
+- `root_cytokinin_production_rate` (0.15) - baseline cytokinin produced per tick by root apicals (mirrors `apical_auxin_baseline`)
+- `root_auxin_growth_threshold` (0.10) - Km for auxin-gated root elongation (Michaelis-Menten)
+- `root_auxin_activation_threshold` (0.05) - minimum auxin to activate a dormant root meristem
+- `root_cytokinin_inhibition_threshold` (0.10) - cytokinin above this inhibits new root meristem activation
 - `auxin_diffusion_rate` / `cytokinin_diffusion_rate` (0.3) - gradient responsiveness
 - `hormone_base_transport` (0.5) - throughput floor for hormones (even thin tips can signal)
 - `hormone_transport_scale` (1.0) - how much radius amplifies hormone throughput
