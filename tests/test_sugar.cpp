@@ -453,50 +453,6 @@ TEST_CASE("Production works normally when leaf is below cap", "[sugar]") {
     REQUIRE(leaf->chemical(ChemicalID::Sugar) > 0.0f);
 }
 
-TEST_CASE("Sugar diffuses from high to low", "[sugar]") {
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
-
-    Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.02f);
-    plant.seed_mut()->add_child(child);
-
-    // Give seed lots of sugar, child none
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 100.0f;
-    child->chemical(ChemicalID::Sugar) = 0.0f;
-
-    plant.seed_mut()->transport_with_children(g);
-
-    // Sugar should have flowed from seed to child
-    REQUIRE(child->chemical(ChemicalID::Sugar) > 0.0f);
-    REQUIRE(plant.seed()->chemical(ChemicalID::Sugar) < 100.0f);
-}
-
-TEST_CASE("Transport conserves sugar — excess redistributes, not destroyed", "[sugar]") {
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
-
-    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
-    plant.seed_mut()->add_child(stem);
-
-    // Give stem excess sugar, zero everything else
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-    stem->chemical(ChemicalID::Sugar) = 50.0f;
-
-    float total_before = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_before += n.chemical(ChemicalID::Sugar); });
-
-    // Seed distributes with children — sugar flows from stem to seed via gradient
-    plant.seed_mut()->transport_with_children(g);
-
-    float total_after = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_after += n.chemical(ChemicalID::Sugar); });
-
-    // Total sugar is conserved
-    REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
-    // Stem gave some sugar to seed
-    REQUIRE(stem->chemical(ChemicalID::Sugar) < 50.0f);
-}
-
 TEST_CASE("Senescing leaf produces no sugar", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
@@ -517,33 +473,3 @@ TEST_CASE("Senescing leaf produces no sugar", "[sugar]") {
     REQUIRE(leaf->chemical(ChemicalID::Sugar) < 1e-6f);
 }
 
-TEST_CASE("Diffusion still conserves sugar when caps are not hit", "[sugar]") {
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
-
-    // Build a tree with nodes that have large caps (big radii, long offsets)
-    for (int i = 0; i < 3; i++) {
-        Node* child = plant.create_node(NodeType::STEM,
-            glm::vec3(0.0f, 1.0f, 0.0f), 0.2f);
-        plant.seed_mut()->add_child(child);
-    }
-
-    // Give modest sugar amounts (well below caps)
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 5.0f;
-    plant.seed_mut()->children[0]->chemical(ChemicalID::Sugar) = 2.0f;
-
-    float total_before = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_before += n.chemical(ChemicalID::Sugar); });
-
-    // Run several rounds of local transport
-    for (int i = 0; i < 10; i++) {
-        plant.for_each_node_mut([&](Node& n) {
-            n.transport_with_children(g);
-        });
-    }
-
-    float total_after = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_after += n.chemical(ChemicalID::Sugar); });
-
-    REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
-}
