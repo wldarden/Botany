@@ -965,6 +965,24 @@ int main(int argc, char* argv[]) {
 
                 ImGui::Separator();
 
+                // --- Sugar budget (last tick) ---
+                ImGui::Text("Sugar last tick:");
+                ImGui::Text("  Maintenance:  %s", fmt_mass(sel.tick_sugar_maintenance));
+                if (sel.tick_sugar_activity >= 0.0f) {
+                    ImGui::Text("  Produced:    +%s", fmt_mass(sel.tick_sugar_activity));
+                } else {
+                    ImGui::Text("  Growth:       %s", fmt_mass(sel.tick_sugar_activity));
+                }
+                if (sel.tick_sugar_transport < 0.0f) {
+                    ImGui::Text("  Exported:     %s", fmt_mass(sel.tick_sugar_transport));
+                } else if (sel.tick_sugar_transport > 0.0f) {
+                    ImGui::Text("  Imported:    +%s", fmt_mass(sel.tick_sugar_transport));
+                } else {
+                    ImGui::Text("  Transport:    0");
+                }
+
+                ImGui::Separator();
+
                 // Helper: node type as string
                 auto node_type_str = [](const Node* n) -> const char* {
                     switch (n->type) {

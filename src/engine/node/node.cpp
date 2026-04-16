@@ -69,11 +69,21 @@ void Node::tick(Plant& plant, const WorldParams& world) {
 
     age++;
     sync_world_position();
+
+    float s0 = chemical(ChemicalID::Sugar);
     if (pay_maintenance(plant, world)) return;
+    tick_sugar_maintenance = s0 - chemical(ChemicalID::Sugar);
+
+    float s1 = chemical(ChemicalID::Sugar);
     update_tissue(plant, world);
+    tick_sugar_activity = chemical(ChemicalID::Sugar) - s1;
+
     sync_world_position();  // re-sync after tissue may have changed offset
     if (update_physics(plant, g, world)) return;
+
+    float s2 = chemical(ChemicalID::Sugar);
     transport_chemicals(g);
+    tick_sugar_transport = chemical(ChemicalID::Sugar) - s2;
 }
 
 // --- Tick helpers ---

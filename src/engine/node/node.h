@@ -55,6 +55,11 @@ public:
     glm::vec3 mass_moment{0.0f};   // self_mass * position + Σ child.mass_moment
     float stress = 0.0f;           // torque / cross-section (structural load)
 
+    // --- Per-tick sugar accounting (updated every tick, one tick stale in inspector) ---
+    float tick_sugar_maintenance = 0.0f; // consumed by maintenance (positive = consumed)
+    float tick_sugar_activity    = 0.0f; // net change from tissue work: positive = produced, negative = spent on growth
+    float tick_sugar_transport   = 0.0f; // net change from transport: negative = exported, positive = imported
+
     // Chemical storage — map-based, sole storage for all chemical values.
     std::unordered_map<ChemicalID, float> chemicals;
 
