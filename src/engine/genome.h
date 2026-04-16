@@ -68,6 +68,10 @@ struct Genome {
     uint32_t root_internode_maturation_ticks; // hours
     float root_gravitropism_strength; // how strongly roots turn downward near surface
     float root_gravitropism_depth;    // dm — depth at which gravitropism correction begins
+    float root_cytokinin_production_rate; // cytokinin produced per unit auxin received
+    float root_auxin_growth_threshold;    // Km for auxin-gated root growth fraction
+    float root_auxin_activation_threshold; // min auxin to activate dormant root meristem
+    float root_cytokinin_inhibition_threshold; // cytokinin above this inhibits root activation
 
     // Geometry
     float max_leaf_size;              // dm — maximum leaf side-length
@@ -207,6 +211,10 @@ inline Genome default_genome() {
         .root_internode_maturation_ticks = 48,    // 2 days
         .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
+        .root_cytokinin_production_rate = 0.15f,   // cytokinin per unit auxin — moderate signal
+        .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation
+        .root_auxin_activation_threshold = 0.05f,   // low bar — a little auxin activates roots
+        .root_cytokinin_inhibition_threshold = 0.10f, // existing roots inhibit new activation
 
         .max_leaf_size = 1.5f,              // 15 cm side-length at maturity (realistic broad leaf)
         .leaf_growth_rate = 0.005f,         // ~0.5 mm/hr — full size (1.5dm) in ~300 hrs (~12 days)

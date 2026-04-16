@@ -71,6 +71,7 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     sync_world_position();
     if (pay_maintenance(plant, world)) return;
     update_tissue(plant, world);
+    sync_world_position();  // re-sync after tissue may have changed offset
     if (update_physics(plant, g, world)) return;
     transport_chemicals(g);
 }

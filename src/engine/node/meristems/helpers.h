@@ -97,6 +97,17 @@ inline float growth_fraction(float sugar, float max_cost,
     return sugar_gf * cyt_gf;
 }
 
+// Root growth fraction: sugar funds growth, auxin gates the rate.
+// Root tips are driven by auxin (from shoot) + sugar, not cytokinin.
+inline float root_growth_fraction(float sugar, float max_cost,
+                                   float auxin, float auxin_threshold) {
+    if (max_cost < 1e-6f) return 1.0f;
+    float sugar_gf = std::min(sugar / max_cost, 1.0f);
+    if (sugar_gf < 1e-6f) return 0.0f;
+    float auxin_gf = auxin / (auxin + std::max(auxin_threshold, 1e-6f));
+    return sugar_gf * auxin_gf;
+}
+
 // Saturating auxin growth multiplier (Michaelis-Menten).
 // Returns 1.0 at zero auxin, asymptotes to 1.0 + max_boost.
 // Positive max_boost = promotion, negative = inhibition.

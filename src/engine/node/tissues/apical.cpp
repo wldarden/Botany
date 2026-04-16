@@ -53,9 +53,6 @@ void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParam
         chemical(ChemicalID::Sugar) += production;
         plant.add_sugar_produced(production);
 
-        // Tiny cytokinin from green tip photosynthesis — bootstrap signal.
-        // Lets a leafless branch resume growth when light returns.
-        chemical(ChemicalID::Cytokinin) += production * g.cytokinin_production_rate * 0.1f;
     }
 }
 

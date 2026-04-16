@@ -19,6 +19,10 @@ void LeafNode::update_tissue(Plant& plant, const WorldParams& world) {
     produce_gibberellin(g);
     float net_sugar = photosynthesize(plant, g, world);
     transpire(g, world);
+    // Ethylene-triggered senescence: high ethylene overrides carbon balance
+    if (senescence_ticks == 0 && chemical(ChemicalID::Ethylene) >= g.ethylene_abscission_threshold) {
+        senescence_ticks = 1;
+    }
     check_carbon_balance(g, world, net_sugar);
     if (advance_senescence(plant, g)) return;
     phototropism(g, world);
@@ -74,9 +78,17 @@ float LeafNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams
     }
 
     float leaf_area = leaf_size * leaf_size;
+
+    // Stomatal conductance: water deficit partially closes stomata
+    float wcap = water_cap(*this, g);
+    float stomatal = wcap > 1e-6f
+        ? std::clamp(chemical(ChemicalID::Water) / wcap, 0.2f, 1.0f)
+        : 1.0f;
+
     float sugar_produced = light_exposure * angle_efficiency
            * world.light_level * leaf_area
-           * world.sugar_production_rate;
+           * world.sugar_production_rate
+           * stomatal;
     chemical(ChemicalID::Sugar) += sugar_produced;
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
     float delta = chemical(ChemicalID::Sugar) - sugar_before;
@@ -84,10 +96,6 @@ float LeafNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams
     // Photosynthesis water cost: small deduction proportional to sugar produced
     float water_cost = sugar_produced * g.photosynthesis_water_ratio;
     chemical(ChemicalID::Water) = std::max(0.0f, chemical(ChemicalID::Water) - water_cost);
-
-    // Cytokinin production: proportional to actual photosynthetic output.
-    // This is the "I have producing leaves" signal that gates all growth.
-    chemical(ChemicalID::Cytokinin) += sugar_produced * g.cytokinin_production_rate;
 
     if (delta > 0.0f) plant.add_sugar_produced(delta);
     return delta;

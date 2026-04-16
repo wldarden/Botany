@@ -22,13 +22,20 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
 
     // Bootstrap cytokinin: the embryo contains hormones throughout,
-    // enough to start growth until leaves produce their own.
-    float seed_cyt = genome.cytokinin_growth_threshold * 50.0f;
+    // enough to start growth until roots produce their own.
+    float seed_cyt = genome.cytokinin_growth_threshold * 5.0f;
     seed->chemical(ChemicalID::Cytokinin) = seed_cyt;
+
+    // Bootstrap auxin: the embryo also contains stored IAA. This gives the
+    // primary root its first growth impulse before shoot auxin can diffuse down,
+    // which takes at least one tick (seed ticks before shoot in DFS order).
+    float seed_auxin = genome.root_auxin_growth_threshold * 2.0f;
+    seed->chemical(ChemicalID::Auxin) = seed_auxin;
 
     // Shoot apical meristem node (child of seed)
     Node* shoot = create_node(NodeType::APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
     shoot->chemical(ChemicalID::Cytokinin) = seed_cyt;
+    shoot->chemical(ChemicalID::Auxin) = seed_auxin;
     seed->add_child(shoot);
 
     // Root apical meristem node (child of seed)

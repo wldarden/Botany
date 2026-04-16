@@ -274,10 +274,12 @@ TEST_CASE("Shoot apical meristem does not grow without sugar", "[meristem][sugar
     });
     REQUIRE(shoot_tip != nullptr);
 
-    // Zero sugar everywhere — should not grow
+    // Zero sugar everywhere and disable meristem self-photosynthesis — should not grow
     plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    WorldParams w_no_photo = default_world_params();
+    w_no_photo.sugar_meristem_photosynthesis = 0.0f;
     glm::vec3 pos_before = shoot_tip->position;
-    plant.tick(default_world_params());
+    plant.tick(w_no_photo);
     REQUIRE(shoot_tip->position.y == pos_before.y);
 }
 
@@ -386,19 +388,23 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
 
     // Low sugar = slow growth, high sugar = full growth
+    // Disable meristem self-photosynthesis so sugar level alone controls growth rate.
+    // Tick tips directly (not plant.tick) to avoid seed transport equalizing sugar levels.
     WorldParams w = default_world_params();
+    w.sugar_meristem_photosynthesis = 0.0f;
     float max_cost = g.growth_rate * w.sugar_cost_meristem_growth;
     tip1->chemical(ChemicalID::Sugar) = max_cost * 0.5f; // half growth
     tip2->chemical(ChemicalID::Sugar) = max_cost * 2.0f; // full growth (capped at 1.0)
     // Saturate cytokinin so it doesn't gate this test
-    tip1->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 2.0f;
-    tip2->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 2.0f;
+    tip1->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
+    tip2->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
 
     glm::vec3 pos1_before = tip1->position;
     glm::vec3 pos2_before = tip2->position;
 
-    plant1.tick(default_world_params());
-    plant2.tick(default_world_params());
+    // Tick tips directly — bypasses seed transport that would drain or equalize sugar
+    tip1->tick(plant1, w);
+    tip2->tick(plant2, w);
 
     float dist1 = glm::length(tip1->position - pos1_before);
     float dist2 = glm::length(tip2->position - pos2_before);
@@ -419,10 +425,12 @@ TEST_CASE("Zero sugar produces zero growth", "[meristem][sugar]") {
     });
     REQUIRE(shoot_tip != nullptr);
 
-    // Zero sugar everywhere — no growth possible
+    // Zero sugar everywhere and disable meristem self-photosynthesis — no growth possible
     plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    WorldParams w_no_photo = default_world_params();
+    w_no_photo.sugar_meristem_photosynthesis = 0.0f;
     glm::vec3 pos_before = shoot_tip->position;
-    plant.tick(default_world_params());
+    plant.tick(w_no_photo);
     REQUIRE(shoot_tip->position.y == pos_before.y);
 }
 

@@ -18,6 +18,13 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 
     absorb_water(g, world);
 
+    // Cytokinin production: roots produce cytokinin in proportion to the auxin
+    // they receive from the shoot. This closes the feedback loop:
+    // shoot auxin → root cytokinin → shoot elongation gates on cytokinin.
+    float local_auxin = parent ? parent->chemical(ChemicalID::Auxin)
+                               : chemical(ChemicalID::Auxin);
+    chemical(ChemicalID::Cytokinin) += local_auxin * g.root_cytokinin_production_rate;
+
     if (!active) {
         if (can_activate(g, world)) activate(g, world);
         return;
@@ -60,8 +67,10 @@ glm::vec3 RootApicalNode::apply_gravitropism(const glm::vec3& dir, const Genome&
 
 void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
-    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
-                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
+    float local_auxin = parent ? parent->chemical(ChemicalID::Auxin)
+                               : chemical(ChemicalID::Auxin);
+    float gf = root_growth_fraction(chemical(ChemicalID::Sugar), max_cost,
+                                     local_auxin, g.root_auxin_growth_threshold);
     if (gf < 1e-6f) return;
 
     if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
@@ -110,9 +119,16 @@ float RootApicalNode::maintenance_cost(const WorldParams& world) const {
 }
 
 bool RootApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
-    // Cytokinin from producing leaves signals "the plant can support new roots"
-    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin) : chemical(ChemicalID::Cytokinin);
-    if (local_cyt < g.cytokinin_threshold) return false;
+    // Auxin from the shoot promotes root activation — "the shoot wants more roots".
+    // Existing cytokinin (produced by already-active roots) inhibits activation
+    // of additional roots, preventing runaway branching.
+    float local_auxin = parent ? parent->chemical(ChemicalID::Auxin)
+                               : chemical(ChemicalID::Auxin);
+    if (local_auxin < g.root_auxin_activation_threshold) return false;
+
+    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin)
+                             : chemical(ChemicalID::Cytokinin);
+    if (local_cyt > g.root_cytokinin_inhibition_threshold) return false;
 
     if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 
