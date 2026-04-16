@@ -18,12 +18,9 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 
     absorb_water(g, world);
 
-    // Cytokinin production: roots produce cytokinin in proportion to the auxin
-    // they receive from the shoot. This closes the feedback loop:
-    // shoot auxin → root cytokinin → shoot elongation gates on cytokinin.
-    float local_auxin = parent ? parent->chemical(ChemicalID::Auxin)
-                               : chemical(ChemicalID::Auxin);
-    chemical(ChemicalID::Cytokinin) += local_auxin * g.root_cytokinin_production_rate;
+    // Cytokinin production: root apicals produce a baseline of cytokinin each tick,
+    // symmetrical to how shoot apicals produce a baseline of auxin.
+    chemical(ChemicalID::Cytokinin) += g.root_cytokinin_production_rate;
 
     if (!active) {
         if (can_activate(g, world)) activate(g, world);

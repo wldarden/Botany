@@ -68,7 +68,7 @@ struct Genome {
     uint32_t root_internode_maturation_ticks; // hours
     float root_gravitropism_strength; // how strongly roots turn downward near surface
     float root_gravitropism_depth;    // dm — depth at which gravitropism correction begins
-    float root_cytokinin_production_rate; // cytokinin produced per unit auxin received
+    float root_cytokinin_production_rate; // baseline cytokinin produced per tick (mirrors apical_auxin_baseline)
     float root_auxin_growth_threshold;    // Km for auxin-gated root growth fraction
     float root_auxin_activation_threshold; // min auxin to activate dormant root meristem
     float root_cytokinin_inhibition_threshold; // cytokinin above this inhibits root activation
