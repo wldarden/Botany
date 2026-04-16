@@ -308,3 +308,25 @@ TEST_CASE("Photosynthesis consumes water proportional to sugar produced", "[wate
 
     REQUIRE(total_loss > transpiration_only - 1e-6f);
 }
+
+// === Seed initialization regression test ===
+
+TEST_CASE("Seed water initializes within capacity (not to seed_sugar)", "[water]") {
+    // Regression: seed was incorrectly initialized with genome.seed_sugar (48 ml)
+    // which is far over the ~2 ml water capacity of the two meristem children.
+    // Overcap blocks outward transport and masks the root-to-leaf gradient.
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+
+    float seed_water = plant.seed()->chemical(ChemicalID::Water);
+    float seed_cap   = water_cap(*plant.seed(), g);
+
+    // Water must be at or below capacity (no overcap)
+    REQUIRE(seed_water <= seed_cap + 1e-4f);
+
+    // Capacity should be at least 2 × water_cap_meristem (shoot + root meristem children)
+    REQUIRE(seed_cap >= 2.0f * g.water_cap_meristem - 1e-4f);
+
+    // seed_sugar (48 g-glucose) must not be used as the water amount
+    REQUIRE(seed_water < g.seed_sugar - 1.0f);
+}

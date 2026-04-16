@@ -20,7 +20,6 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     // Seed node
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
     seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
-    seed->chemical(ChemicalID::Water) = genome.seed_sugar;  // reasonable starting reserve
 
     // Bootstrap cytokinin: the embryo contains hormones throughout,
     // enough to start growth until leaves produce their own.
@@ -36,6 +35,12 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     Node* root = create_node(NodeType::ROOT_APICAL, glm::vec3(0.0f, -0.01f, 0.0f), genome.root_initial_radius);
     root->chemical(ChemicalID::Cytokinin) = seed_cyt;
     seed->add_child(root);
+
+    // Seed water: initialize at capacity (computed after children are known).
+    // Using seed_sugar here would be wrong — it's 48 g-glucose, far over the ~2 ml
+    // water capacity of a seedling, which causes the seed to flood children and
+    // masks root-to-leaf flow in the visualizer.
+    seed->chemical(ChemicalID::Water) = water_cap(*seed, genome);
 
     // Set initial world positions (subsequent ticks compute inline during DFS)
     seed->position = seed->offset;
