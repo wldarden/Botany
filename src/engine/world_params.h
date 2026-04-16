@@ -42,6 +42,9 @@ struct WorldParams {
 
     float light_cell_size         = 0.075f;     // dm — shadow map cell size (smaller = higher resolution, more cells)
     glm::vec3 light_direction     = glm::vec3(0.50f, 1.0f, 0.0f); // unit vector pointing TOWARD light source
+    // Sun direction: unit vector pointing TOWARD ground (same convention as LightSystem::sun_direction).
+    // (0,-1,0) = overhead sun. Negated to get the toward-light vector used in phototropism.
+    glm::vec3 sun_direction       = glm::vec3(0.0f, -1.0f, 0.0f);
     uint32_t light_update_interval = 10;  // ticks between shadow map recomputation
     bool cpu_light_enabled        = true;  // set false when GPU LightSystem is active
 
@@ -73,6 +76,7 @@ inline WorldParams default_world_params() {
         .sugar_meristem_photosynthesis = 1.0f,
         .light_cell_size         = 0.075f,
         .light_direction         = glm::vec3(0.0f, 1.0f, 0.0f),
+        .sun_direction           = glm::vec3(0.0f, -1.0f, 0.0f),
         .gravity                 = 9.81f,
         .break_strength_factor   = 5.0f,
         .reference_wood_density  = 50.0f,

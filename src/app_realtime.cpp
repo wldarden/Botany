@@ -379,8 +379,9 @@ int main(int argc, char* argv[]) {
         static float sun_elevation = 90.0f;  // degrees: 90 = overhead, 5 = grazing
         static float sun_azimuth   =  0.0f;  // degrees: 0..360
 
-        // Apply sun direction every frame so the light update always uses the latest value.
-        if (renderer.light_system().is_initialized()) {
+        // Apply sun direction every frame so the light update and leaf phototropism
+        // always use the latest slider values.
+        {
             float el = glm::radians(sun_elevation);
             float az = glm::radians(sun_azimuth);
             glm::vec3 sun_dir(
@@ -388,7 +389,10 @@ int main(int argc, char* argv[]) {
                 -std::sin(el),
                 std::sin(az) * std::cos(el)
             );
-            renderer.light_system().set_sun_direction(sun_dir);
+            // sun_dir already normalized by construction (cos²+sin² = 1).
+            engine.world_params_mut().sun_direction = sun_dir;
+            if (renderer.light_system().is_initialized())
+                renderer.light_system().set_sun_direction(sun_dir);
         }
 
         // GPU light update — every 24 ticks (once per sim-day)

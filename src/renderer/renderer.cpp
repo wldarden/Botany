@@ -224,6 +224,16 @@ void Renderer::draw_plant(const Plant& plant) {
             color = glm::mix(color, dead_color, stress);
         }
 
+        // Apical meristems: hemisphere facing growth direction instead of cylinder.
+        if (node.type == NodeType::APICAL || node.type == NodeType::ROOT_APICAL) {
+            glm::vec3 grow_dir = (glm::length(node.offset) > 1e-4f)
+                ? glm::normalize(node.offset)
+                : (node.type == NodeType::APICAL ? glm::vec3(0.0f, 1.0f, 0.0f)
+                                                 : glm::vec3(0.0f, -1.0f, 0.0f));
+            draw_hemisphere(node.position, grow_dir, node.radius, color * color_tint_);
+            return;
+        }
+
         draw_cylinder(node.parent->position, node.position,
                       node.parent->radius, node.radius, color * color_tint_);
     });
@@ -319,6 +329,74 @@ void Renderer::draw_cylinder(glm::vec3 start, glm::vec3 end,
     glEnableVertexAttribArray(2);
 
     glDrawArrays(GL_TRIANGLES, 0, static_cast<int>(vertices.size() / 9));
+
+    glDeleteVertexArrays(1, &vao);
+    glDeleteBuffers(1, &vbo);
+}
+
+void Renderer::draw_hemisphere(glm::vec3 center, glm::vec3 dir, float r, glm::vec3 color) {
+    const int LON = 8;
+    const int LAT = 4;
+    const float half_pi = 1.5707963f;
+    const float two_pi  = 6.2831853f;
+
+    // Build an orthonormal frame: N = dome axis (outward), T and B fill the disc.
+    glm::vec3 N = glm::normalize(dir);
+    glm::vec3 T = (std::abs(N.y) < 0.9f)
+        ? glm::normalize(glm::cross(N, glm::vec3(0.0f, 1.0f, 0.0f)))
+        : glm::normalize(glm::cross(N, glm::vec3(1.0f, 0.0f, 0.0f)));
+    glm::vec3 B = glm::cross(N, T);
+
+    // Returns world position + outward normal for grid cell (lat_i, lon_i).
+    // lat_i=0 → dome tip (N direction); lat_i=LAT → equator.
+    // theta = polar angle from tip (0 → π/2).
+    auto make = [&](int lat_i, int lon_i, glm::vec3& out_p, glm::vec3& out_n) {
+        float theta = static_cast<float>(lat_i) / LAT * half_pi;
+        float phi   = static_cast<float>(lon_i) / LON * two_pi;
+        float x = std::sin(theta) * std::cos(phi);
+        float y = std::sin(theta) * std::sin(phi);
+        float z = std::cos(theta);
+        out_n = T * x + B * y + N * z;  // outward unit normal
+        out_p = center + out_n * r;
+    };
+
+    std::vector<float> verts;
+    verts.reserve(LON * LAT * 6 * 9);
+
+    auto push = [&](int lat_i, int lon_i) {
+        glm::vec3 p, n;
+        make(lat_i, lon_i, p, n);
+        verts.push_back(p.x); verts.push_back(p.y); verts.push_back(p.z);
+        verts.push_back(n.x); verts.push_back(n.y); verts.push_back(n.z);
+        verts.push_back(color.x); verts.push_back(color.y); verts.push_back(color.z);
+    };
+
+    // Quad strip from tip (j=0) to equator (j=LAT).
+    // Degenerate triangles at j=0 (all tip vertices are the same point) are discarded by GPU.
+    for (int j = 0; j < LAT; j++) {
+        for (int i = 0; i < LON; i++) {
+            int i1 = (i + 1) % LON;
+            push(j,   i ); push(j+1, i ); push(j+1, i1);
+            push(j,   i ); push(j+1, i1); push(j,   i1);
+        }
+    }
+
+    uint32_t vao, vbo;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(verts.size() * sizeof(float)),
+                 verts.data(), GL_STREAM_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 9 * sizeof(float), (void*)(6 * sizeof(float)));
+    glEnableVertexAttribArray(2);
+
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<int>(verts.size() / 9));
 
     glDeleteVertexArrays(1, &vao);
     glDeleteBuffers(1, &vbo);

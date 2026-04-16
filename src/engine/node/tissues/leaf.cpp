@@ -100,11 +100,12 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     if (facing_len <= 1e-4f) return;
 
     glm::vec3 dir = facing / facing_len;
-    glm::vec3 up(0.0f, 1.0f, 0.0f);
-    float cos_angle = glm::dot(dir, up);
+    // sun_direction points toward ground; negate to get the toward-light vector leaves track.
+    glm::vec3 light_dir = -world.sun_direction;
+    float cos_angle = glm::dot(dir, light_dir);
     if (cos_angle >= 0.999f) return;
 
-    glm::vec3 axis = glm::cross(dir, up);
+    glm::vec3 axis = glm::cross(dir, light_dir);
     float axis_len = glm::length(axis);
     if (axis_len <= 1e-6f) return;
     axis /= axis_len;
