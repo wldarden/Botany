@@ -328,3 +328,81 @@ TEST_CASE("Auxin: leaf auxin scales with growth amount", "[hormone]") {
     // Higher multiplier → more leaf auxin in the system
     REQUIRE(total2 > total1 * 2.0f);
 }
+
+// --- Cross-seed transport tests ---
+// These tests verify that chemicals produced on one side of the seed node
+// actually cross it and reach the other side.  Bootstrap cytokinin/auxin
+// is zeroed out so only newly-produced chemical drives the measurement.
+
+TEST_CASE("Transport: auxin crosses seed node from shoot to root", "[hormone][transport]") {
+    Genome g = default_genome();
+    g.apical_auxin_baseline = 1.0f;      // strong signal for clear detection
+    g.auxin_diffusion_rate  = 0.3f;      // faster than default so it spreads in fewer ticks
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world_params();
+
+    // Zero all auxin so we are measuring only shoot-produced auxin.
+    // (Bootstrap auxin in seed/shoot would otherwise mask whether transport works.)
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Auxin) = 0.0f; });
+
+    for (int i = 0; i < 50; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 10.0f;   // keep nodes alive & growing
+        });
+        plant.tick(world);
+    }
+
+    // After growth the apical has chained upward — search all nodes.
+    const Node* shoot = nullptr;
+    const Node* root  = nullptr;
+    plant.for_each_node([&](const Node& n) {
+        if (n.type == NodeType::APICAL     && shoot == nullptr) shoot = &n;
+        if (n.type == NodeType::ROOT_APICAL && root  == nullptr) root  = &n;
+    });
+    REQUIRE(shoot != nullptr);
+    REQUIRE(root  != nullptr);
+
+    // Shoot produces auxin — must have some remaining after transport+decay
+    REQUIRE(shoot->chemical(ChemicalID::Auxin) > 0.0f);
+
+    // Auxin must have crossed the seed and reached the root apical.
+    // Auxin accumulates at its source (shoot tip), so root level is lower than
+    // shoot level — we only require root > 0, i.e. transport DID cross the seed.
+    REQUIRE(root->chemical(ChemicalID::Auxin) > 0.0f);
+}
+
+TEST_CASE("Transport: cytokinin crosses seed node from root to shoot", "[hormone][transport]") {
+    Genome g = default_genome();
+    g.root_cytokinin_production_rate = 1.0f; // strong signal for clear detection
+    g.cytokinin_diffusion_rate       = 0.3f; // faster than default
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world_params();
+
+    // Zero all cytokinin so we measure only root-produced cytokinin.
+    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Cytokinin) = 0.0f; });
+
+    for (int i = 0; i < 50; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 10.0f;
+        });
+        plant.tick(world);
+    }
+
+    // After growth the apical has chained upward — search all nodes.
+    const Node* shoot = nullptr;
+    const Node* root  = nullptr;
+    plant.for_each_node([&](const Node& n) {
+        if (n.type == NodeType::APICAL     && shoot == nullptr) shoot = &n;
+        if (n.type == NodeType::ROOT_APICAL && root  == nullptr) root  = &n;
+    });
+    REQUIRE(shoot != nullptr);
+    REQUIRE(root  != nullptr);
+
+    // Root produces cytokinin — must have some remaining
+    REQUIRE(root->chemical(ChemicalID::Cytokinin) > 0.0f);
+
+    // Cytokinin must have crossed the seed and reached the shoot apical.
+    // Cytokinin accumulates at its source (root tip), so root level stays higher
+    // than shoot level — we only require shoot > 0, i.e. transport DID cross the seed.
+    REQUIRE(shoot->chemical(ChemicalID::Cytokinin) > 0.0f);
+}
