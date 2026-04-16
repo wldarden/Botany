@@ -17,13 +17,17 @@ public:
     // --- Node overrides ---
     LeafNode(uint32_t id, glm::vec3 position, float radius);
     float maintenance_cost(const WorldParams& world) const override;
-    void tissue_tick(Plant& plant, const WorldParams& world) override;
+    void update_tissue(Plant& plant, const WorldParams& world) override;
 
 private:
     // --- Leaf behavior ---
-    void photosynthesize(const Genome& g, const WorldParams& world);
+    void produce_gibberellin(const Genome& g);
+    float photosynthesize(Plant& plant, const Genome& g, const WorldParams& world);
+    void transpire(const Genome& g, const WorldParams& world);
+    void check_carbon_balance(const Genome& g, const WorldParams& world, float net_sugar);
+    bool advance_senescence(Plant& plant, const Genome& g);
     void phototropism(const Genome& g, const WorldParams& world);
-    void grow_size(const Genome& g, const WorldParams& world);
+    void expand(const Genome& g, const WorldParams& world);
 };
 
 } // namespace botany

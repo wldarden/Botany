@@ -12,18 +12,19 @@ RootNode::RootNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::ROOT, position, radius)
 {}
 
-void RootNode::tissue_tick(Plant& plant, const WorldParams& world) {
+void RootNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
+    absorb_water(g, world);
+    thicken(g, world);
+    elongate(g, world);
+}
 
-    // Water absorption: proportional to root surface area and soil moisture
+void RootNode::absorb_water(const Genome& g, const WorldParams& world) {
     float length = std::max(glm::length(offset), 0.01f);
     float surface_area = 2.0f * 3.14159f * radius * length;
     float absorbed = g.water_absorption_rate * surface_area * world.soil_moisture;
     float cap = water_cap(*this, g);
     chemical(ChemicalID::Water) = std::min(chemical(ChemicalID::Water) + absorbed, cap);
-
-    thicken(g, world);
-    elongate(g, world);
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {

@@ -13,25 +13,30 @@ RootApicalNode::RootApicalNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::ROOT_APICAL, position, radius)
 {}
 
-void RootApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
+void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
-    // Water absorption: hemisphere approximation for tip surface area
-    float surface_area = 2.0f * 3.14159f * radius * radius;
-    float absorbed = g.water_absorption_rate * surface_area * world.soil_moisture;
-    float cap = water_cap(*this, g);
-    chemical(ChemicalID::Water) = std::min(chemical(ChemicalID::Water) + absorbed, cap);
+    absorb_water(g, world);
 
     if (!active) {
         if (can_activate(g, world)) activate(g, world);
         return;
     }
 
-    // Chain growth
     ticks_since_last_node++;
-    grow_tip(g, world);
+    elongate(g, world);
+    check_spawn(plant, g);
+}
 
-    // Time-based spawning (plastochron). Don't spawn if starving.
+void RootApicalNode::absorb_water(const Genome& g, const WorldParams& world) {
+    // Hemisphere approximation for root tip surface area
+    float surface_area = 2.0f * 3.14159f * radius * radius;
+    float absorbed = g.water_absorption_rate * surface_area * world.soil_moisture;
+    float cap = water_cap(*this, g);
+    chemical(ChemicalID::Water) = std::min(chemical(ChemicalID::Water) + absorbed, cap);
+}
+
+void RootApicalNode::check_spawn(Plant& plant, const Genome& g) {
     if (parent && ticks_since_last_node >= g.root_plastochron && starvation_ticks == 0) {
         spawn_internode(plant, g);
     }
@@ -53,7 +58,7 @@ glm::vec3 RootApicalNode::apply_gravitropism(const glm::vec3& dir, const Genome&
     return glm::normalize(dir + down * strength);
 }
 
-void RootApicalNode::grow_tip(const Genome& g, const WorldParams& world) {
+void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
     float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);

@@ -69,10 +69,10 @@ void Node::tick(Plant& plant, const WorldParams& world) {
 
     age++;
     sync_world_position();
-    if (handle_energy_cost(plant, world)) return;
-    tissue_tick(plant, world);
+    if (pay_maintenance(plant, world)) return;
+    update_tissue(plant, world);
     if (update_physics(plant, g, world)) return;
-    update_chemicals(g);
+    transport_chemicals(g);
 }
 
 // --- Tick helpers ---
@@ -90,18 +90,18 @@ void Node::sync_world_position() {
     }
 }
 
-bool Node::handle_energy_cost(Plant& plant, const WorldParams& world) {
-    pay_maintenance(world);
+bool Node::pay_maintenance(Plant& plant, const WorldParams& world) {
+    deduct_maintenance_sugar(world);
     return check_starvation(plant, world);
 }
 
-void Node::update_chemicals(const Genome& g) {
+void Node::transport_chemicals(const Genome& g) {
     transport_with_children(g);
     update_canalization(g);
     decay_chemicals(g);
 }
 
-void Node::pay_maintenance(const WorldParams& world) {
+void Node::deduct_maintenance_sugar(const WorldParams& world) {
     float cost = maintenance_cost(world);
     chemical(ChemicalID::Sugar) = std::max(0.0f, chemical(ChemicalID::Sugar) - cost);
 }
@@ -253,7 +253,7 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
     return false;
 }
 
-void Node::tissue_tick(Plant& /*plant*/, const WorldParams& /*world*/) {}
+void Node::update_tissue(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
 float Node::get_bias_multiplier(Node* child, const Genome& g) const {
     float flow = 0.0f, structural = 0.0f;

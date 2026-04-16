@@ -11,7 +11,7 @@ StemNode::StemNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::STEM, position, radius)
 {}
 
-void StemNode::tissue_tick(Plant& plant, const WorldParams& world) {
+void StemNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
     thicken(g, world);
     elongate(g, world);

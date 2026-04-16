@@ -13,7 +13,7 @@ ApicalNode::ApicalNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::APICAL, position, radius)
 {}
 
-void ApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
+void ApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
     if (!active) {
@@ -21,15 +21,30 @@ void ApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
         return;
     }
 
-    // Compute growth fraction before auxin production — same inputs grow_tip() will use
+    produce_auxin(plant, g, world);
+    photosynthesize(plant, g, world);
+    ticks_since_last_node++;
+    elongate(plant, g, world);
+    check_spawn(plant, g);
+}
+
+void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldParams& world) {
     float max_cost = g.growth_rate * world.sugar_cost_meristem_growth;
     float growth_gf = meristem_helpers::growth_fraction(
         chemical(ChemicalID::Sugar), max_cost,
         chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
 
-    // Auxin production (growth-modulated)
-    chemical(ChemicalID::Auxin) += produce_auxin(plant, growth_gf);
+    float base = g.apical_auxin_baseline;
+    float local_light = estimate_local_light();
+    float light_factor = 1.0f + g.auxin_shade_boost * (1.0f - local_light);
+    float sugar = chemical(ChemicalID::Sugar);
+    float sugar_factor = 0.1f + 0.9f * sugar / (sugar + g.auxin_sugar_half_saturation);
+    float age_factor = 1.0f / (1.0f + static_cast<float>(age) / g.auxin_age_half_life);
+    float modulated_baseline = base * light_factor * sugar_factor * age_factor;
+    chemical(ChemicalID::Auxin) += modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
+}
 
+void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams& world) {
     // Green shoot tips photosynthesize at low efficiency — roughly enough
     // to self-sustain in full light, but not enough to be net exporters.
     float light = estimate_local_light() * world.light_level;
@@ -42,39 +57,15 @@ void ApicalNode::tissue_tick(Plant& plant, const WorldParams& world) {
         // Lets a leafless branch resume growth when light returns.
         chemical(ChemicalID::Cytokinin) += production * g.cytokinin_production_rate * 0.1f;
     }
+}
 
-    // Chain growth
-    ticks_since_last_node++;
-    grow_tip(plant, g, world);
-
+void ApicalNode::check_spawn(Plant& plant, const Genome& g) {
     float dist_from_parent = glm::length(offset);
     if (parent && ticks_since_last_node >= g.shoot_plastochron
         && dist_from_parent >= g.tip_offset
         && starvation_ticks == 0) {
         spawn_internode(plant, g);
     }
-}
-
-float ApicalNode::produce_auxin(const Plant& plant, float growth_gf) const {
-    const Genome& g = plant.genome();
-    float base = g.apical_auxin_baseline;
-
-    // Light: shade boosts production (shade-avoidance / TAA-YUCCA upregulation)
-    float local_light = estimate_local_light();
-    float light_factor = 1.0f + g.auxin_shade_boost * (1.0f - local_light);
-
-    // Sugar: well-fed meristems produce more (TOR kinase pathway)
-    // Floor of 10% — even starving meristems have stored metabolic precursors
-    float sugar = chemical(ChemicalID::Sugar);
-    float sugar_factor = 0.1f + 0.9f * sugar / (sugar + g.auxin_sugar_half_saturation);
-
-    // Age: young meristems are more biosynthetically active
-    float age_factor = 1.0f / (1.0f + static_cast<float>(age) / g.auxin_age_half_life);
-
-    float modulated_baseline = base * light_factor * sugar_factor * age_factor;
-
-    // Growth modulation: actively growing meristems produce more auxin
-    return modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
 }
 
 float ApicalNode::estimate_local_light() const {
@@ -123,7 +114,7 @@ void ApicalNode::roll_direction(const Genome& g, const WorldParams& world) {
     }
 }
 
-void ApicalNode::grow_tip(Plant& plant, const Genome& g, const WorldParams& world) {
+void ApicalNode::elongate(Plant& plant, const Genome& g, const WorldParams& world) {
     float max_cost = g.growth_rate * world.sugar_cost_meristem_growth;
     float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);

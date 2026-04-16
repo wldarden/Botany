@@ -90,10 +90,10 @@ public:
 private:
     // --- Tick helpers (called by tick in order) ---
     void sync_world_position();
-    bool handle_energy_cost(Plant& plant, const WorldParams& world);
+    bool pay_maintenance(Plant& plant, const WorldParams& world);
     bool update_physics(Plant& plant, const Genome& g, const WorldParams& world);
-    void update_chemicals(const Genome& g);
-    void pay_maintenance(const WorldParams& world);
+    void transport_chemicals(const Genome& g);
+    void deduct_maintenance_sugar(const WorldParams& world);
     bool check_starvation(Plant& plant, const WorldParams& world);
     void compute_mass(const Genome& g, const WorldParams& world);
     void compute_stress(const Genome& g, const WorldParams& world);
@@ -117,7 +117,7 @@ public:
     const RootApicalNode* as_root_apical() const;
 
 protected:
-    virtual void tissue_tick(Plant& plant, const WorldParams& world);  // subclass entry point
+    virtual void update_tissue(Plant& plant, const WorldParams& world);  // subclass entry point
 };
 
 } // namespace botany

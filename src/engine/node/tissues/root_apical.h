@@ -9,7 +9,7 @@ public:
     // --- Node overrides ---
     RootApicalNode(uint32_t id, glm::vec3 position, float radius);
     float maintenance_cost(const WorldParams& world) const override;
-    void tissue_tick(Plant& plant, const WorldParams& world) override;
+    void update_tissue(Plant& plant, const WorldParams& world) override;
 
     // --- Meristem state ---
     bool active = true; // false = dormant bud, true = actively growing
@@ -21,10 +21,14 @@ private:
     bool can_activate(const Genome& g, const WorldParams& world) const;
     void activate(const Genome& g, const WorldParams& world);
 
+    // --- Water uptake ---
+    void absorb_water(const Genome& g, const WorldParams& world);
+
     // --- Chain growth ---
     void roll_direction(const Genome& g);
     glm::vec3 apply_gravitropism(const glm::vec3& dir, const Genome& g) const;
-    void grow_tip(const Genome& g, const WorldParams& world);
+    void elongate(const Genome& g, const WorldParams& world);
+    void check_spawn(Plant& plant, const Genome& g);
     void spawn_internode(Plant& plant, const Genome& g);
     void spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset);
 };

@@ -13,56 +13,58 @@ LeafNode::LeafNode(uint32_t id, glm::vec3 position, float radius)
     : Node(id, NodeType::LEAF, position, radius)
 {}
 
-void LeafNode::tissue_tick(Plant& plant, const WorldParams& world) {
+void LeafNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
-    // Gibberellin production: young leaves produce GA on themselves
+    produce_gibberellin(g);
+    float net_sugar = photosynthesize(plant, g, world);
+    transpire(g, world);
+    check_carbon_balance(g, world, net_sugar);
+    if (advance_senescence(plant, g)) return;
+    phototropism(g, world);
+    expand(g, world);
+}
+
+void LeafNode::produce_gibberellin(const Genome& g) {
     if (age < g.ga_leaf_age_max && leaf_size > 1e-6f && senescence_ticks == 0) {
         chemical(ChemicalID::Gibberellin) += leaf_size * g.ga_production_rate;
     }
-
-    // Photosynthesis: sugar + cytokinin production
-    float sugar_before = chemical(ChemicalID::Sugar);
-    photosynthesize(g, world);
-    float delta = chemical(ChemicalID::Sugar) - sugar_before;
-    if (delta > 0.0f) plant.add_sugar_produced(delta);
-
-    // Transpiration: water loss proportional to leaf area and light exposure
-    float leaf_area_tr = leaf_size * leaf_size;
-    float transpired = g.transpiration_rate * leaf_area_tr * light_exposure;
-    chemical(ChemicalID::Water) = std::max(0.0f, chemical(ChemicalID::Water) - transpired);
-
-    // Carbon-balance abscission: if production < maintenance for too long, senesce.
-    // Young leaves are immune — they're still growing and not yet net producers.
-    if (senescence_ticks == 0 && age >= g.min_leaf_age_before_abscission) {
-        float cost = maintenance_cost(world);
-        if (delta < cost) deficit_ticks++;
-        else              deficit_ticks = 0;
-
-        if (deficit_ticks >= g.leaf_abscission_ticks) {
-            senescence_ticks = 1;
-        }
-    }
-
-    // Senescence countdown → leaf drop
-    if (senescence_ticks > 0) {
-        senescence_ticks++;
-        if (senescence_ticks >= g.senescence_duration) {
-            die(plant);
-            return;
-        }
-    }
-
-    // Growth
-    phototropism(g, world);
-    grow_size(g, world);
 }
 
-void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
-    if (leaf_size <= 1e-6f || senescence_ticks != 0) return;
+void LeafNode::transpire(const Genome& g, const WorldParams& world) {
+    float leaf_area = leaf_size * leaf_size;
+    float transpired = g.transpiration_rate * leaf_area * light_exposure;
+    chemical(ChemicalID::Water) = std::max(0.0f, chemical(ChemicalID::Water) - transpired);
+}
+
+void LeafNode::check_carbon_balance(const Genome& g, const WorldParams& world, float net_sugar) {
+    if (senescence_ticks != 0 || age < g.min_leaf_age_before_abscission) return;
+
+    float cost = maintenance_cost(world);
+    if (net_sugar < cost) deficit_ticks++;
+    else                  deficit_ticks = 0;
+
+    if (deficit_ticks >= g.leaf_abscission_ticks) {
+        senescence_ticks = 1;
+    }
+}
+
+bool LeafNode::advance_senescence(Plant& plant, const Genome& g) {
+    if (senescence_ticks == 0) return false;
+    senescence_ticks++;
+    if (senescence_ticks >= g.senescence_duration) {
+        die(plant);
+        return true;
+    }
+    return false;
+}
+
+float LeafNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams& world) {
+    if (leaf_size <= 1e-6f || senescence_ticks != 0) return 0.0f;
 
     float cap = sugar_cap(*this, g);
-    if (chemical(ChemicalID::Sugar) >= cap) return;
+    float sugar_before = chemical(ChemicalID::Sugar);
+    if (sugar_before >= cap) return 0.0f;
 
     float angle_efficiency = 1.0f;
     float facing_len = glm::length(facing);
@@ -77,6 +79,7 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
            * world.sugar_production_rate;
     chemical(ChemicalID::Sugar) += sugar_produced;
     chemical(ChemicalID::Sugar) = std::min(chemical(ChemicalID::Sugar), cap);
+    float delta = chemical(ChemicalID::Sugar) - sugar_before;
 
     // Photosynthesis water cost: small deduction proportional to sugar produced
     float water_cost = sugar_produced * g.photosynthesis_water_ratio;
@@ -85,6 +88,9 @@ void LeafNode::photosynthesize(const Genome& g, const WorldParams& world) {
     // Cytokinin production: proportional to actual photosynthetic output.
     // This is the "I have producing leaves" signal that gates all growth.
     chemical(ChemicalID::Cytokinin) += sugar_produced * g.cytokinin_production_rate;
+
+    if (delta > 0.0f) plant.add_sugar_produced(delta);
+    return delta;
 }
 
 void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
@@ -118,7 +124,7 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     facing = glm::normalize(new_dir);
 }
 
-void LeafNode::grow_size(const Genome& g, const WorldParams& world) {
+void LeafNode::expand(const Genome& g, const WorldParams& world) {
     if (leaf_size >= g.max_leaf_size) return;
 
     float auxin_boost = meristem_helpers::auxin_growth_factor(
