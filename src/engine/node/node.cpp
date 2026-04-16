@@ -348,10 +348,24 @@ void Node::transport_with_children(const Genome& g) {
 
             float child_cap = has_cap ? cap_for(*child) : 0.0f;
 
+            // Negate bias for root-type children. Root apices are at the bottom of
+            // the plant, so a chemical's whole-plant direction is opposite to what
+            // the local parent→child tree edge implies for root nodes:
+            //   acropetal (+bias): root→seed (child→parent), so flip to basipetal
+            //   basipetal (-bias): seed→root tip (parent→child), so flip to acropetal
+            // This makes the seed a correct transit for both directions:
+            //   cytokinin:  root_apical → seed → shoot  (positive bias inverted on root)
+            //   auxin:      shoot → seed → root_apical  (negative bias inverted on root)
+            ChemicalDiffusionParams child_dp = dp;
+            if (dp.bias != 0.0f && (child->type == NodeType::ROOT ||
+                                     child->type == NodeType::ROOT_APICAL)) {
+                child_dp.bias = -dp.bias;
+            }
+
             float desired = compute_transport_flow(
                 child->chemical(dp.id), chemical(dp.id),
                 child_cap, parent_cap,
-                child_radius, radius, ref_radius, dp);
+                child_radius, radius, ref_radius, child_dp);
 
             if (std::abs(desired) > 1e-8f) {
                 float bm = get_bias_multiplier(child, g);
