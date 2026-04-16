@@ -158,6 +158,11 @@ struct Genome {
     float structural_growth_rate;         // structural bias increment per tick above threshold
     float structural_max;                 // cap on structural bias
     float canalization_weight;            // global scaling on combined bias effect (0 = disabled)
+
+    // Vascular transport
+    float xylem_conductance;              // throughput per dm² cross-section per tick (water + cytokinin)
+    float phloem_conductance;             // throughput per dm² cross-section per tick (sugar)
+    float phloem_reserve_fraction;        // fraction of sugar_cap leaves keep for themselves (don't load into phloem)
 };
 
 inline Genome default_genome() {
@@ -298,6 +303,11 @@ inline Genome default_genome() {
         .structural_growth_rate = 0.005f,     // ~8 days to reach 1.0
         .structural_max = 2.0f,               // at max: 1 + 2.0 = 3.0x weight
         .canalization_weight = 1.0f,          // full effect by default
+
+        // Vascular transport
+        .xylem_conductance = 10.0f,           // generous — xylem is open dead tubes
+        .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
+        .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap for themselves
     };
 }
 

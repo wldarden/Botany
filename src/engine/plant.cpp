@@ -6,6 +6,7 @@
 #include "engine/node/tissues/apical.h"
 #include "engine/node/tissues/root_apical.h"
 #include "engine/ethylene.h"
+#include "engine/vascular.h"
 #include "engine/perf_log.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
@@ -140,6 +141,7 @@ static void tick_recursive(Node& node, Plant& plant, const WorldParams& world) {
 }
 
 void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
+    vascular_transport(*this, genome_);  // bulk flow for sugar/water/cytokinin
     tick_recursive(*nodes_[0], *this, world);
     flush_removals();
 }

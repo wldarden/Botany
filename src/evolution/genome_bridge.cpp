@@ -153,6 +153,11 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "structural_max",           g.structural_max,           r, 0.0f, 10.0f, p);
     reg(sg, "canalization_weight",      g.canalization_weight,      r, 0.0f, 5.0f, p);
 
+    // Vascular transport
+    reg(sg, "xylem_conductance",       g.xylem_conductance,        r, 1.0f, 50.0f, p);
+    reg(sg, "phloem_conductance",      g.phloem_conductance,       r, 1.0f, 50.0f, p);
+    reg(sg, "phloem_reserve_fraction", g.phloem_reserve_fraction,  r, 0.05f, 0.8f, p);
+
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
         "apical_auxin_baseline", "apical_growth_auxin_multiplier",
@@ -202,7 +207,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     sg.add_linkage_group({"sugar_economy", {
         "sugar_diffusion_rate", "seed_sugar",
         "sugar_storage_density_wood", "sugar_storage_density_leaf",
-        "sugar_cap_minimum", "sugar_cap_meristem"
+        "sugar_cap_minimum", "sugar_cap_meristem",
+        "xylem_conductance", "phloem_conductance", "phloem_reserve_fraction"
     }});
 
     sg.add_linkage_group({"water_economy", {
@@ -378,6 +384,11 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.structural_growth_rate   = sg.get("structural_growth_rate");
     g.structural_max           = sg.get("structural_max");
     g.canalization_weight      = sg.get("canalization_weight");
+
+    // Vascular transport
+    g.xylem_conductance        = sg.get("xylem_conductance");
+    g.phloem_conductance       = sg.get("phloem_conductance");
+    g.phloem_reserve_fraction  = sg.get("phloem_reserve_fraction");
 
     return g;
 }

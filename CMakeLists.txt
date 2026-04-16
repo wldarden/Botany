@@ -78,6 +78,7 @@ add_library(botany_engine STATIC
     src/engine/light.cpp
     src/engine/debug_log.cpp
     src/engine/ethylene.cpp
+    src/engine/vascular.cpp
     src/engine/engine.cpp
     src/engine/world_params.cpp
 )

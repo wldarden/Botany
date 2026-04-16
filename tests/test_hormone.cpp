@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "engine/plant.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/node/tissues/leaf.h"
 

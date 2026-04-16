@@ -40,6 +40,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
     - `helpers.h` — shared helper functions (growth_direction, branch_direction, perturb, sugar_growth_fraction, etc.)
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
+- **vascular.h/cpp** - `vascular_transport()` — global xylem/phloem pass. Moves sugar (phloem) and water+cytokinin (xylem) via bulk flow, bypassing mature conduit nodes. Runs before the DFS tree walk.
 - **sugar.h/cpp** - `transport_sugar()` — sugar production (leaves), maintenance consumption, starvation pruning. Diffusion moved to `Node::transport_chemicals()`.
 - **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
 - **world_params.h** - `WorldParams` struct (light level, construction costs, sugar_production_rate, maintenance rates, soil_moisture 0-1) — non-genetic physical constants
@@ -79,9 +80,33 @@ All 7 node types extend `Node` directly — flat hierarchy, no intermediate clas
 
 ## Chemical Transport Model
 
-All chemicals use a **unified transport function** (`transport_chemical()` in `hormone.h`), called per-node per-chemical during `Node::transport_chemicals()`. The recursive tick walks the tree from seed outward (DFS pre-order), so each node handles its own transport with its parent. Every edge is processed exactly once.
+The plant uses a **dual transport system** matching real plant biology:
 
-### Unified Transport: Concentration + Shifted Equilibrium + Throughput Cap
+1. **Vascular transport** (`vascular.h/cpp`) — global pass before the DFS walk. Moves sugar (phloem), water, and cytokinin (xylem) via bulk flow. Sources load chemicals, sinks unload, mature stems/roots are conduits that pass through without consuming. Two O(N) walks: post-order aggregates supply/demand, pre-order distributes actual flow.
+
+2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk. Handles auxin, gibberellin, stress (cell-to-cell signaling) and "last-mile" delivery of vascular chemicals to/from leaves, meristems, and young nodes that lack vasculature.
+
+| Chemical | Transport | Notes |
+|----------|-----------|-------|
+| Auxin | Local diffusion | Polar cell-to-cell transport |
+| Gibberellin | Local diffusion | Short-range, local to producing leaf |
+| Stress | Local diffusion | Local mechanical signal |
+| Ethylene | Spatial gas diffusion | Global 3D pass (existing) |
+| Sugar | **Vascular (phloem)** + last-mile local | Source (leaves) → sink (growing tips) |
+| Water | **Vascular (xylem)** + last-mile local | Root → shoot bulk flow |
+| Cytokinin | **Vascular (xylem)** + last-mile local | Carried in xylem stream |
+
+**Vasculature maturity:** Only `StemNode` with `age >= cambium_maturation_ticks` and `RootNode` with `age >= root_cambium_maturation_ticks` have vasculature. The seed always has vasculature (junction). Leaves, meristems, and young internodes use local diffusion exclusively. On mature-to-mature edges, local diffusion skips vascular chemicals (handled by the global pass).
+
+### Vascular Sources and Sinks
+
+**Phloem (sugar):** Leaves with sugar above `phloem_reserve_fraction × sugar_cap` are sources. Apical meristems, root apical meristems, and starving nodes are sinks. Capacity = `π × radius² × phloem_conductance`.
+
+**Xylem (water + cytokinin):** Root nodes and root apicals are sources. Leaves (transpiration demand) and shoot apicals (turgor + cytokinin for growth) are sinks. Capacity = `π × radius² × xylem_conductance`.
+
+### Local Diffusion: Concentration + Shifted Equilibrium + Throughput Cap + Equalization
+
+### Unified Transport: Concentration + Shifted Equilibrium + Throughput Cap + Equalization
 
 ```
 concentration = has_capacity ? level / capacity : level
@@ -92,7 +117,7 @@ equalize = flow_to_reach_bias_adjusted_equilibrium  // never overshoot
 flow = clamp(flow, min(0, equalize), max(0, equalize))
 ```
 
-Four mechanisms work together:
+Five mechanisms work together:
 
 1. **Concentration gradient** — flow driven by relative fullness (sugar) or raw level (hormones). Prevents large nodes from draining small ones at equal concentration.
 2. **Shifted equilibrium (bias)** — offsets where "equal" is. `bias < 0` = chemical accumulates root-ward (auxin). `bias > 0` = chemical accumulates tip-ward (cytokinin). Self-correcting: gradient still governs flow, just from an offset resting point. **Root-type inversion:** for `ROOT` and `ROOT_APICAL` children, the bias is negated during `transport_with_children`. Root apices are at the bottom of the plant, so "acropetal" in the whole-plant sense means toward the seed for root-side nodes. This makes the seed a correct transit junction: cytokinin flows root-tip → seed → shoot, auxin flows shoot → seed → root-tip, without cycling.
@@ -198,7 +223,8 @@ The recursive tick walks the tree from seed outward. Each node's `tick()`:
 8. Mass & stress computation
 9. Droop & break (stems only)
 10. `transport_chemicals()` — unified diffusion for all chemicals
-11. Children ticked recursively (snapshot of children list for safe reparenting)
+11. Flush `transport_received` — chemicals received from parent during step 10 are now added to `chemical()` (anti-teleportation: they were invisible during this node's own transport)
+12. Children ticked recursively (snapshot of children list for safe reparenting)
 
 Meristem chain growth: the meristem node inserts an internode above itself (self-reparenting). Axillary activation: the node replaces itself in the parent's children with a new apical node, queues itself for deferred removal.
 
@@ -272,3 +298,6 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `water_bias` (0.05) - slight upward equilibrium shift
 - `water_base_transport` (0.2) - throughput floor (higher than sugar's 0.1)
 - `water_transport_scale` (4.0) - radius scaling on throughput
+- `xylem_conductance` (10.0) - vascular throughput per dm² cross-section per tick (water + cytokinin)
+- `phloem_conductance` (8.0) - vascular throughput per dm² cross-section per tick (sugar)
+- `phloem_reserve_fraction` (0.3) - fraction of sugar_cap leaves keep for themselves (not loaded into phloem)
