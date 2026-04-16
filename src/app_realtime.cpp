@@ -962,6 +962,50 @@ int main(int argc, char* argv[]) {
 
                     ImGui::EndTable();
                 }
+
+                ImGui::Separator();
+
+                // Helper: node type as string
+                auto node_type_str = [](const Node* n) -> const char* {
+                    switch (n->type) {
+                        case NodeType::STEM:        return "STEM";
+                        case NodeType::ROOT:        return "ROOT";
+                        case NodeType::LEAF:        return "LEAF";
+                        case NodeType::APICAL:      return "APICAL";
+                        case NodeType::ROOT_APICAL: return "ROOT_APICAL";
+                    }
+                    return "?";
+                };
+
+                // Parent navigation
+                if (sel.parent) {
+                    char label[64];
+                    std::snprintf(label, sizeof(label), "Parent: %s", node_type_str(sel.parent));
+                    if (ImGui::Button(label)) {
+                        g_selected_node = sel.parent;
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        g_hovered_node = sel.parent;
+                    }
+                }
+
+                // Child navigation
+                ImGui::Spacing();
+                if (sel.children.empty()) {
+                    ImGui::TextDisabled("No children");
+                } else {
+                    for (int i = 0; i < static_cast<int>(sel.children.size()); ++i) {
+                        const Node* child = sel.children[i];
+                        char label[64];
+                        std::snprintf(label, sizeof(label), "Child %d: %s", i, node_type_str(child));
+                        if (ImGui::Button(label)) {
+                            g_selected_node = child;
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            g_hovered_node = child;
+                        }
+                    }
+                }
             }
             ImGui::End();
         }
