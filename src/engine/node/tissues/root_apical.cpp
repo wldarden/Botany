@@ -22,6 +22,12 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // symmetrical to how shoot apicals produce a baseline of auxin.
     chemical(ChemicalID::Cytokinin) += g.root_cytokinin_production_rate;
 
+    // Auxin production: real root tips maintain a local auxin maximum via
+    // PIN-mediated recycling. This auxin flows acropetally (toward seed in
+    // root-space) and promotes lateral root initiation in nearby internodes.
+    // Rate is ~1/5th of shoot apical baseline — root tips are minor auxin sources.
+    chemical(ChemicalID::Auxin) += g.root_tip_auxin_production_rate;
+
     if (!active) {
         if (can_activate(g, world)) activate(g, world);
         return;
@@ -64,17 +70,17 @@ glm::vec3 RootApicalNode::apply_gravitropism(const glm::vec3& dir, const Genome&
 
 void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
-    float local_auxin = parent ? parent->chemical(ChemicalID::Auxin)
-                               : chemical(ChemicalID::Auxin);
-    float gf = root_growth_fraction(chemical(ChemicalID::Sugar), max_cost,
-                                     local_auxin, g.root_auxin_growth_threshold);
+    // Root elongation is sugar-gated only — real root tips maintain their own
+    // auxin maximum via PIN recycling, so we don't gate on exogenous auxin.
+    float gf = sugar_growth_fraction(chemical(ChemicalID::Sugar), max_cost);
     if (gf < 1e-6f) return;
+    float water_gf = turgor_fraction(chemical(ChemicalID::Water), water_cap(*this, g));
+    if (water_gf < 1e-6f) return;
+    gf *= water_gf;
 
     if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
 
-    float auxin_boost = meristem_helpers::auxin_growth_factor(
-        chemical(ChemicalID::Auxin), g.root_apical_auxin_max_boost, g.root_apical_auxin_half_saturation);
-    float actual_rate = g.root_growth_rate * gf * auxin_boost;
+    float actual_rate = g.root_growth_rate * gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
     offset += growth_dir * actual_rate;
 }
@@ -112,20 +118,16 @@ void RootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome&
 }
 
 float RootApicalNode::maintenance_cost(const WorldParams& world) const {
-    return world.sugar_maintenance_meristem;
+    return active ? world.sugar_maintenance_meristem : 0.0f;
 }
 
 bool RootApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
     // Auxin from the shoot promotes root activation — "the shoot wants more roots".
     // Existing cytokinin (produced by already-active roots) inhibits activation
     // of additional roots, preventing runaway branching.
-    float local_auxin = parent ? parent->chemical(ChemicalID::Auxin)
-                               : chemical(ChemicalID::Auxin);
-    if (local_auxin < g.root_auxin_activation_threshold) return false;
+    if (chemical(ChemicalID::Auxin) < g.root_auxin_activation_threshold) return false;
 
-    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin)
-                             : chemical(ChemicalID::Cytokinin);
-    if (local_cyt > g.root_cytokinin_inhibition_threshold) return false;
+    if (chemical(ChemicalID::Cytokinin) > g.root_cytokinin_inhibition_threshold) return false;
 
     if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 

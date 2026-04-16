@@ -69,6 +69,11 @@ public:
         return it != chemicals.end() ? it->second : 0.0f;
     }
 
+    // Transport received buffer — chemicals received from parent's Phase 2
+    // this tick. NOT visible to this node's own transport (anti-teleportation).
+    // Flushed into chemical() after this node's transport completes.
+    std::unordered_map<ChemicalID, float> transport_received;
+
     // Canalization — per-child transport bias (stored on parent, keyed by child pointer)
     std::unordered_map<Node*, float> auxin_flow_bias;       // transient — fast, decays
     std::unordered_map<Node*, float> structural_flow_bias;  // persistent — slow, permanent

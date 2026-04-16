@@ -24,7 +24,6 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "auxin_threshold",            g.auxin_threshold,            r, 0.01f, 1.0f, p);
     reg(sg, "auxin_shade_boost",          g.auxin_shade_boost,          r, 0.0f, 2.0f, p);
     reg(sg, "auxin_sugar_half_saturation", g.auxin_sugar_half_saturation, r, 0.01f, 5.0f, p);
-    reg(sg, "auxin_age_half_life",        g.auxin_age_half_life,        r, 24.0f, 4320.0f, p);
     reg(sg, "auxin_bias",                g.auxin_bias,                r, -1.0f, 0.0f, p);
     reg(sg, "leaf_auxin_baseline",            g.leaf_auxin_baseline,            r, 0.01f, 2.0f, p);
     reg(sg, "leaf_growth_auxin_multiplier",   g.leaf_growth_auxin_multiplier,   r, 0.0f, 1.0f, p);
@@ -159,7 +158,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "apical_auxin_baseline", "apical_growth_auxin_multiplier",
         "auxin_diffusion_rate",
         "auxin_decay_rate", "auxin_threshold",
-        "auxin_shade_boost", "auxin_sugar_half_saturation", "auxin_age_half_life",
+        "auxin_shade_boost", "auxin_sugar_half_saturation",
         "auxin_bias",
         "leaf_auxin_baseline", "leaf_growth_auxin_multiplier",
         "stem_auxin_max_boost", "stem_auxin_half_saturation",
@@ -258,7 +257,6 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.auxin_threshold              = sg.get("auxin_threshold");
     g.auxin_shade_boost            = sg.get("auxin_shade_boost");
     g.auxin_sugar_half_saturation  = sg.get("auxin_sugar_half_saturation");
-    g.auxin_age_half_life          = sg.get("auxin_age_half_life");
     g.auxin_bias                   = sg.get("auxin_bias");
     g.leaf_auxin_baseline              = sg.get("leaf_auxin_baseline");
     g.leaf_growth_auxin_multiplier     = sg.get("leaf_growth_auxin_multiplier");

@@ -222,10 +222,11 @@ TEST_CASE("Auxin: growing leaf produces auxin", "[hormone]") {
     });
     REQUIRE(growing_leaf != nullptr);
 
-    // Zero all auxin, give sugar for leaf growth
-    plant.for_each_node_mut([](Node& n) {
+    // Zero all auxin, give sugar + water for leaf growth
+    plant.for_each_node_mut([&](Node& n) {
         n.chemical(ChemicalID::Auxin) = 0.0f;
         n.chemical(ChemicalID::Sugar) = 100.0f;
+        n.chemical(ChemicalID::Water) = water_cap(n, g);
     });
 
     plant.tick(world);
@@ -237,6 +238,7 @@ TEST_CASE("Auxin: growing leaf produces auxin", "[hormone]") {
 TEST_CASE("Auxin: full-size leaf produces zero auxin", "[hormone]") {
     Genome g = default_genome();
     g.apical_auxin_baseline = 0.0f;          // disable meristem auxin
+    g.root_tip_auxin_production_rate = 0.0f;  // disable root tip auxin
     g.leaf_auxin_baseline = 1.0f;
     g.leaf_growth_auxin_multiplier = 0.5f;
     g.growth_rate = 0.5f;

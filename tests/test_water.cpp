@@ -12,6 +12,15 @@
 #include "engine/chemical/chemical.h"
 
 using namespace botany;
+
+static void flush_buffers(Plant& plant) {
+    plant.for_each_node_mut([](Node& n) {
+        for (auto& [id, amount] : n.transport_received) {
+            n.chemical(id) += amount;
+        }
+        n.transport_received.clear();
+    });
+}
 using Catch::Matchers::WithinAbs;
 
 TEST_CASE("Seed node starts with water", "[water]") {
@@ -96,6 +105,7 @@ TEST_CASE("Water diffuses from high to low concentration", "[water]") {
     child->chemical(ChemicalID::Water) = 0.0f;
 
     plant.seed_mut()->transport_with_children(g);
+    flush_buffers(plant);
 
     REQUIRE(child->chemical(ChemicalID::Water) > 0.0f);
     REQUIRE(plant.seed()->chemical(ChemicalID::Water) < 50.0f);
@@ -121,6 +131,7 @@ TEST_CASE("Water transport conserves total water", "[water]") {
         plant.for_each_node_mut([&](Node& n) {
             n.transport_with_children(g);
         });
+        flush_buffers(plant);
     }
 
     float total_after = 0.0f;

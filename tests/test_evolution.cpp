@@ -52,12 +52,12 @@ TEST_CASE("Genome template has linkage groups", "[evolution]") {
     auto& groups = tmpl.linkage_groups();
     REQUIRE(groups.size() == 12);
 
-    // Verify auxin group has 21 genes (7 original + 4 leaf/apical production + 10 growth sensitivity)
+    // Verify auxin group has 20 genes (removed auxin_age_half_life)
     bool found_auxin = false;
     for (auto& g : groups) {
         if (g.name == "auxin") {
             found_auxin = true;
-            REQUIRE(g.gene_tags.size() == 21);
+            REQUIRE(g.gene_tags.size() == 20);
         }
     }
     REQUIRE(found_auxin);

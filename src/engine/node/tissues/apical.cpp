@@ -2,6 +2,7 @@
 #include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
 #include "engine/node/tissues/leaf.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 #include <unordered_set>
 
@@ -39,8 +40,7 @@ void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldPar
     float light_factor = 1.0f + g.auxin_shade_boost * (1.0f - local_light);
     float sugar = chemical(ChemicalID::Sugar);
     float sugar_factor = 0.1f + 0.9f * sugar / (sugar + g.auxin_sugar_half_saturation);
-    float age_factor = 1.0f / (1.0f + static_cast<float>(age) / g.auxin_age_half_life);
-    float modulated_baseline = base * light_factor * sugar_factor * age_factor;
+    float modulated_baseline = base * light_factor * sugar_factor;
     chemical(ChemicalID::Auxin) += modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
 }
 
@@ -116,6 +116,9 @@ void ApicalNode::elongate(Plant& plant, const Genome& g, const WorldParams& worl
     float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
                                chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf < 1e-6f) return;
+    float water_gf = turgor_fraction(chemical(ChemicalID::Water), water_cap(*this, g));
+    if (water_gf < 1e-6f) return;
+    gf *= water_gf;
 
     // Roll a fresh direction on internode spawn (noise + plagiotropism + phototropism)
     if (glm::length(growth_dir) < 1e-4f) roll_direction(g, world);
@@ -217,7 +220,7 @@ void ApicalNode::spawn_leaf(Plant& plant, Node* internode, const Genome& g, cons
 }
 
 float ApicalNode::maintenance_cost(const WorldParams& world) const {
-    return world.sugar_maintenance_meristem;
+    return active ? world.sugar_maintenance_meristem : 0.0f;
 }
 
 bool ApicalNode::can_activate(const Genome& g, const WorldParams& world) const {

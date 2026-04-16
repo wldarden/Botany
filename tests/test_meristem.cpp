@@ -6,10 +6,18 @@
 #include "engine/node/tissues/leaf.h"
 #include "engine/node/tissues/apical.h"
 #include "engine/node/tissues/root_apical.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 
 using namespace botany;
 using Catch::Matchers::WithinAbs;
+
+// Fill all nodes with water to capacity so turgor doesn't gate growth in tests.
+static void fill_water(Plant& plant, const Genome& g) {
+    plant.for_each_node_mut([&](Node& n) {
+        n.chemical(ChemicalID::Water) = water_cap(n, g);
+    });
+}
 
 TEST_CASE("Shoot apical meristem extends node position upward", "[meristem]") {
     Genome g = default_genome();
@@ -24,6 +32,7 @@ TEST_CASE("Shoot apical meristem extends node position upward", "[meristem]") {
     float y_before = shoot->position.y;
 
     plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    fill_water(plant, g);
     plant.tick(default_world_params());
 
     REQUIRE(shoot->position.y > y_before);
@@ -43,13 +52,14 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     float seed_r_before = seed->radius;
     float shoot_r_before = shoot->radius;
 
-    plant.for_each_node_mut([](Node& n) {
+    plant.for_each_node_mut([&](Node& n) {
         n.chemical(ChemicalID::Sugar) = 100.0f;
         n.chemical(ChemicalID::Auxin) = 1.0f; // thickening is auxin-gated
+        n.age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
     });
     plant.tick(default_world_params());
 
-    // Seed (interior node, no active meristem) should thicken
+    // Seed (mature interior node) should thicken
     REQUIRE(seed->radius > seed_r_before);
     // Shoot tip (active apical meristem) should NOT thicken
     REQUIRE(shoot->radius == shoot_r_before);
@@ -296,6 +306,7 @@ TEST_CASE("Shoot apical meristem grows and deducts sugar", "[meristem][sugar]") 
     REQUIRE(shoot_tip != nullptr);
 
     shoot_tip->chemical(ChemicalID::Sugar) = 100.0f;
+    fill_water(plant, g);
     float sugar_before = shoot_tip->chemical(ChemicalID::Sugar);
     plant.tick(default_world_params());
     REQUIRE(shoot_tip->chemical(ChemicalID::Sugar) < sugar_before);
@@ -357,6 +368,7 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
     Node* seed = plant.seed_mut();
     seed->chemical(ChemicalID::Sugar) = 100.0f;
     seed->chemical(ChemicalID::Auxin) = 1.0f; // thickening is auxin-gated
+    seed->age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
     float sugar_before = seed->chemical(ChemicalID::Sugar);
 
     plant.tick(default_world_params());
@@ -398,6 +410,8 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     // Saturate cytokinin so it doesn't gate this test
     tip1->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
     tip2->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
+    fill_water(plant1, g);
+    fill_water(plant2, g);
 
     glm::vec3 pos1_before = tip1->position;
     glm::vec3 pos2_before = tip2->position;
@@ -476,6 +490,7 @@ TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
     stem1->chemical(ChemicalID::Sugar) = 50.0f;
     plant1.seed_mut()->chemical(ChemicalID::Sugar) = 50.0f;
     plant1.seed_mut()->add_child(stem1);
+    fill_water(plant1, g);
 
     // Plant 2: inject ethylene directly onto stem
     Plant plant2(g, glm::vec3(0.0f));
@@ -486,6 +501,7 @@ TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
     stem2->chemical(ChemicalID::Ethylene) = 1.0f;  // direct injection
     plant2.seed_mut()->chemical(ChemicalID::Sugar) = 50.0f;
     plant2.seed_mut()->add_child(stem2);
+    fill_water(plant2, g);
 
     float offset1_before = glm::length(stem1->offset);
     float offset2_before = glm::length(stem2->offset);
@@ -515,16 +531,18 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     // reserve fraction actually limits growth.
     // Zero ALL sugar in plant1, then give seed barely any — prevents diffusion from children
     // Both plants get auxin so thickening isn't auxin-limited
-    plant1.for_each_node_mut([](Node& n) {
+    plant1.for_each_node_mut([&](Node& n) {
         n.chemical(ChemicalID::Sugar) = 0.0f;
         n.chemical(ChemicalID::Auxin) = 1.0f;
+        n.age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
     });
     seed1->chemical(ChemicalID::Sugar) = 0.00002f; // below thickening cost to force partial rate
 
     // Plant2 gets plenty everywhere so diffusion doesn't drain the seed
-    plant2.for_each_node_mut([](Node& n) {
+    plant2.for_each_node_mut([&](Node& n) {
         n.chemical(ChemicalID::Sugar) = 1.0f;
         n.chemical(ChemicalID::Auxin) = 1.0f;
+        n.age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
     });
 
     float r1_before = seed1->radius;

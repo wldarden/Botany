@@ -142,6 +142,11 @@ void LeafNode::expand(const Genome& g, const WorldParams& world) {
     float remaining = g.max_leaf_size - leaf_size;
     float growth = std::min(max_growth, remaining);
 
+    // Turgor pressure gates leaf expansion — cells can't inflate without water
+    float water_gf = meristem_helpers::turgor_fraction(chemical(ChemicalID::Water), water_cap(*this, g));
+    if (water_gf < 1e-6f) return;
+    growth *= water_gf;
+
     float cost = growth * world.sugar_cost_leaf_growth;
     if (chemical(ChemicalID::Sugar) < cost) {
         growth = chemical(ChemicalID::Sugar) / world.sugar_cost_leaf_growth;

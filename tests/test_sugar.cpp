@@ -11,6 +11,18 @@
 using namespace botany;
 using Catch::Matchers::WithinAbs;
 
+// Flush transport_received buffers into chemical() for all nodes.
+// Needed after calling transport_with_children() directly in tests,
+// since the buffer is normally flushed at the end of Node::tick().
+static void flush_buffers(Plant& plant) {
+    plant.for_each_node_mut([](Node& n) {
+        for (auto& [id, amount] : n.transport_received) {
+            n.chemical(id) += amount;
+        }
+        n.transport_received.clear();
+    });
+}
+
 // === Production tests ===
 
 TEST_CASE("LEAF nodes produce sugar proportional to light and leaf_size", "[sugar]") {
@@ -141,6 +153,7 @@ TEST_CASE("Sugar diffuses from high to low concentration", "[sugar]") {
     float seed_before = seed->chemical(ChemicalID::Sugar);
     // Parent distributes to children collectively
     seed->transport_with_children(g);
+    flush_buffers(plant);
 
     REQUIRE(seed->chemical(ChemicalID::Sugar) < seed_before);
     for (const Node* child : seed->children) {
@@ -162,6 +175,7 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
         plant.for_each_node_mut([&](Node& n) {
             n.transport_with_children(g);
         });
+        flush_buffers(plant);
     }
 
     float total_after = 0.0f;
@@ -187,6 +201,7 @@ TEST_CASE("Transport moves sugar from full parent to empty children", "[sugar]")
 
     // One round of transport: seed should distribute to children
     plant.seed_mut()->transport_with_children(g);
+    flush_buffers(plant);
 
     float child_after = 0.0f;
     for (const Node* c : plant.seed()->children) { child_after += c->chemical(ChemicalID::Sugar); }
@@ -226,6 +241,13 @@ TEST_CASE("Sugar diffusion conserves total across many ticks", "[sugar]") {
         for (int t = 0; t < ticks; t++) {
             plant.for_each_node_mut([&](Node& n) {
                 n.transport_with_children(g);
+            });
+            // Flush received buffers (normally done by tick())
+            plant.for_each_node_mut([](Node& n) {
+                for (auto& [id, amt] : n.transport_received) {
+                    n.chemical(id) += amt;
+                }
+                n.transport_received.clear();
             });
         }
 

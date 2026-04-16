@@ -152,6 +152,11 @@ TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]"
     parent_node->auxin_flow_bias[childB] = 0.0f;
 
     parent_node->transport_with_children(g);
+    // Flush received buffers (normally done by tick())
+    for (Node* c : parent_node->children) {
+        for (auto& [id, amt] : c->transport_received) c->chemical(id) += amt;
+        c->transport_received.clear();
+    }
 
     REQUIRE(childA->chemical(ChemicalID::Sugar) > childB->chemical(ChemicalID::Sugar) * 1.5f);
 }
@@ -178,6 +183,11 @@ TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization
     parent_node->auxin_flow_bias[childB] = 0.0f;
 
     parent_node->transport_with_children(g);
+    // Flush received buffers (normally done by tick())
+    for (Node* c : parent_node->children) {
+        for (auto& [id, amt] : c->transport_received) c->chemical(id) += amt;
+        c->transport_received.clear();
+    }
 
     // Both should get roughly equal sugar
     float ratio = childA->chemical(ChemicalID::Sugar) /

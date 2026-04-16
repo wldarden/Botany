@@ -1,6 +1,7 @@
 #include "engine/node/stem_node.h"
 #include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
+#include "engine/sugar.h"
 #include "engine/world_params.h"
 #include <algorithm>
 #include <glm/geometric.hpp>
@@ -18,6 +19,10 @@ void StemNode::update_tissue(Plant& plant, const WorldParams& world) {
 }
 
 void StemNode::thicken(const Genome& g, const WorldParams& world) {
+    // Secondary growth only begins after cambium matures — separate from
+    // elongation lockout (which is a visual constraint for stiff cylinders).
+    if (age < g.cambium_maturation_ticks) return;
+
     float density_scale = g.wood_density / world.reference_wood_density;
     float effective_rate = g.thickening_rate;
 
@@ -53,15 +58,15 @@ void StemNode::elongate(const Genome& g, const WorldParams& world) {
     float current_len = glm::length(offset);
     if (current_len >= max_len) return;
 
-    // Elongation is sugar-gated only (not cytokinin). If internodes can't
-    // elongate, leaves stay stacked and shaded, so they never produce the
-    // cytokinin needed to unlock elongation — a death spiral.
+    // Elongation requires sugar (construction) and water (turgor pressure).
     float density_scale = g.wood_density / world.reference_wood_density;
     float max_cost = effective_rate * world.sugar_cost_stem_growth * density_scale;
     float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
     if (sugar_gf <= 1e-6f) return;
+    float water_gf = meristem_helpers::turgor_fraction(chemical(ChemicalID::Water), water_cap(*this, g));
+    if (water_gf <= 1e-6f) return;
 
-    float actual_rate = effective_rate * sugar_gf;
+    float actual_rate = effective_rate * sugar_gf * water_gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth * density_scale;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;

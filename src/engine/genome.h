@@ -18,7 +18,6 @@ struct Genome {
     float auxin_threshold;
     float auxin_shade_boost;           // shade-avoidance: production multiplier boost in low light (0 = none)
     float auxin_sugar_half_saturation; // g glucose — sugar level for half-max production (Michaelis-Menten)
-    float auxin_age_half_life;         // ticks — meristem age at which production halves
     float auxin_bias;                  // equilibrium shift for basipetal flow (negative = toward root)
     float leaf_auxin_baseline;            // scaling constant for leaf auxin production (decoupled from apical)
     float leaf_growth_auxin_multiplier;   // fraction of leaf_auxin_baseline produced at max leaf growth
@@ -58,17 +57,20 @@ struct Genome {
     float auxin_thickening_threshold; // auxin level for full-speed cambial growth (lower than branching threshold)
     float internode_elongation_rate;  // dm/hr — intercalary stretch of young internodes
     float max_internode_length;       // dm — max internode length (elongation target)
-    uint32_t internode_maturation_ticks; // hours until internode stops elongating
+    uint32_t internode_maturation_ticks; // hours until internode stops elongating (visual: stiff cylinders)
+    uint32_t cambium_maturation_ticks;   // hours until secondary growth (thickening) begins
 
     // Root growth
     float root_growth_rate;           // dm/hr — root tip extension speed
     uint32_t root_plastochron;        // ticks between root node creation
     float root_branch_angle;          // radians
     float root_internode_elongation_rate;  // dm/hr
-    uint32_t root_internode_maturation_ticks; // hours
+    uint32_t root_internode_maturation_ticks; // hours until root internode stops elongating
+    uint32_t root_cambium_maturation_ticks;  // hours until root secondary growth begins
     float root_gravitropism_strength; // how strongly roots turn downward near surface
     float root_gravitropism_depth;    // dm — depth at which gravitropism correction begins
     float root_cytokinin_production_rate; // baseline cytokinin produced per tick (mirrors apical_auxin_baseline)
+    float root_tip_auxin_production_rate; // auxin produced by root tips (PIN recycling local maximum)
     float root_auxin_growth_threshold;    // Km for auxin-gated root growth fraction
     float root_auxin_activation_threshold; // min auxin to activate dormant root meristem
     float root_cytokinin_inhibition_threshold; // cytokinin above this inhibits root activation
@@ -163,11 +165,10 @@ inline Genome default_genome() {
         .apical_auxin_baseline = 0.15f,
         .apical_growth_auxin_multiplier = 2.0f,  // total = baseline * 3 at max growth
         .auxin_diffusion_rate = 0.1f,          // slow polar transport — maintains tip-to-trunk gradient
-        .auxin_decay_rate = 0.25f,             // strong decay prevents trunk pooling from branch funneling
+        .auxin_decay_rate = 0.12f,             // moderate decay — half-life ~5.4 hours
         .auxin_threshold = 0.15f,
         .auxin_shade_boost = 0.5f,           // shade can increase production by 50%
         .auxin_sugar_half_saturation = 0.3f, // modest sugar needed for decent production
-        .auxin_age_half_life = 720.0f,       // 30 days — gradual decline
         .auxin_bias = -0.1f,                  // gentle basipetal shift (auxin accumulates toward root)
         .leaf_auxin_baseline = 0.15f,             // same scale as apical, but multiplier keeps it at 10%
         .leaf_growth_auxin_multiplier = 0.1f,     // single leaf at max growth = 10% of apical baseline
@@ -184,10 +185,10 @@ inline Genome default_genome() {
         .root_apical_auxin_half_saturation = 0.1f,
 
         .cytokinin_production_rate = 5.0f,   // cytokinin per g sugar produced by leaves
-        .cytokinin_diffusion_rate = 0.3f,
-        .cytokinin_decay_rate = 0.05f,
+        .cytokinin_diffusion_rate = 0.1f,
+        .cytokinin_decay_rate = 0.05f,             // slower than auxin (0.12) — cytokinin travels via xylem bulk flow, less degradation in transit
         .cytokinin_threshold = 0.15f,
-        .cytokinin_growth_threshold = 0.1f,
+        .cytokinin_growth_threshold = 0.005f,       // low Km — trace cytokinin from roots is enough (xylem bulk flow in real plants means near-lossless delivery)
         .cytokinin_bias = 0.1f,               // gentle acropetal shift (cytokinin accumulates toward tips)
 
         .hormone_base_transport = 0.5f,      // generous floor — thin tips can still signal
@@ -202,19 +203,22 @@ inline Genome default_genome() {
         .auxin_thickening_threshold = 0.03f, // cambium responds to low auxin — mid-trunk gets near-full thickening
         .internode_elongation_rate = 0.004f, // dm/hr — intercalary stretch after creation
         .max_internode_length = 1.0f,       // 10 cm — elongation target
-        .internode_maturation_ticks = 72,    // 3 days until lockout
+        .internode_maturation_ticks = 72,    // 3 days until elongation lockout (visual constraint)
+        .cambium_maturation_ticks = 336,     // 14 days until thickening begins (real cambium activation)
 
         .root_growth_rate = 0.004f,         // ~1 cm/day = 0.4 mm/hr
         .root_plastochron = 24,             // 1 day between root node creation
         .root_branch_angle = 0.35f,         // ~20 degrees
         .root_internode_elongation_rate = 0.002f, // dm/hr
-        .root_internode_maturation_ticks = 48,    // 2 days
+        .root_internode_maturation_ticks = 48,    // 2 days until elongation lockout
+        .root_cambium_maturation_ticks = 168,     // 7 days until root thickening begins
         .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
         .root_cytokinin_production_rate = 0.15f,   // cytokinin per unit auxin — moderate signal
+        .root_tip_auxin_production_rate = 0.03f,   // ~1/5th of shoot apical baseline — minor local source for lateral root initiation
         .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation
         .root_auxin_activation_threshold = 0.05f,   // low bar — a little auxin activates roots
-        .root_cytokinin_inhibition_threshold = 0.10f, // existing roots inhibit new activation
+        .root_cytokinin_inhibition_threshold = 0.15f, // mirrors auxin_threshold for symmetric branching control
 
         .max_leaf_size = 1.5f,              // 15 cm side-length at maturity (realistic broad leaf)
         .leaf_growth_rate = 0.005f,         // ~0.5 mm/hr — full size (1.5dm) in ~300 hrs (~12 days)
@@ -290,7 +294,7 @@ inline Genome default_genome() {
         // Canalization
         .transient_gain = 2.0f,               // target = flux * 2 — responsive
         .transient_rate = 0.2f,               // ~87% in 8 hours
-        .structural_threshold = 0.05f,        // min flux for vascular development
+        .structural_threshold = 0.15f,        // only high-flux paths build permanent vascular bias
         .structural_growth_rate = 0.005f,     // ~8 days to reach 1.0
         .structural_max = 2.0f,               // at max: 1 + 2.0 = 3.0x weight
         .canalization_weight = 1.0f,          // full effect by default

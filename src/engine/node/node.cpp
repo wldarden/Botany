@@ -84,6 +84,14 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     float s2 = chemical(ChemicalID::Sugar);
     transport_chemicals(g);
     tick_sugar_transport = chemical(ChemicalID::Sugar) - s2;
+
+    // Flush chemicals received from parent this tick (anti-teleportation:
+    // received chemicals couldn't cascade during this node's own transport
+    // because they were held in the buffer, not in chemical()).
+    for (auto& [id, amount] : transport_received) {
+        chemical(id) += amount;
+    }
+    transport_received.clear();
 }
 
 // --- Tick helpers ---
@@ -310,6 +318,8 @@ float Node::maintenance_cost(const WorldParams& /*world*/) const {
 void Node::transport_with_children(const Genome& g) {
     if (children.empty()) return;
 
+    bool is_seed = (parent == nullptr);
+
     last_auxin_flux.clear();
 
     float ref_radius = g.initial_radius;
@@ -326,18 +336,19 @@ void Node::transport_with_children(const Genome& g) {
         };
         float parent_cap = has_cap ? (dp.id == ChemicalID::Water ? parent_cap_water : parent_cap_sugar) : 0.0f;
 
-        // --- Compute desired flow for each child ---
-        struct ChildFlow {
+        // --- Per-child info needed for both phases ---
+        struct ChildInfo {
             Node* child;
-            float desired;   // positive = child wants to receive, negative = child wants to give
+            float child_radius;
             float child_cap;
-            float bias_mult; // canalization weight multiplier for this connection
+            float bias_mult;
+            ChemicalDiffusionParams child_dp;
+            float desired;   // positive = child wants to receive, negative = child wants to give
         };
-        std::vector<ChildFlow> flows;
-        flows.reserve(children.size());
+        std::vector<ChildInfo> infos;
+        infos.reserve(children.size());
 
         for (Node* child : children) {
-            // Leaf petiole radius: bigger leaves have thicker stalks
             float child_radius = child->radius;
             if (child->type == NodeType::LEAF) {
                 auto* leaf = child->as_leaf();
@@ -348,14 +359,6 @@ void Node::transport_with_children(const Genome& g) {
 
             float child_cap = has_cap ? cap_for(*child) : 0.0f;
 
-            // Negate bias for root-type children. Root apices are at the bottom of
-            // the plant, so a chemical's whole-plant direction is opposite to what
-            // the local parent→child tree edge implies for root nodes:
-            //   acropetal (+bias): root→seed (child→parent), so flip to basipetal
-            //   basipetal (-bias): seed→root tip (parent→child), so flip to acropetal
-            // This makes the seed a correct transit for both directions:
-            //   cytokinin:  root_apical → seed → shoot  (positive bias inverted on root)
-            //   auxin:      shoot → seed → root_apical  (negative bias inverted on root)
             ChemicalDiffusionParams child_dp = dp;
             if (dp.bias != 0.0f && (child->type == NodeType::ROOT ||
                                      child->type == NodeType::ROOT_APICAL)) {
@@ -367,87 +370,121 @@ void Node::transport_with_children(const Genome& g) {
                 child_cap, parent_cap,
                 child_radius, radius, ref_radius, child_dp);
 
-            if (std::abs(desired) > 1e-8f) {
-                float bm = get_bias_multiplier(child, g);
-                flows.push_back({child, desired, child_cap, bm});
-            }
+            float bm = get_bias_multiplier(child, g);
+            infos.push_back({child, child_radius, child_cap, bm, child_dp, desired});
         }
 
-        if (flows.empty()) continue;
-
         // --- Phase 1: children giving to parent (desired < 0) ---
-        // Each child gives proportional to |desired|, limited by its supply.
-        // Parent receives, limited by its remaining capacity.
-        // When headroom is constrained, bias-weighted proportional redistribution
-        // determines who gets priority (redistribution, not amplification).
         float parent_val = chemical(dp.id);
         float parent_headroom = has_cap ? std::max(0.0f, parent_cap - parent_val) : 1e30f;
         float total_inflow = 0.0f;
 
-        for (auto& cf : flows) {
-            if (cf.desired >= 0.0f) continue; // skip receivers
-            float give = std::min(-cf.desired, cf.child->chemical(dp.id));
-            cf.desired = -give; // store actual (negative = giving)
+        for (auto& ci : infos) {
+            if (ci.desired >= 0.0f) continue;
+            float give = std::min(-ci.desired, ci.child->chemical(dp.id));
+            ci.desired = -give;
             total_inflow += give;
         }
 
         // Bias-weighted redistribution when total exceeds parent's capacity
         if (total_inflow > parent_headroom && total_inflow > 1e-8f) {
             float total_weighted = 0.0f;
-            for (auto& cf : flows) {
-                if (cf.desired >= 0.0f) continue;
-                total_weighted += (-cf.desired) * cf.bias_mult;
+            for (auto& ci : infos) {
+                if (ci.desired >= 0.0f) continue;
+                total_weighted += (-ci.desired) * ci.bias_mult;
             }
             if (total_weighted > 1e-8f) {
-                for (auto& cf : flows) {
-                    if (cf.desired >= 0.0f) continue;
-                    float raw_give = -cf.desired;
-                    float share = parent_headroom * (raw_give * cf.bias_mult / total_weighted);
-                    cf.desired = -std::min(share, raw_give);
+                for (auto& ci : infos) {
+                    if (ci.desired >= 0.0f) continue;
+                    float raw_give = -ci.desired;
+                    float share = parent_headroom * (raw_give * ci.bias_mult / total_weighted);
+                    ci.desired = -std::min(share, raw_give);
                 }
             }
             total_inflow = parent_headroom;
         }
 
         // Apply inflows
-        for (auto& cf : flows) {
-            if (cf.desired >= 0.0f) continue;
-            float give = -cf.desired;
-            cf.child->chemical(dp.id) -= give;
+        for (auto& ci : infos) {
+            if (ci.desired >= 0.0f) continue;
+            float give = -ci.desired;
+            ci.child->chemical(dp.id) -= give;
             parent_val += give;
-            // Capture auxin flux for canalization
             if (dp.id == ChemicalID::Auxin) {
-                last_auxin_flux[cf.child] += give;
+                last_auxin_flux[ci.child] += give;
             }
         }
         chemical(dp.id) = parent_val;
 
         // --- Phase 2: parent giving to children (desired > 0) ---
-        // Distribute proportionally by bias-adjusted weight. Budget uses raw
-        // total (no amplification). Bias only changes who gets what share.
-        // If a child fills up, redistribute its remainder among unfilled children.
-        float available = chemical(dp.id);
-
-        // Collect receivers with bias-adjusted weights
-        struct Receiver {
-            Node* child;
-            float raw_weight;   // unbiased desired flow
-            float weight;       // bias-adjusted for proportional split
-            float headroom;     // how much this child can still accept
-        };
-        std::vector<Receiver> receivers;
-        for (auto& cf : flows) {
-            if (cf.desired <= 0.0f) continue;
-            float headroom = has_cap
-                ? std::max(0.0f, cf.child_cap - cf.child->chemical(dp.id))
-                : 1e30f;
-            if (headroom > 1e-8f) {
-                receivers.push_back({cf.child, cf.desired, cf.desired * cf.bias_mult, headroom});
+        // Seed pass-through: recompute desired flows using updated parent level
+        // after Phase 1 inflows, so receivers see the full transit amount.
+        // Non-seed: use pre-computed desired flows.
+        if (is_seed) {
+            for (auto& ci : infos) {
+                if (ci.desired <= 0.0f) continue; // only recompute receivers
+                ci.desired = compute_transport_flow(
+                    ci.child->chemical(dp.id), chemical(dp.id),
+                    ci.child_cap, parent_cap,
+                    ci.child_radius, radius, ref_radius, ci.child_dp);
+                if (ci.desired < 0.0f) ci.desired = 0.0f; // was a receiver, stays a receiver
             }
         }
 
-        // Iteratively distribute — redistribute remainder when a child fills
-        while (!receivers.empty() && available > 1e-8f) {
+        float available = chemical(dp.id);
+
+        struct Receiver {
+            Node* child;
+            float raw_weight;
+            float weight;
+            float headroom;
+        };
+        std::vector<Receiver> receivers;
+        float sum_receiver_caps = 0.0f;
+        float sum_receiver_vals = 0.0f;
+        for (auto& ci : infos) {
+            if (ci.desired <= 0.0f) continue;
+            float headroom = has_cap
+                ? std::max(0.0f, ci.child_cap - ci.child->chemical(dp.id))
+                : 1e30f;
+            if (headroom > 1e-8f) {
+                receivers.push_back({ci.child, ci.desired, ci.desired * ci.bias_mult, headroom});
+                sum_receiver_caps += ci.child_cap;
+                sum_receiver_vals += ci.child->chemical(dp.id);
+            }
+        }
+
+        // Multi-way equalization cap: prevents oscillation when per-child
+        // equalization clamps sum to more than the parent has. Only kicks in
+        // when the total demand actually exceeds the equilibrium budget —
+        // in chain topologies (single child), the per-pair clamp is sufficient
+        // and more permissive, so sugar flows through without piling up.
+        float max_give = available;
+        if (!receivers.empty()) {
+            // First compute what per-pair flows would demand in total
+            float raw_total_demand = 0.0f;
+            for (const auto& r : receivers) raw_total_demand += r.raw_weight;
+
+            // Compute the multi-way equilibrium budget
+            float equil_budget = available;
+            float total_system = available + sum_receiver_vals;
+            if (has_cap) {
+                float total_cap = parent_cap + sum_receiver_caps;
+                float parent_equil = (total_cap > 1e-8f)
+                    ? total_system * parent_cap / total_cap : 0.0f;
+                equil_budget = std::max(0.0f, available - parent_equil);
+            } else {
+                float parent_equil = total_system / (1.0f + static_cast<float>(receivers.size()));
+                equil_budget = std::max(0.0f, available - parent_equil);
+            }
+
+            // Only apply the cap when per-pair totals would exceed it
+            if (raw_total_demand > equil_budget) {
+                max_give = equil_budget;
+            }
+        }
+
+        while (!receivers.empty() && available > 1e-8f && max_give > 1e-8f) {
             float raw_total = 0.0f;
             float bias_total = 0.0f;
             for (const auto& r : receivers) {
@@ -456,14 +493,18 @@ void Node::transport_with_children(const Genome& g) {
             }
             if (bias_total < 1e-8f) break;
 
-            float to_distribute = std::min(available, raw_total);
+            float to_distribute = std::min({available, raw_total, max_give});
             bool any_filled = false;
 
             for (auto& r : receivers) {
                 float share = to_distribute * (r.weight / bias_total);
                 float actual = std::min(share, r.headroom);
-                r.child->chemical(dp.id) += actual;
+                // All nodes (including seed) defer to received buffer.
+                // Anti-teleportation: child's update_tissue() must not see
+                // transit chemicals — the buffer is flushed after transport.
+                r.child->transport_received[dp.id] += actual;
                 available -= actual;
+                max_give -= actual;
                 r.headroom -= actual;
                 if (r.headroom < 1e-8f) any_filled = true;
                 if (dp.id == ChemicalID::Auxin) {
@@ -471,9 +512,8 @@ void Node::transport_with_children(const Genome& g) {
                 }
             }
 
-            if (!any_filled) break; // everyone got their share, done
+            if (!any_filled) break;
 
-            // Remove filled children and retry with remainder
             receivers.erase(
                 std::remove_if(receivers.begin(), receivers.end(),
                     [](const Receiver& r) { return r.headroom < 1e-8f; }),

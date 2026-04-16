@@ -881,18 +881,21 @@ int main(int argc, char* argv[]) {
                 float parent_sugar = sel.parent ? sel.parent->chemical(ChemicalID::Sugar) : 0.0f;
                 float parent_auxin = sel.parent ? sel.parent->chemical(ChemicalID::Auxin) : 0.0f;
                 float parent_cytokinin = sel.parent ? sel.parent->chemical(ChemicalID::Cytokinin) : 0.0f;
+                float parent_water = sel.parent ? sel.parent->chemical(ChemicalID::Water) : 0.0f;
 
-                float child_sugar = 0.0f, child_auxin = 0.0f, child_cytokinin = 0.0f;
+                float child_sugar = 0.0f, child_auxin = 0.0f, child_cytokinin = 0.0f, child_water = 0.0f;
                 if (!sel.children.empty()) {
                     for (const Node* c : sel.children) {
                         child_sugar += c->chemical(ChemicalID::Sugar);
                         child_auxin += c->chemical(ChemicalID::Auxin);
                         child_cytokinin += c->chemical(ChemicalID::Cytokinin);
+                        child_water += c->chemical(ChemicalID::Water);
                     }
                     float n = static_cast<float>(sel.children.size());
                     child_sugar /= n;
                     child_auxin /= n;
                     child_cytokinin /= n;
+                    child_water /= n;
                 }
 
                 // Compute ratios (upstream/self and downstream/self)
@@ -959,6 +962,13 @@ int main(int argc, char* argv[]) {
                     ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_eth, sel.chemical(ChemicalID::Ethylene)).c_str());
                     ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(sel.chemical(ChemicalID::Ethylene)));
                     ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_eth, sel.chemical(ChemicalID::Ethylene)).c_str());
+
+                    // Water (capacity-based resource, ml)
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::Text("Water");
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_water, sel.chemical(ChemicalID::Water)).c_str());
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_vol(sel.chemical(ChemicalID::Water)));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_water, sel.chemical(ChemicalID::Water)).c_str());
 
                     ImGui::EndTable();
                 }

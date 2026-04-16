@@ -53,7 +53,25 @@ inline float compute_transport_flow(
 
     // Throughput cap
     float max_transport = params.base_transport + radius_factor * params.transport_scale;
-    return std::clamp(desired, -max_transport, max_transport);
+    desired = std::clamp(desired, -max_transport, max_transport);
+
+    // Equalization clamp: never overshoot the bias-adjusted equilibrium.
+    // At equilibrium: parent_conc = child_conc - bias, so flow that would
+    // reach that point is the absolute max we should ever transfer.
+    float equalize;
+    if (has_cap) {
+        // Solve: (parent_val - f)/parent_cap = (child_val + f)/child_cap - bias
+        equalize = (parent_val * child_cap - child_val * parent_cap
+                    + params.bias * parent_cap * child_cap)
+                   / (child_cap + parent_cap);
+    } else {
+        // No capacity: concentration = raw level
+        equalize = (parent_val - child_val + params.bias) / 2.0f;
+    }
+    // Can't overshoot: clamp desired to [0, equalize] or [equalize, 0]
+    desired = std::clamp(desired, std::min(0.0f, equalize), std::max(0.0f, equalize));
+
+    return desired;
 }
 
 } // namespace botany

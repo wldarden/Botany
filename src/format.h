@@ -21,10 +21,10 @@ inline const char* fmt_dist(float dm) {
     char* buf = fmt_buf();
     float a = std::abs(dm);
     if (a < 1e-8f)        std::snprintf(buf, 32, "0");
-    else if (a < 0.01f)   std::snprintf(buf, 32, "%.1f mm", dm * 100.0f);   // < 1 mm
-    else if (a < 0.1f)    std::snprintf(buf, 32, "%.1f mm", dm * 100.0f);   // 1-10 mm
-    else if (a < 10.0f)   std::snprintf(buf, 32, "%.1f cm", dm * 10.0f);    // 1 cm - 1 m
-    else                   std::snprintf(buf, 32, "%.2f m", dm * 0.1f);      // >= 1 m
+    else if (a < 0.01f)   std::snprintf(buf, 32, "%.3f mm", dm * 100.0f);   // < 1 mm
+    else if (a < 0.1f)    std::snprintf(buf, 32, "%.2f mm", dm * 100.0f);   // 1-10 mm
+    else if (a < 10.0f)   std::snprintf(buf, 32, "%.2f cm", dm * 10.0f);    // 1 cm - 1 m
+    else                   std::snprintf(buf, 32, "%.3f m", dm * 0.1f);      // >= 1 m
     return buf;
 }
 
@@ -49,6 +49,17 @@ inline const char* fmt_mass_rate(float g) {
     else if (a < 1.0f)    std::snprintf(buf, 32, "%.1f mg/hr", g * 1e3f);
     else if (a < 1000.0f) std::snprintf(buf, 32, "%.2f g/hr", g);
     else                   std::snprintf(buf, 32, "%.2f kg/hr", g * 1e-3f);
+    return buf;
+}
+
+// Volume (ml) → L / mL / µL
+inline const char* fmt_vol(float ml) {
+    char* buf = fmt_buf();
+    float a = std::abs(ml);
+    if (a < 1e-8f)        std::snprintf(buf, 32, "0");
+    else if (a < 0.001f)  std::snprintf(buf, 32, "%.1f \xC2\xB5L", ml * 1e3f);
+    else if (a < 1000.0f) std::snprintf(buf, 32, "%.2f mL", ml);
+    else                   std::snprintf(buf, 32, "%.2f L", ml * 1e-3f);
     return buf;
 }
 

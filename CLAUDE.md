@@ -88,14 +88,23 @@ concentration = has_capacity ? level / capacity : level
 effective_diff = (my_conc - parent_conc) - bias
 desired_flow = effective_diff * diffusion_rate * (has_cap ? avg_cap : 1) * radius_factor
 flow = clamp(desired_flow, -max_transport, max_transport)
-flow = clamp(flow, source_available, destination_headroom)
+equalize = flow_to_reach_bias_adjusted_equilibrium  // never overshoot
+flow = clamp(flow, min(0, equalize), max(0, equalize))
 ```
 
-Three mechanisms work together:
+Four mechanisms work together:
 
 1. **Concentration gradient** — flow driven by relative fullness (sugar) or raw level (hormones). Prevents large nodes from draining small ones at equal concentration.
 2. **Shifted equilibrium (bias)** — offsets where "equal" is. `bias < 0` = chemical accumulates root-ward (auxin). `bias > 0` = chemical accumulates tip-ward (cytokinin). Self-correcting: gradient still governs flow, just from an offset resting point. **Root-type inversion:** for `ROOT` and `ROOT_APICAL` children, the bias is negated during `transport_with_children`. Root apices are at the bottom of the plant, so "acropetal" in the whole-plant sense means toward the seed for root-side nodes. This makes the seed a correct transit junction: cytokinin flows root-tip → seed → shoot, auxin flows shoot → seed → root-tip, without cycling.
 3. **Throughput cap** — `max_transport = base_transport + radius_factor * transport_scale`. Bottlenecked by the thinner of two connected nodes. `base_transport` floor ensures even thin tips can transport.
+4. **Equalization clamp** — flow can never overshoot the bias-adjusted equilibrium between two nodes. For uncapped chemicals: `equalize = (parent - child + bias) / 2`. For capped: solved from equal-concentration constraint. Prevents oscillation and vacuum effects.
+5. **Multi-way equalization cap** — when a node distributes to multiple children, per-child equalization clamps can sum to more than the parent has, draining it to zero (causing tick-to-tick oscillation). The cap computes the multi-way equilibrium (parent retains proportional share of total) and limits total Phase 2 outflow. Only activates when per-pair totals would exceed the budget — in chain topologies the per-pair clamps are sufficient.
+
+**Anti-teleportation (received buffer):**
+DFS tick order means a parent transports to children before those children tick. Without protection, chemicals received by a child cascade forward through the entire branch in one tick. To prevent this, **all** Phase 2 outflows (including from the seed) go into the child's `transport_received` buffer (not `chemical()`). The child's own `transport_with_children` can't see the buffered chemicals. After the child's transport completes, the buffer is flushed into `chemical()`. Result: chemicals move at most one hop per tick.
+
+**Seed recomputed Phase 2:**
+The seed node (parent == nullptr) recomputes Phase 2 desired flows after Phase 1 inflows update its level. This gives receivers more flow because the seed has more chemical post-inflow. However, like all nodes, the seed writes Phase 2 outflows to `transport_received`, not directly to `chemical()`. The seed has a one-tick buffer delay like every other node.
 
 **Capacity model:**
 - **Sugar** (resource): per-node capacity from `sugar_cap()` — proportional to tissue volume. Concentration-based diffusion, destination headroom clamped.
@@ -200,7 +209,9 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - **Flat node hierarchy** — `Node` base class with 7 direct subclasses (`StemNode`, `RootNode`, `LeafNode`, `ShootApicalNode`, `ShootAxillaryNode`, `RootApicalNode`, `RootAxillaryNode`). Each subclass owns its type-specific fields and growth behavior via `virtual tick()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_shoot_apical()`/etc. (fast `static_cast` gated on `NodeType` enum, no RTTI).
 - Leaves are real `LeafNode` graph nodes — they own `leaf_size`, `light_exposure`, `senescence_ticks`
 - Chain growth inserts an internode above the meristem: parent → new_internode → [meristem, axillary, leaf]
-- Axillary buds check their **parent's** hormone level, not their own node
+- **Shoot** axillary buds check their **parent's** hormone level for activation; **root** dormant apicals check their **own** chemical levels (auxin arrives via transport, cytokinin is produced locally)
+- **Root elongation is sugar-gated only** — real root tips maintain their own auxin maximum via PIN recycling, so root apical `elongate()` uses `sugar_growth_fraction()` with no auxin gate. Shoot-derived auxin affects root *activation* (not elongation).
+- **Dormant meristems cost zero maintenance** — only active meristems pay `sugar_maintenance_meristem`
 - Root meristems are hard-capped at 100 (`Plant::max_root_meristems`) to prevent runaway root growth
 - Sugar persists across ticks (resource model); auxin/cytokinin persist too (not reset each tick)
 - Gibberellin and ethylene still use reset-each-tick signal model (global passes)
@@ -224,10 +235,10 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `root_apical_auxin_half_saturation` (0.1) - auxin level for half-max root apical effect
 - `cytokinin_bias` (0.1) - shifted equilibrium for acropetal flow (positive = toward tips); negated for root-type children (see transport model)
 - `root_cytokinin_production_rate` (0.15) - baseline cytokinin produced per tick by root apicals (mirrors `apical_auxin_baseline`)
-- `root_auxin_growth_threshold` (0.10) - Km for auxin-gated root elongation (Michaelis-Menten)
+- `root_auxin_growth_threshold` (0.10) - UNUSED: root elongation is sugar-gated only (real root tips maintain own auxin via PIN recycling)
 - `root_auxin_activation_threshold` (0.05) - minimum auxin to activate a dormant root meristem
-- `root_cytokinin_inhibition_threshold` (0.10) - cytokinin above this inhibits new root meristem activation
-- `auxin_diffusion_rate` / `cytokinin_diffusion_rate` (0.3) - gradient responsiveness
+- `root_cytokinin_inhibition_threshold` (0.15) - cytokinin above this inhibits new root meristem activation
+- `auxin_diffusion_rate` / `cytokinin_diffusion_rate` (0.1) - gradient responsiveness (slow polar transport)
 - `hormone_base_transport` (0.5) - throughput floor for hormones (even thin tips can signal)
 - `hormone_transport_scale` (1.0) - how much radius amplifies hormone throughput
 - `sugar_base_transport` (0.01) - throughput floor for sugar (small — sugar is radius-dependent)

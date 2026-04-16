@@ -28,14 +28,15 @@ void RootNode::absorb_water(const Genome& g, const WorldParams& world) {
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {
+    // Secondary growth only begins after cambium matures — separate from
+    // elongation lockout (which is a visual constraint for stiff cylinders).
+    if (age < g.root_cambium_maturation_ticks) return;
+
+    // Root secondary growth is sugar-gated only — not auxin-driven.
+    // Real root cambial activity responds to mechanical load and local
+    // signals, not the polar auxin stream (patterning/gravitropism).
     float effective_rate = g.thickening_rate;
 
-    // Auxin-driven cambial growth: auxin flows basipetally from the canopy
-    // down into the root system — main root gets the most, thickens the most.
-    float auxin_gf = std::min(chemical(ChemicalID::Auxin) / std::max(g.auxin_thickening_threshold, 1e-6f), 1.0f);
-    effective_rate *= auxin_gf;
-
-    // Sugar funds the growth
     float max_cost = effective_rate * world.sugar_cost_stem_growth;
     float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
     if (sugar_gf <= 1e-6f) return;
@@ -60,12 +61,14 @@ void RootNode::elongate(const Genome& g, const WorldParams& world) {
     float current_len = glm::length(offset);
     if (current_len >= max_len) return;
 
-    // Elongation is sugar-gated only (not cytokinin) — same reasoning as stems
+    // Elongation requires sugar (construction) and water (turgor pressure).
     float max_cost = effective_rate * world.sugar_cost_stem_growth;
     float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
     if (sugar_gf <= 1e-6f) return;
+    float water_gf = meristem_helpers::turgor_fraction(chemical(ChemicalID::Water), water_cap(*this, g));
+    if (water_gf <= 1e-6f) return;
 
-    float actual_rate = effective_rate * sugar_gf;
+    float actual_rate = effective_rate * sugar_gf * water_gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;

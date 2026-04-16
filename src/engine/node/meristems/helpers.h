@@ -97,15 +97,19 @@ inline float growth_fraction(float sugar, float max_cost,
     return sugar_gf * cyt_gf;
 }
 
-// Root growth fraction: sugar funds growth, auxin gates the rate.
-// Root tips are driven by auxin (from shoot) + sugar, not cytokinin.
-inline float root_growth_fraction(float sugar, float max_cost,
-                                   float auxin, float auxin_threshold) {
+// Sugar-only growth fraction for root apicals.
+// Real root tips maintain their own auxin via PIN recycling — elongation
+// is limited by photosynthate supply, not exogenous hormone signal.
+inline float sugar_growth_fraction(float sugar, float max_cost) {
     if (max_cost < 1e-6f) return 1.0f;
-    float sugar_gf = std::min(sugar / max_cost, 1.0f);
-    if (sugar_gf < 1e-6f) return 0.0f;
-    float auxin_gf = auxin / (auxin + std::max(auxin_threshold, 1e-6f));
-    return sugar_gf * auxin_gf;
+    return std::min(sugar / max_cost, 1.0f);
+}
+
+// Turgor pressure fraction: water availability gates cell expansion.
+// Linear — turgor scales directly with water content relative to capacity.
+inline float turgor_fraction(float water, float water_cap) {
+    if (water_cap < 1e-6f) return 1.0f;
+    return std::clamp(water / water_cap, 0.0f, 1.0f);
 }
 
 // Saturating auxin growth multiplier (Michaelis-Menten).
