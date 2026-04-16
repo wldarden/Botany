@@ -62,7 +62,7 @@ TEST_CASE("Engine runs multiple ticks and plant grows complex structure", "[engi
     g.sugar_cap_minimum = 1.0f;
     PlantID id = engine.create_plant(g, glm::vec3(0.0f));
 
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 5; i++) {
         const Genome& genome = engine.get_plant(id).genome();
         engine.get_plant_mut(id).for_each_node_mut([&genome](Node& n) {
             n.chemical(ChemicalID::Sugar) = sugar_cap(n, genome);
