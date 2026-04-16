@@ -375,6 +375,22 @@ int main(int argc, char* argv[]) {
             steps_remaining--;
         }
 
+        // Sun angle controls — static so they persist across frames.
+        static float sun_elevation = 90.0f;  // degrees: 90 = overhead, 5 = grazing
+        static float sun_azimuth   =  0.0f;  // degrees: 0..360
+
+        // Apply sun direction every frame so the light update always uses the latest value.
+        if (renderer.light_system().is_initialized()) {
+            float el = glm::radians(sun_elevation);
+            float az = glm::radians(sun_azimuth);
+            glm::vec3 sun_dir(
+                std::cos(az) * std::cos(el),
+                -std::sin(el),
+                std::sin(az) * std::cos(el)
+            );
+            renderer.light_system().set_sun_direction(sun_dir);
+        }
+
         // GPU light update — every 24 ticks (once per sim-day)
         static int last_light_update = 0;
         if (renderer.light_system().is_initialized() && (total_ticks - last_light_update) >= 24) {
@@ -461,6 +477,12 @@ int main(int argc, char* argv[]) {
         ImGui::Checkbox("GPU Shadow Debug", &show_gpu_shadow_debug);
         if (show_gpu_shadow_debug && renderer.light_system().is_initialized()) {
             ImGui::SliderInt("Slice", &debug_slice_idx, 0, LightSystem::NUM_SLICES - 1);
+        }
+        static bool show_ground_shadow = false;
+        if (renderer.light_system().is_initialized()) {
+            ImGui::SliderFloat("Sun Elevation", &sun_elevation, 5.0f, 90.0f, "%.0f deg");
+            ImGui::SliderFloat("Sun Azimuth",   &sun_azimuth,   0.0f, 360.0f, "%.0f deg");
+            ImGui::Checkbox("Show Ground Shadow", &show_ground_shadow);
         }
         ImGui::SeparatorText("Time");
         if (ImGui::Button("Step 1")) {
@@ -943,7 +965,10 @@ int main(int argc, char* argv[]) {
         ImGui::Render();
 
         renderer.begin_frame();
-        renderer.draw_ground();
+        if (show_ground_shadow && renderer.light_system().is_initialized())
+            renderer.draw_ground_shadow();
+        else
+            renderer.draw_ground();
         if (show_shadow_map) {
             renderer.draw_shadow_map(engine.shadow_map());
         }

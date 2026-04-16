@@ -53,9 +53,15 @@ public:
     // slice_index in [0, NUM_SLICES). 0 = topmost (closest to sun).
     void draw_debug_slice(int slice_index = 0);
 
+    void set_sun_direction(glm::vec3 dir) { sun_direction = glm::normalize(dir); }
+
     bool is_initialized() const { return initialized_; }
     uint32_t slice_tex() const { return slice_array_tex_; }
-    glm::mat4 light_pv() const { return light_proj_ * light_view_; }
+    glm::mat4 light_pv()   const { return light_proj_ * light_view_; }
+    glm::mat4 light_view() const { return light_view_; }
+    glm::mat4 light_proj() const { return light_proj_; }
+    float min_depth()      const { return min_y_; }
+    float max_depth()      const { return max_y_; }
 
 private:
     bool initialized_ = false;

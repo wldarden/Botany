@@ -58,6 +58,7 @@ bool Renderer::init(int width, int height, const std::string& shader_dir) {
     }
     // Non-fatal — falls back to plain ground rendering without shadows.
     ground_shader_.load(shader_dir + "/ground.vert", shader_dir + "/ground.frag");
+    ground_shadow_shader_.load(shader_dir + "/ground_shadow.vert", shader_dir + "/ground_shadow.frag");
 
     setup_ground();
 
@@ -515,6 +516,40 @@ void Renderer::draw_ground() {
     glDrawArrays(GL_TRIANGLES, 0, 6);
 
     // Grid always uses the plant shader (thin lines, shadow not worth it).
+    shader_.use();
+    draw_grid();
+}
+
+void Renderer::draw_ground_shadow() {
+    if (ground_shadow_shader_.is_loaded() && light_system_.is_initialized()) {
+        ground_shadow_shader_.use();
+        float aspect = static_cast<float>(width_) / static_cast<float>(height_);
+        ground_shadow_shader_.set_mat4("uView",        camera_.view_matrix());
+        ground_shadow_shader_.set_mat4("uProjection",  camera_.projection_matrix(aspect));
+        ground_shadow_shader_.set_mat4("uModel",       glm::mat4(1.0f));
+        ground_shadow_shader_.set_mat4("u_light_view", light_system_.light_view());
+        ground_shadow_shader_.set_mat4("u_light_proj", light_system_.light_proj());
+        ground_shadow_shader_.set_vec3("u_sun_dir",    glm::normalize(light_system_.sun_direction));
+        ground_shadow_shader_.set_float("u_min_y",     light_system_.min_depth());
+        ground_shadow_shader_.set_float("u_max_y",     light_system_.max_depth());
+        ground_shadow_shader_.set_int("u_num_slices",  LightSystem::NUM_SLICES);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, light_system_.slice_tex());
+        ground_shadow_shader_.set_int("u_slice_array", 0);
+    } else {
+        // Fallback: plain ground shader when shadow system isn't ready.
+        shader_.use();
+        float aspect = static_cast<float>(width_) / static_cast<float>(height_);
+        shader_.set_mat4("uView",       camera_.view_matrix());
+        shader_.set_mat4("uProjection", camera_.projection_matrix(aspect));
+        shader_.set_mat4("uModel",      glm::mat4(1.0f));
+    }
+
+    glBindVertexArray(ground_vao_);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+    // Grid always uses the plant shader.
     shader_.use();
     draw_grid();
 }

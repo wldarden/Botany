@@ -38,6 +38,7 @@ public:
     void draw_plant(const Plant& plant);
     void draw_snapshot(const TickSnapshot& snapshot);
     void draw_ground();
+    void draw_ground_shadow();  // shadow-aware ground using ground_shadow.vert/frag
     void draw_shadow_map(const ShadowMapViz& shadow_map);
     void draw_highlight(const Node& node);
     void end_frame();
@@ -45,7 +46,8 @@ public:
 private:
     GLFWwindow* window_ = nullptr;
     Shader shader_;
-    Shader ground_shader_;  // shadow-aware ground shader (optional — falls back to shader_)
+    Shader ground_shader_;         // existing shadow-aware ground (diffuse + PCF)
+    Shader ground_shadow_shader_;  // simpler shadow-only ground (ambient + transmittance)
     OrbitCamera camera_;
     LightSystem light_system_;
     int width_;
