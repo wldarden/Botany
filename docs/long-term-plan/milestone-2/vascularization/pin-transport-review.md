@@ -1,9 +1,8 @@
-# PIN Transport Design — Cold Code Review
+# PIN Transport Design — Cold Review
 
-**Reviewer:** Claude Sonnet 4.6  
-**Date:** 2026-04-17  
-**Doc reviewed:** `pin-transport-design.md` (commit `3af71c5`)  
-**Source files read:** `node.h`, `node.cpp`, `genome.h`, `vascular.cpp`
+**Doc reviewed:** `pin-transport-design.md`
+**Source files read:** `node.h`, `node.cpp`, `genome.h`, `vascular.cpp`, `stem_node.cpp`,
+`root_node.cpp`, `apical.cpp`, `root_apical.cpp`; grepped tests for `structural_flow_bias`
 
 ---
 
@@ -11,12 +10,19 @@
 
 The design is biologically sound and architecturally clean. The necessary infrastructure
 (`auxin_flow_bias`, `last_auxin_flux`, `transport_received`, `update_canalization`) all exists
-in the codebase. The structural refactoring described (removing `structural_flow_bias`, switching
-cambium driver) is coherent and accounts for all 30+ occurrences in source.
+in the codebase. The structural refactoring (removing `structural_flow_bias`, switching cambium
+driver to `auxin_flow_bias`) is coherent.
 
-Two critical bugs and several implementer-blocking ambiguities need resolution before coding
-begins. The worked examples use a radius that doesn't match the actual genome default — the
-parameter calibration section needs correction.
+**Not ready to implement as written.** Three issues would produce silent wrong behavior:
+
+1. `last_auxin_flux.clear()` erases PIN flux before `update_canalization` can read it.
+2. Seed junction distributes from `chemical(Auxin)` but shoot-side auxin is in
+   `transport_received` during the PIN pass — one tick stale.
+3. Parameter calibration uses `r ≈ 0.05 dm` but actual `initial_radius = 0.015 dm`
+   (off by 11× in throughput examples).
+
+Fixing these three and filling six completeness gaps (described below) would make it
+ready to implement.
 
 ---
 
@@ -24,289 +30,314 @@ parameter calibration section needs correction.
 
 | Claim in design doc | Code location | Status |
 |---------------------|---------------|--------|
-| `auxin_flow_bias` is a parent-owned map keyed by child pointer | `node.h:78` | ✓ |
-| `last_auxin_flux` is a parent-owned map, records per-connection flux | `node.h:80` | ✓ |
-| `transport_received` buffer exists, anti-teleports cross-node writes | `node.h:75`, flushed at `node.cpp:92-95` | ✓ |
-| `update_canalization()` reads `last_auxin_flux` to update biases | `node.cpp:560-579` | ✓ |
-| `initial_radius` genome param | `genome.h:83`, default `0.015 dm` | ✓ |
-| Seed node is the root of the tree, identified by `parent == nullptr` | `node.h:41`, `plant.cpp:22` | ✓ |
-| Tick order: vascular_transport → DFS walk | `plant.cpp:143-146` | ✓ |
-| Seed type is STEM | `plant.cpp:22` | ✓ |
-| Biases are cleaned up on `die()`, transferred on `replace_child()` | `node.cpp:52-60`, `node.cpp:312-313` | ✓ |
+| `auxin_flow_bias` is parent-owned, keyed by child pointer | `node.h:78` | ✓ |
+| `last_auxin_flux` is parent-owned, records per-connection flux | `node.h:80` | ✓ |
+| `transport_received` buffer exists, anti-teleports cross-node writes | `node.h:75`, flushed at `node.cpp:92–95` | ✓ |
+| `update_canalization()` reads `last_auxin_flux` to update biases | `node.cpp:560–579` | ✓ |
+| `initial_radius` genome param | `genome.h:83`, default `0.015 dm` | ✓ (contradicts doc examples — see §2.1) |
+| Seed identified by `parent == nullptr` | `node.h:41` | ✓ |
+| Tick order: vascular_transport → DFS walk | `plant.cpp` | ✓ |
+| Biases cleaned up on `die()`, transferred on `replace_child()` | `node.cpp:52–60`, `node.cpp:312–313` | ✓ |
+| `pipe_capacity()` uses pure `π × r² × conductance` (no bias term) | `vascular.cpp:36–38` | ✓ |
 
 ---
 
-## `structural_flow_bias` Audit
+## Critical Bugs
 
-The design deletes `structural_flow_bias` entirely. All usages found in source, against the
-doc's removal plan:
+### Bug 1: `last_auxin_flux.clear()` Wipes PIN-Recorded Flux
 
-| File | What it does | Removal plan in doc |
-|------|-------------|---------------------|
-| `node.h:79` | Map declaration on Node | Delete field |
-| `node.cpp:52-55` | Transfer during `replace_child()` | Delete (structural bias doesn't transfer anymore) |
-| `node.cpp:291-297` | `get_parent_structural_bias()` reads it | Delete function |
-| `node.cpp:304-306` | `get_bias_multiplier()` sums flow + structural | Remove structural term; keep flow term |
-| `node.cpp:312-313` | Erasure during `die()` | Delete |
-| `node.cpp:572-577` | `update_canalization()` ratchet update | Delete — replace with saturation formula |
-| `stem_node.cpp:33-35` | **Cambium driver** — `bias = get_parent_structural_bias()` | Switch to `auxin_flow_bias` |
-| `root_node.cpp:34` | Same as stem | Same fix |
-| `vascular.cpp:22,28-30` | `has_vasculature()` gate | Replace with `radius >= vascular_radius_threshold` |
-| `vascular.cpp:269-270,323-324` | Conductance weight multiplier | Remove — vascular weighting by `r²` only |
-| `vascular.cpp:362` | CSV debug log header | Remove or replace |
-| `tissues/apical.cpp:181,189` | Initial stamp at internode creation | Remove stamp (initial radius already set) |
-| `tissues/root_apical.cpp:103,109` | Same | Same |
-| `genome.h` | `structural_threshold`, `structural_growth_rate`, `structural_max`, `vascular_conductance_threshold`, comment on `cambium_responsiveness` | Delete params, update comment |
+**Severity: BLOCKING**
 
-**Verdict:** Design correctly accounts for all usages. No unaddressed occurrences found.
+`node.cpp:346` — `last_auxin_flux.clear()` is the first thing `transport_with_children()`
+does. Tick order is:
+
+```
+1. vascular_transport()
+2. pin_transport()              ← writes last_auxin_flux on parent nodes
+3. DFS walk
+   └── transport_chemicals()
+         └── transport_with_children()  ← line 346: clears last_auxin_flux  ← BUG
+               update_canalization()    ← reads empty map; sees diffusion only
+```
+
+`auxin_flow_bias` would be driven entirely by 5%-per-tick diffusion flux, not PIN — the
+entire canalization mechanism silently becomes the old one.
+
+**Fix:** Move the clear so that PIN and diffusion both accumulate into the same map before
+`update_canalization` reads it:
+
+```
+pre-tick: last_auxin_flux already clear (cleared at end of prior tick)
+pin_transport()          → writes last_auxin_flux
+DFS walk:
+  transport_with_children()  → accumulates diffusion flux (no clear here)
+  update_canalization()      → reads combined flux, then clears last_auxin_flux
+```
+
+Remove `last_auxin_flux.clear()` from `transport_with_children()`. Add it to the end of
+`update_canalization()` instead. Add this as an explicit step in the Implementation Plan.
 
 ---
 
-## Critical Issues
+### Bug 2: Seed Junction Distributes Stale Auxin
 
-### 1. `last_auxin_flux` Is Cleared Before `update_canalization` Can Read PIN Flux
+**Severity: BLOCKING**
 
-**Location:** `node.cpp:346` — `last_auxin_flux.clear()` is the first thing
-`transport_with_children()` does.
-
-**The bug:** PIN runs before the DFS walk. It writes per-connection flux into
-`parent->last_auxin_flux[child]`. Then the DFS walk starts. When each parent node
-reaches `transport_chemicals()`:
-
-```
-transport_with_children():          ← LINE 346: clears last_auxin_flux ← PIN flux erased
-  ... diffusion writes last_auxin_flux ...
-update_canalization():              ← reads last_auxin_flux: sees diffusion only, not PIN
-```
-
-`update_canalization()` never sees the PIN flux. `auxin_flow_bias` is driven only by
-the tiny diffusion-based flux, defeating the entire canalization mechanism.
-
-**Fix:** Move the `last_auxin_flux` clear to happen once per tick, BEFORE the PIN pass.
-The cleanest approach: in `update_canalization()`, clear `last_auxin_flux` AFTER reading
-it (not before writing). Remove the `last_auxin_flux.clear()` from `transport_with_children()`.
-Then in `Plant::tick()`:
-
-```
-1. pre-tick: all nodes' last_auxin_flux are already clear (cleared at end of last tick)
-2. vascular_transport()
-3. pin_transport()        → writes last_auxin_flux
-4. DFS walk:
-   → transport_with_children()  → adds diffusion flux to last_auxin_flux (no clear)
-   → update_canalization()      → reads combined (PIN + diffusion) flux, then clears
-```
-
-This makes PIN and diffusion flux additive in `last_auxin_flux`, which is the correct
-biological model: both move auxin through the same connection, both reinforce canalization.
-
-**Doc must specify:** where the clear moves to, and that both passes accumulate into the
-same map.
-
----
-
-### 2. `transient_gain` / `transient_rate` Are Not Addressed
-
-**Location:** `node.cpp:567-570` — `update_canalization()` currently computes:
+The seed junction pseudocode (design doc lines 155–165) distributes from
+`chemical(ChemicalID::Auxin)`:
 
 ```cpp
-float target = flux * g.transient_gain;          // line 568 — raw multiplier, not saturation
-float& flow_bias = auxin_flow_bias[child];
-flow_bias += (target - flow_bias) * g.transient_rate;   // line 570 — lerp rate
+float to_send = std::min(chemical(ChemicalID::Auxin) * share, max_cap);
 ```
 
-The design specifies a different target formula:
+But during the PIN pass, shoot-side children post their auxin into
+`seed->transport_received[Auxin]`. Per anti-teleportation rules, `transport_received` is
+flushed into `chemical()` only at the end of `Node::tick()` — after the DFS walk,
+AFTER the PIN pass. At the moment the seed distributes to root children, the
+newly-collected shoot auxin is in `transport_received`, not yet in `chemical(Auxin)`.
+The seed would distribute last tick's auxin level, not the current one.
 
+The design says "After flushing its `transport_received` buffer from shoot-side children"
+but provides no mechanism for that flush to occur during the PIN pass.
+
+**Fix:** The PIN pass should accumulate incoming shoot auxin into a local variable,
+not into `transport_received`:
+
+```cpp
+// Collect from shoot children into a local accumulator
+float collected = 0.0f;
+for (Node* child : shoot_children) {
+    float moved = std::min(child->chemical(Auxin), max_cap * efficiency);
+    child->chemical(Auxin) -= moved;
+    seed->last_auxin_flux[child] += moved;
+    collected += moved;
+}
+// Distribute to root children via transport_received (normal anti-teleport path)
+for (Node* root_child : root_children) {
+    float share = root_child->radius / total_root_radius;
+    float to_send = std::min(collected * share, root_max_cap);
+    root_child->transport_received[Auxin] += to_send;
+    collected -= to_send;
+}
+seed->chemical(Auxin) += collected;  // remainder stays at seed
 ```
-current_saturation = auxin_flux / (radius² × pin_capacity_per_area)
-auxin_flow_bias = lerp(previous, current_saturation, smoothing_rate)
-```
 
-The design adds `smoothing_rate` (new param, default 0.1) and `pin_capacity_per_area`.
-But it never says what to do with the **existing** `transient_gain` (default 2.0) and
-`transient_rate` (default 0.2). An implementer encounters three questions:
-
-- Is `smoothing_rate` a new param, or is it a rename of `transient_rate`?
-- Is `transient_gain` deleted?
-- If `transient_rate` is renamed and its default changes from 0.2 to 0.1, that's a behavioral change in any running plant.
-
-**What the implementation must do:**
-- **Delete** `transient_gain` — the saturation formula replaces the raw multiplier
-- **Rename** `transient_rate` → `smoothing_rate`, change default from 0.2 → 0.1
-- Update `update_canalization()` to use the saturation formula with `pin_capacity_per_area`
-  and the child node's `radius` (accessed via the child pointer)
-
-**Add to Implementation Step 2:** `Delete transient_gain. Rename transient_rate → smoothing_rate,
-change default from 0.2 → 0.1.`
+The seed acts as a synchronous relay within the PIN pass — no buffer needed for the
+transit node itself. Root children get `transport_received` normally (anti-teleport).
 
 ---
 
-## Major Issues
+## Parameter Calibration Error
 
-### 3. Worked Examples Use Wrong Radius
+### Wrong `initial_radius` in Calibration Examples
 
-**Location:** "Effective Reach" section in New Genome Parameters.
+**Location:** "Effective Reach" section, lines ~377–395 in the design doc.
 
-The doc says `r = initial_radius ≈ 0.05 dm`, but `genome.h:83` sets `initial_radius = 0.015 dm`.
-The actual numbers for a fresh internode:
+The doc says "newly-created thin stem (`r = initial_radius ≈ 0.05 dm`)" but
+`genome.h:237` sets `initial_radius = 0.015 dm`. The actual numbers:
 
 ```
 r  = 0.015 dm
 r² = 0.000225 dm²
 max_capacity = 0.000225 × 100 = 0.0225 AU/tick  (at full efficiency)
-base capacity = 0.0225 × 0.2  = 0.0045 AU/tick  (at pin_base_efficiency = 0.2)
+cold-start   = 0.0225 × 0.2  = 0.0045 AU/tick   (at pin_base_efficiency)
 ```
 
-The doc says `max_capacity = 0.25` and `base = 0.05` — both off by 11×. The calibration
-target (r² ≈ 0.005 dm²) corresponds to `r ≈ 0.071 dm`, which is ~5× initial_radius — a
-moderately thickened stem, not "a thin stem."
+The doc's examples show `0.25` and `0.05` — off by 11×. The calibration target (r² ≈
+0.005 dm²) corresponds to `r ≈ 0.07 dm`, which is 4.7× initial_radius — not a "thin
+stem." The established trunk example (r = 0.25 dm, max_capacity = 6.25 AU/tick) is
+correct.
 
-**Actual steady-state reach with initial_radius = 0.015:**
+**Impact:** `pin_capacity_per_area = 100` may need post-implementation tuning. The
+cold-start saturation formula `saturation = efficiency = pin_base_efficiency = 0.2` is
+self-consistent regardless of radius, so the feedback structure is sound. Only the
+absolute throughput numbers in the prose are wrong.
 
-With max_capacity = 0.0225 and decay = 0.12 per tick:
-```
-Node 0 (apex):   level ≈ 1.06 AU  (production 0.15 – outflow 0.0225 = decay-balanced)
-Node 1:          level ≈ 0.020
-Node 5:          level ≈ 0.012
-Node 10:         level ≈ 0.006
-```
-
-This reaches node 10 with ~0.006 AU — below the `auxin_threshold = 0.15` for apical
-dominance. The gradient forms but is too shallow to suppress lateral buds beyond a few nodes.
-
-**Implication:** `pin_capacity_per_area = 100` may be too low for a plant at initial
-radius. Consider starting at 500–1000 to give thin stems sufficient throughput before
-canalization builds. Alternatively, raise `pin_base_efficiency` (0.2 → 0.5). The
-calibration note in the doc should use actual initial_radius numbers, not ≈ 0.05.
+**Required fix:** Correct the thin-stem example to use `r = 0.015 dm`. Note that
+`pin_capacity_per_area = 100` was calibrated for a different radius and will need
+empirical tuning.
 
 ---
 
-### 4. `vascular_radius_threshold` Default Not Specified
+## Consistency Issues
 
-The doc correctly says to replace the `structural_flow_bias`-based `vascular_conductance_threshold`
-with a radius-based `vascular_radius_threshold` in `has_vasculature()`. But the default
-value is never given.
+### `stress_boost` Missing from Thickening Formula
 
-**Suggested default:** `0.012 dm` — slightly below `initial_radius = 0.015` so fresh
-internodes qualify for vasculature immediately, while degenerate zero-radius nodes (if any)
-are excluded. Could also simply be `initial_radius × 0.9` to track the initial_radius
-setting.
+Design doc (line ~262):
+```
+delta_radius = cambium_responsiveness × auxin_flow_bias × sugar_gf
+```
 
-**Specify the default in Implementation Step 2** and add it to the doc's genome params
-table (or note it's derived from initial_radius).
+Current `stem_node.cpp:50–51`:
+```cpp
+float stress_boost = 1.0f + chemical(ChemicalID::Stress) * g.stress_thickening_boost;
+float actual_rate = g.cambium_responsiveness * bias * sugar_gf * stress_boost;
+```
+
+`stress_thickening_boost` is not on any removal list and remains in the genome. The term
+appears intentionally retained (thigmomorphogenesis — mechanical stress accelerates
+cambium). Update the formula in the design doc to include `× stress_boost`.
+
+### `transient_gain` and `transient_rate` Not Listed for Removal
+
+The new `update_canalization` formula replaces the existing one completely:
+
+**Old (`node.cpp:567–570`):**
+```cpp
+float target = flux * g.transient_gain;
+flow_bias += (target - flow_bias) * g.transient_rate;
+```
+
+**New (design doc):**
+```
+current_saturation = auxin_flux / (radius² × pin_capacity_per_area)
+auxin_flow_bias = lerp(previous, current_saturation, smoothing_rate)
+```
+
+`transient_gain` and `transient_rate` become unused but are not listed for removal in
+Implementation Plan Step 2. The correct disposition:
+
+- **Delete `transient_gain`** — the saturation denominator (`pin_capacity_per_area`)
+  replaces the raw flux multiplier.
+- **Rename `transient_rate` → `smoothing_rate`**, change default from `0.2` → `0.1`.
+  The lerp role is identical; this is a rename with recalibration, not a new param.
+
+Add to Implementation Plan Step 2: "Delete `transient_gain`. Rename `transient_rate` →
+`smoothing_rate`, update default from 0.2 → 0.1."
+
+### `vascular_radius_threshold` Has No Default Value
+
+Mentioned in Implementation Plan Step 2 as a new genome param that replaces
+`vascular_conductance_threshold`. Does not appear in the New Genome Parameters table.
+No default value specified anywhere.
+
+With `initial_radius = 0.015 dm`, set `vascular_radius_threshold = 0.01 dm` so all
+newly-created internodes qualify from birth (initial_radius > threshold). Add to the
+parameter table with this value and rationale.
+
+### Plan.md Pseudocode Has a Null-Pointer UB
+
+`plan.md` Step 4 pseudocode, line 235:
+```cpp
+auto it = parent ? parent->auxin_flow_bias.find(this) : parent->auxin_flow_bias.end();
+```
+
+If `parent` is null, `parent->auxin_flow_bias.end()` dereferences a null pointer —
+undefined behavior. The correct form:
+```cpp
+float flow_bias = 0.0f;
+if (parent) {
+    auto it = parent->auxin_flow_bias.find(this);
+    if (it != parent->auxin_flow_bias.end()) flow_bias = it->second;
+}
+```
 
 ---
 
-## Moderate Issues
+## Completeness Gaps
 
-### 5. Seed Junction Timing Ambiguity
+### Test Suite Updates Completely Unmentioned
 
-The design says the seed distributes auxin to root children from `chemical(ChemicalID::Auxin)`
-after "flushing its transport_received buffer from shoot-side children." But `transport_received`
-is normally flushed inside `Node::tick()` during the DFS walk — which hasn't happened yet
-during the PIN pass.
+The Implementation Plan adds `tests/test_pin_transport.cpp` but says nothing about
+the existing tests that will break. Grep results:
 
-**What actually happens:** During the shoot-side PIN pass, shoot children write into
-`seed->transport_received[Auxin]`. This is not yet in `seed->chemical(Auxin)`. When the
-root-distribution step runs during the same PIN pass, `chemical(Auxin)` contains only the
-**previous tick's** seed auxin, not the freshly received shoot flow.
+- `tests/test_node.cpp` — 8 uses of `structural_flow_bias` in assertions
+- `tests/test_meristem.cpp` — 14 uses, including a named test "Thickening proportional
+  to `structural_flow_bias`" and tests that pre-populate the map to bootstrap thickening
+- `tests/test_vascularization.cpp` — 15 uses across all 4 integration tests, including
+  "Zero structural_flow_bias → zero thickening" and "Canalization ratchet: auxin flux
+  builds structural_flow_bias"
 
-**Impact:** One-tick pipeline delay in the root-side signal. Shoot auxin arrives at the
-seed's `transport_received` this tick; flows to root children next tick (after DFS flushing).
-This is a natural one-tick lag, not a bug — but the doc's phrasing ("after flushing its
-transport_received buffer") implies an immediate in-pass flush that doesn't happen through
-the normal mechanism.
+All 4 vascularization tests need rewriting around the new `auxin_flow_bias` / radius
+model. Many meristem tests need their setup updated from `structural_flow_bias` injection
+to auxin injection.
 
-**Clarification needed:** Either:
-a) Acknowledge the one-tick delay (probably fine — at 10–30 tick response timescales it
-   doesn't matter), OR
-b) Specify that `pin_transport()` explicitly flushes `seed->transport_received` mid-pass
-   before distributing to root children.
+Add to Implementation Plan: "Update `test_node.cpp`, `test_meristem.cpp`, and
+`test_vascularization.cpp` to remove `structural_flow_bias` setup and assertions;
+rewrite vascularization tests around `auxin_flow_bias` and radius."
 
-Option (a) is simpler. The doc should say: root distribution uses the seed's auxin from
-the previous tick. The pipeline delay is one tick and is negligible.
+### `update_canalization()` Rewrite Not in Implementation Plan
+
+The changed formula is described in the design body, but no implementation step names
+`node.cpp`'s `update_canalization()` function as a target. An implementer following
+only the steps could miss it. Add as an explicit sub-step to Step 2 or Step 4.
+
+### `get_bias_multiplier()` Not Mentioned
+
+`node.cpp:300–307`:
+```cpp
+return 1.0f + g.canalization_weight * (flow + structural);
+```
+
+After removing `structural_flow_bias`, the `structural` term disappears: becomes
+`1.0f + g.canalization_weight * flow`. This function gates local diffusion sibling
+weighting. It is not listed in any implementation step. Add to the cleanup list.
+
+### Root Thickening Comment Contradicts New Design
+
+`root_node.cpp:34–36`:
+```cpp
+// structural_flow_bias from sugar and cytokinin transport (not auxin —
+// real root polar auxin transport governs patterning/gravitropism, not
+// cambial signaling).
+```
+
+With the new design, root thickening reads `auxin_flow_bias`, which is built from PIN
+auxin flux flowing acropetally through root internodes. This comment explicitly says
+"not auxin" for root cambial signaling, which becomes incorrect. Update the comment.
 
 ---
 
-## Minor Issues
+## `structural_flow_bias` Audit — All Sites
 
-### 6. Feedback Chain Shows Non-Lerped Formula
+The design says to delete `structural_flow_bias` entirely. Every source site and its
+required action:
 
-In the "full feedback chain" diagram:
+| File | Lines | Site | Action |
+|------|-------|------|--------|
+| `node.h` | 79, 84 | Declaration + `get_parent_structural_bias` comment | Delete field and method |
+| `node.cpp` | 57–60 | `replace_child()` transfers structural bias | Delete block |
+| `node.cpp` | 284–296 | `get_parent_structural_bias()` | Delete method |
+| `node.cpp` | 304–305 | `get_bias_multiplier()` reads structural bias | Remove structural term |
+| `node.cpp` | 313 | `die()` erases from parent structural bias | Delete line |
+| `node.cpp` | 573–577 | `update_canalization()` ratchet | Replace with new lerp + saturation formula |
+| `stem_node.cpp` | 22, 33, 38 | `thicken()` reads structural bias | Replace with `auxin_flow_bias` |
+| `root_node.cpp` | 34, 38 | `thicken()` via `get_parent_structural_bias()` | Replace; update comment |
+| `apical.cpp` | 181–190 | `spawn_internode()` stamps initial structural bias | Delete stamping block |
+| `root_apical.cpp` | 103–109 | Same stamping | Delete stamping block |
+| `vascular.cpp` | 22, 28–29 | `has_vasculature()` checks structural bias | Replace with `radius >= vascular_radius_threshold` |
+| `vascular.cpp` | 254, 269–271 | Distribution weights use structural bias | Remove augmentation — weight by `r²` only |
+| `vascular.cpp` | 323–324, 362 | Debug log reads + CSV column header | Remove or replace |
+| `genome.h` | 56–57 | Comment references structural bias | Update |
+| `genome.h` | 157–165 | `structural_threshold`, `structural_growth_rate`, `structural_max`, `vascular_conductance_threshold` | Delete all four |
 
-```
-→ auxin_flow_bias = flux / (radius² × pin_capacity_per_area)   [PIN saturation, 0→1]
-```
-
-This shows `auxin_flow_bias` as the raw saturation, but the actual update is:
-```
-auxin_flow_bias = lerp(previous, saturation, smoothing_rate)
-```
-
-This is the steady-state value (when lerp has converged), so it's correct at equilibrium
-but may confuse an implementer expecting the exact update formula. Consider labeling it
-`→ current_saturation ≈` or adding a note.
-
----
-
-## Parameter Sanity Check
-
-With `initial_radius = 0.015 dm`, `pin_capacity_per_area = 100`, `pin_base_efficiency = 0.2`:
-
-| Scenario | r (dm) | r² (dm²) | max_capacity (AU/tick) | base capacity (AU/tick) |
-|----------|--------|----------|----------------------|------------------------|
-| Fresh internode (actual initial_radius) | 0.015 | 0.000225 | **0.023** | **0.0045** |
-| Doc example ("thin stem") | 0.05 | 0.0025 | 0.25 | 0.050 |
-| Doc calibration target | 0.071 | 0.005 | 0.50 | 0.100 |
-| Established trunk (5× initial) | 0.075 | 0.005625 | **0.56** | **0.11** |
-
-The doc examples are accurate for a moderately thickened stem but do not represent the
-cold-start case. The established trunk (r = 0.075) can trivially pass all available auxin
-— this is correct. The bootstrapping period (r ≤ 0.03) is where the numbers need tuning.
-
-**Recommendation:** Raise `pin_capacity_per_area` to 500 (or `pin_base_efficiency` to 0.5)
-as the initial default, then tune down empirically. With cap = 500 and initial_radius = 0.015:
-```
-base capacity = 0.000225 × 500 × 0.2 = 0.0225 AU/tick
-```
-— 15% of apical production (0.15), enough to establish the initial gradient.
+The design doc explicitly addresses the `genome.h` removals and core `node.cpp` deletions.
+Sites not mentioned in the Implementation Plan: `apical.cpp`, `root_apical.cpp`,
+`get_bias_multiplier()`, the vascular debug log, and the test files (~37 references).
 
 ---
 
-## Implementation Additions Required
+## Resolved Open Questions
 
-Additions to the existing steps based on this review:
+**Root tip auxin maximum / PIN2**
 
-**Step 1 (Files):** No change.
+The sim has `root_tip_auxin_production_rate = 0.03` (genome.h:226) — a local auxin
+maximum at root tips via direct production, a reasonable engineering patch. PIN2's
+columella recirculation loop is biologically accurate but architecturally complex.
+**Decision: keep the current `root_tip_auxin_production_rate` as the root-tip auxin
+source. PIN2 is out of scope for this milestone.** Note `root_tip_auxin_production_rate`
+in the new genome parameters section so implementers know it is intentionally retained.
 
-**Step 2 (Genome params):** Add:
-- Delete `transient_gain`
-- Rename `transient_rate` → `smoothing_rate`, change default from 0.2 → 0.1
-- Add `vascular_radius_threshold` (suggested default: `0.012 dm`)
+**Phototropic PIN redistribution**
 
-**Step 3 (Wiring):** No change.
+Phototropism is currently handled geometrically. Lateral auxin redistribution via PIN3/PIN4
+would require lateral PIN polarity modeling — a separate system.
+**Decision: out of scope. Note as a future milestone direction.** The PIN infrastructure
+would support this later without major restructuring.
 
-**Step 4 (Regression test):** Add:
-- Assert `auxin_flow_bias` is driven by PIN flux (not just diffusion): build a plant
-  where PIN is active but diffusion is effectively blocked (e.g., very short chain,
-  measure `auxin_flow_bias` at the connection between node 0 and node 5 vs expected
-  saturation from PIN flux)
-- Assert `last_auxin_flux` contains non-zero values after both PIN and diffusion (verify
-  additive accumulation, not overwrite)
+**Wound response**
 
-**Step 5 (CLAUDE.md):** Also update:
-- Note `transient_gain` deleted, `transient_rate` renamed
-- Note `vascular_radius_threshold` added
-
-**New: Step 0 — Pre-implementation:** Before writing any PIN code, change the
-`last_auxin_flux` clear point: move from `transport_with_children()` line 346 to
-the end of `update_canalization()` (after reading, before returning). This is a
-prerequisite for PIN flux to survive until `update_canalization` reads it.
-
----
-
-## Verdict
-
-The design is implementable. Fix the two critical issues (last_auxin_flux clear timing,
-transient_gain/transient_rate resolution) and the three major issues (example radius,
-vascular_radius_threshold default, seed timing clarification) before writing code. Everything
-else (structural_flow_bias removal, cambium driver switch, tick order) is correctly specified.
+Stem removal and vascular regeneration are not modeled. Rethinking wound-stress interaction
+is also out of scope.
+**Decision: out of scope. Note as future direction.** The `last_auxin_flux` map in PIN
+would naturally support wound vascular regeneration when eventually modeled.
