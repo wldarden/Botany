@@ -24,8 +24,8 @@ This breaks several dependent systems:
 - **Root cytokinin production** is gated on `local_auxin × root_cytokinin_production_rate`. With
   zero shoot auxin reaching roots, cytokinin production decouples from shoot activity entirely.
 - **Canalization** records which connections carry auxin flux. If auxin can't move past the first
-  few nodes, only those connections ever develop `structural_flow_bias`. The main trunk never
-  fully canalizes because auxin never travels through it.
+  few nodes, only those connections ever build `auxin_flow_bias` and thicken. The main trunk
+  never canalizes — and never earns the larger radius — because auxin never travels through it.
 
 Real plants transport auxin across the entire plant axis in hours via PIN efflux carriers — a
 fundamentally different mechanism from diffusion, operating at a different scale and requiring
@@ -50,8 +50,8 @@ properties that distinguish it from diffusion:
 
 3. **Canalization feedback.** Where auxin flux is high, PIN proteins redistribute within cells
    to reinforce that flux direction (Sachs 1969). Where flux is low, PIN polarity randomizes
-   and disappears. This is the cellular basis of `structural_flow_bias` — the canalization data
-   already in the sim represents exactly this history of sustained directional PIN-mediated flux.
+   and disappears. This is the cellular basis of `auxin_flow_bias` in the sim — the transient
+   canalization memory that records sustained directional PIN-mediated flux on each connection.
 
 4. **Speed.** PAT moves auxin at ~5–10 mm/hour in real stems. At the sim's dm/hour scale that
    is ~0.05–0.1 dm/hr — fast enough to traverse a whole plant in 10–20 ticks, far faster than
@@ -65,8 +65,8 @@ properties that distinguish it from diffusion:
 ## Design: Dedicated PIN Transport Pass
 
 PIN transport is a new global pass, separate from vascular transport and from local diffusion.
-It runs once per tick and moves auxin directionally along the plant axis using `structural_flow_bias`
-as the conductance weight for each connection.
+It runs once per tick and moves auxin directionally along the plant axis, with per-connection
+conductance scaling with `radius` — thicker stems carry more PIN-mediated auxin flow.
 
 ### System Architecture
 
@@ -252,11 +252,12 @@ float rate = clamp(pin_base_rate + radius_factor * (pin_max_rate - pin_base_rate
 
 Thicker stems have more developed PIN efflux machinery — more cells in the vascular cylinder,
 more PIN1 protein, higher auxin throughput. A newly-spawned thin internode starts near
-`pin_base_rate`; a mature trunk at 5× initial radius approaches `pin_max_rate`. This creates
-the same bootstrapping behavior that `structural_flow_bias` provided: new internodes carry
-little auxin until they thicken, which requires auxin flow, which requires some initial radius.
-The initial radius at creation (set by the meristem) is the bootstrapping value — no separate
-"initial bias stamp" parameter is needed.
+`pin_base_rate`; a mature trunk at 5× initial radius approaches `pin_max_rate`. The
+bootstrapping is self-consistent: new internodes carry little auxin → weak `auxin_flow_bias` →
+slow cambium → slow thickening → slow PIN rate increase. As the meristem lays down longer,
+healthier internodes (larger initial radius), they enter with a higher starting `radius_factor`
+and bootstrap faster. No separate "initial bias stamp" parameter is needed — initial radius
+at creation is already set by the meristem and already determines initial PIN capacity.
 
 ### New Genome Parameters
 
@@ -334,7 +335,7 @@ implemented and the whole-plant auxin loop is confirmed working, the right lever
 - Smooth gradient declining over 15–20 nodes down the main axis
 - Non-zero (dim) auxin visible in the upper root internodes
 - Lateral branches showing lower auxin than main axis at the same height
-- Near-zero auxin in uncanalized new internodes until a few ticks of bias accumulation
+- Near-zero auxin in newly-spawned thin internodes until PIN flux raises `auxin_flow_bias` and thickening increases `radius_factor`
 
 **Apical dominance:**
 - Buds immediately below the apex remain suppressed (high auxin)
