@@ -172,30 +172,97 @@ pre-order, but with PIN-rate conductance instead of pipe cross-section.
 
 ### Canalization Coupling, Flux Recording, and the Structural Memory
 
-PIN is the **primary driver of `auxin_flow_bias`** (the transient canalization memory).
-Since PIN moves the bulk of long-range auxin, its per-connection flux is the meaningful signal
-for canalization decisions. Diffusion contributes only small lateral movements that don't
-reflect main-axis transport history and are not the primary input to `update_canalization`.
+PIN is the **primary driver of `auxin_flow_bias`** — and `auxin_flow_bias` IS tracked across
+ticks. Each tick it smoothly lerps toward the current PIN saturation: the fraction of available
+transport capacity currently being used on each connection.
 
-`pin_transport()` records per-connection flux into the parent node's `last_auxin_flux` map —
-the same map `update_canalization` already reads each tick to update `auxin_flow_bias`.
+`pin_transport()` records per-connection auxin flux into the parent node's `last_auxin_flux`
+map. After the PIN pass completes, `update_canalization` reads that map and computes:
+
+```
+current_saturation = auxin_flux / (radius² × pin_capacity_per_area)
+auxin_flow_bias    = lerp(previous_auxin_flow_bias, current_saturation, smoothing_rate)
+```
+
+Where:
+- `auxin_flux` — auxin moved through this connection this tick (from `last_auxin_flux`)
+- `radius²` — cross-sectional area of the connection (proportional to available PIN protein slots)
+- `pin_capacity_per_area` — genome param: max auxin flow per unit cross-section at full saturation
+- `smoothing_rate` — genome param (~0.1): how fast `auxin_flow_bias` chases the current saturation
+- `lerp(a, b, t)` — standard linear interpolation: `a + t × (b − a)`
+
+`current_saturation` is a **0-to-1 value clamped at 1.0** representing instantaneous PIN saturation.
+`auxin_flow_bias` is the smoothed, tick-persistent version of that saturation — the value
+the cambium and diffusion weighting actually read.
+
+#### Biological Basis: Auxin Flux Density
+
+This models **auxin flux density** — auxin per unit cross-sectional area per unit time. Real
+cambium activation responds to flux density, not absolute flux. A thin strand carrying 1 unit
+of auxin is more highly activated than a thick trunk carrying the same 1 unit — the thin strand
+is working at full capacity while the trunk is barely using its transport area. High flux
+density = high PIN polarization = active cambium. Low flux density = dormant cambium.
+
+`auxin_flow_bias` has smoothed memory — it tracks the running saturation via lerp — but no
+ratchet. When PIN flux stops, `current_saturation` drops to zero and `auxin_flow_bias` lerps
+toward zero over the next ~10 ticks (`smoothing_rate = 0.1`). It decays naturally without a
+separate decay parameter. The **permanent** memory is the radius — the stem thickened from past
+high-saturation ticks, and that thickness never reverses.
+
+#### Scenario Analysis
+
+With `pin_capacity_per_area = 100` AU/(dm²·tick), the formula produces the following behavior
+across typical plant stages. The r² column is the connection's cross-sectional area in dm²:
+
+| Scenario | Flux (AU/tick) | r² (dm²) | Saturation | Cambium response |
+|----------|---------------|----------|------------|-----------------|
+| Young thin stem, modest auxin | 1.0 | 0.01 | ~1.0 | Fully saturated → fast thickening |
+| Old thick trunk, same auxin | 1.0 | 1.0 | ~0.01 | Barely using capacity → cambium barely active |
+| Old thick trunk, whole canopy feeding | 50.0 | 1.0 | ~0.5 | Half saturated → moderate thickening |
+| Thin side branch, weak auxin | 0.1 | 0.01 | ~0.1 | Low saturation → slow thickening |
+
+**Calibration target:** with `pin_capacity_per_area = 100`, a thin active stem (r² ≈ 0.005 dm²)
+carrying ~0.3 AU/tick from a single apical hits saturation ≈ 0.6 — comfortably in the 0.5–0.8
+working range. Adjust `pin_capacity_per_area` upward to reduce overall cambium activity, or
+downward to increase it. It is a global sensitivity knob, not a per-branch parameter.
+
+#### Self-Limiting Property
+
+A trunk cannot accumulate infinite flow bias because larger cross-section dilutes saturation:
+
+```
+saturation = flux / (r² × capacity)
+```
+
+As the trunk thickens (r² grows), the same flux produces lower saturation → less cambium
+activity → slower thickening. Growth decelerates as the stem becomes adequate for its auxin
+load. This is why real trunks reach a steady-state diameter under constant photosynthetic load.
+
+#### Junction Competition
+
+Two sibling branches share their parent's auxin flow. If sibling A is thinner than sibling B
+and receives the same absolute flux, sibling A has higher saturation → higher `auxin_flow_bias`
+→ thickens faster. No special junction logic is needed. The flux-density formula handles
+sibling balancing automatically: the thinner sibling is more PIN-saturated by the same flow
+and responds more aggressively.
 
 **The full feedback chain:**
 
 ```
 PIN moves auxin through a connection
   → PIN records flux in parent.last_auxin_flux[child]
-  → update_canalization() reads flux → auxin_flow_bias grows (transient, decays when flux stops)
+  → auxin_flow_bias = flux / (radius² × pin_capacity_per_area)   [PIN saturation, 0→1]
   → auxin_flow_bias drives cambium (thicken()):
       delta_radius = cambium_responsiveness × auxin_flow_bias × sugar_gf
-  → radius grows → larger pipe cross-section (π × r²) → higher vascular conductance
+  → radius grows → r² increases → same flux produces lower future saturation (self-limiting)
+  → larger radius → more vascular conductance (π × r²)
   → more sugar and water delivered → tissue grows faster → more auxin produced
-  → more PIN flux → auxin_flow_bias stays high → cambium stays active
+  → more PIN flux → saturation stays high → cambium stays active
 ```
 
 **The structural memory is radius, not a software variable.**
 
-When PIN flux stops, `auxin_flow_bias` decays → cambium halts → no more thickening. But the
+When PIN flux stops, `auxin_flow_bias = 0` → cambium halts → no more thickening. But the
 radius gained is permanent — wood does not un-grow. A thick stem retains its pipe capacity
 (`π × r²`) even during dormancy or after the apex is shaded. The "memory" of past canalization
 is the wood itself, readable from `radius` alone.
@@ -203,6 +270,25 @@ is the wood itself, readable from `radius` alone.
 `structural_flow_bias` is deleted. Its role as "permanent structural memory" is served by
 radius. Its role as "cambium driver" is served by `auxin_flow_bias`. No separate ratchet
 variable is needed.
+
+#### Temporal Smoothing
+
+The definitive update rule uses exponential smoothing (lerp) rather than raw per-tick saturation:
+
+```
+current_saturation = auxin_flux / (radius² × pin_capacity_per_area)   // [0, 1]
+auxin_flow_bias    = lerp(previous_auxin_flow_bias, current_saturation, smoothing_rate)
+```
+
+With `smoothing_rate = 0.1`, `auxin_flow_bias` moves 10% toward `current_saturation` each
+tick — fast enough to respond in ~20–30 ticks but immune to single-tick flux spikes or
+transient gaps (branch sway, momentary shadow, a tick with no growing leaves). Without
+smoothing, a single zero-flux tick would immediately drop `auxin_flow_bias` to zero and
+halt the cambium — biologically unrealistic and numerically noisy.
+
+`auxin_flow_bias` naturally decays toward zero when PIN flux stops: with no incoming auxin,
+`current_saturation = 0`, and `lerp(bias, 0, 0.1)` reduces the bias by 10% per tick.
+After ~20 ticks of dormancy it is effectively zero. No separate decay parameter is needed.
 
 ### Canalization Behavior After Removing structural_flow_bias
 
@@ -263,8 +349,10 @@ at creation is already set by the meristem and already determines initial PIN ca
 
 | Parameter | Default | Units | Description |
 |-----------|---------|-------|-------------|
-| `pin_base_rate` | 0.30 | fraction/tick | Fraction of auxin pumped per tick at bias = 0 |
-| `pin_max_rate` | 0.80 | fraction/tick | Upper clamp after canalization scaling |
+| `pin_base_rate` | 0.30 | fraction/tick | Fraction of auxin pumped per tick at initial radius |
+| `pin_max_rate` | 0.80 | fraction/tick | Upper clamp after radius scaling |
+| `pin_capacity_per_area` | 100.0 | AU/(dm²·tick) | Max auxin throughput per unit cross-section; divides flux to get saturation |
+| `smoothing_rate` | 0.1 | dimensionless | Lerp rate for `auxin_flow_bias` toward current saturation (~20–30 tick response time) |
 
 PIN transport carries no sugar cost. The sugar economy is still being tuned; adding a PIN
 drain would make debugging harder. Sugar cost can be added later as a cost-of-coordination
@@ -368,7 +456,7 @@ void pin_transport(Plant& plant, const Genome& g);
 
 **Step 2: Genome parameters**
 
-In `genome.h`: add `pin_base_rate`, `pin_max_rate`.
+In `genome.h`: add `pin_base_rate`, `pin_max_rate`, `pin_capacity_per_area`, `smoothing_rate`.
 Remove `structural_growth_rate`, `structural_threshold`, `structural_max`,
 `vascular_conductance_threshold` (all `structural_flow_bias`-related).
 Add `vascular_radius_threshold` (replaces the bias-based admission gate).
