@@ -162,6 +162,11 @@ struct Genome {
     float xylem_conductance;              // throughput per dm² cross-section per tick (water + cytokinin)
     float phloem_conductance;             // throughput per dm² cross-section per tick (sugar)
     float phloem_reserve_fraction;        // fraction of sugar_cap leaves keep for themselves (don't load into phloem)
+    float vascular_conductance_threshold; // minimum structural_flow_bias for bulk vascular admission.
+                                          // Below this threshold a node uses local diffusion only.
+                                          // Set low (< initial stamp) so newly spawned internodes
+                                          // immediately join the network. Only truly uncanalized
+                                          // nodes (bias = 0, never had any auxin flux) stay excluded.
 };
 
 inline Genome default_genome() {
@@ -306,6 +311,9 @@ inline Genome default_genome() {
         .xylem_conductance = 10.0f,           // generous — xylem is open dead tubes
         .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
         .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap for themselves
+        .vascular_conductance_threshold = 0.005f, // just below the initial stamp (0.01) — newly spawned
+                                                  // internodes qualify immediately. Only zero-bias nodes
+                                                  // (never carried any flux) stay excluded.
     };
 }
 

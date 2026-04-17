@@ -153,9 +153,10 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "canalization_weight",      g.canalization_weight,      r, 0.0f, 5.0f, p);
 
     // Vascular transport
-    reg(sg, "xylem_conductance",       g.xylem_conductance,        r, 1.0f, 50.0f, p);
-    reg(sg, "phloem_conductance",      g.phloem_conductance,       r, 1.0f, 50.0f, p);
-    reg(sg, "phloem_reserve_fraction", g.phloem_reserve_fraction,  r, 0.05f, 0.8f, p);
+    reg(sg, "xylem_conductance",              g.xylem_conductance,              r, 1.0f,  50.0f,  p);
+    reg(sg, "phloem_conductance",             g.phloem_conductance,             r, 1.0f,  50.0f,  p);
+    reg(sg, "phloem_reserve_fraction",        g.phloem_reserve_fraction,        r, 0.05f, 0.8f,   p);
+    reg(sg, "vascular_conductance_threshold", g.vascular_conductance_threshold, r, 0.0f,  2.0f,   p);
 
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
@@ -207,7 +208,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "sugar_diffusion_rate", "seed_sugar",
         "sugar_storage_density_wood", "sugar_storage_density_leaf",
         "sugar_cap_minimum", "sugar_cap_meristem",
-        "xylem_conductance", "phloem_conductance", "phloem_reserve_fraction"
+        "xylem_conductance", "phloem_conductance", "phloem_reserve_fraction",
+        "vascular_conductance_threshold"
     }});
 
     sg.add_linkage_group({"water_economy", {
@@ -391,6 +393,9 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.xylem_conductance        = sg.get("xylem_conductance");
     g.phloem_conductance       = sg.get("phloem_conductance");
     g.phloem_reserve_fraction  = sg.get("phloem_reserve_fraction");
+    g.vascular_conductance_threshold = sg.has_gene("vascular_conductance_threshold")
+                                           ? sg.get("vascular_conductance_threshold")
+                                           : 0.005f;
 
     return g;
 }

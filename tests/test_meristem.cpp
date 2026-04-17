@@ -8,6 +8,7 @@
 #include "engine/node/tissues/root_apical.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
+#include "engine/vascular.h"
 
 using namespace botany;
 using Catch::Matchers::WithinAbs;
@@ -676,4 +677,36 @@ TEST_CASE("Elastic recovery stops when offset matches rest_offset", "[meristem][
     // Direction should be essentially unchanged (no recovery needed)
     float dot = glm::dot(glm::normalize(stem->offset), dir_before);
     REQUIRE(dot > 0.999f);
+}
+
+TEST_CASE("has_vasculature uses structural bias threshold, not node age", "[meristem][vascular]") {
+    // Vascular admission must be path-dependent (bias-based), not time-dependent (age-based).
+    // A node is vascular when structural_flow_bias >= vascular_conductance_threshold.
+    // Age should have no effect.
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    Node* seed = plant.seed_mut();
+
+    // Attach a fresh STEM node — no bias entry yet.
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.05f);
+    seed->add_child(stem);
+
+    // No bias → not vascular, regardless of age.
+    stem->age = 9999;
+    REQUIRE(has_vasculature(*stem, g) == false);
+
+    // Bias below threshold → still not vascular.
+    seed->structural_flow_bias[stem] = g.vascular_conductance_threshold * 0.5f;
+    REQUIRE(has_vasculature(*stem, g) == false);
+
+    // Bias at threshold → vascular.
+    seed->structural_flow_bias[stem] = g.vascular_conductance_threshold;
+    REQUIRE(has_vasculature(*stem, g) == true);
+
+    // Bias well above threshold → still vascular.
+    seed->structural_flow_bias[stem] = 1.5f;
+    REQUIRE(has_vasculature(*stem, g) == true);
+
+    // Seed itself (no parent) is always vascular.
+    REQUIRE(has_vasculature(*seed, g) == true);
 }

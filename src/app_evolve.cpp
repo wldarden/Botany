@@ -93,6 +93,7 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "stress_thickening_boost=" << g.stress_thickening_boost << "\n";
     out << "stress_elongation_inhibition=" << g.stress_elongation_inhibition << "\n";
     out << "stress_gravitropism_boost=" << g.stress_gravitropism_boost << "\n";
+    out << "vascular_conductance_threshold=" << g.vascular_conductance_threshold << "\n";
 }
 
 int main() {
