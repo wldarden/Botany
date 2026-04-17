@@ -151,6 +151,7 @@ add_executable(botany_tests
     tests/test_serializer.cpp
     tests/test_evolution.cpp
     tests/test_auxin_sensitivity.cpp
+    tests/test_vascularization.cpp
 )
 target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization botany_evolution Catch2::Catch2WithMain)
 include(CTest)
