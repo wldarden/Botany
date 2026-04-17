@@ -320,6 +320,44 @@ TEST_CASE("Photosynthesis consumes water proportional to sugar produced", "[wate
     REQUIRE(total_loss > transpiration_only - 1e-6f);
 }
 
+// === Gradient-based self-limiting absorption tests ===
+
+TEST_CASE("Root absorption self-limits as root fills up", "[water]") {
+    // Gradient formula: absorbed ∝ (soil_moisture - fill_fraction)
+    // A root at 90% capacity should absorb ~9× less than one at 10% capacity.
+    // Ticking only the root node (no seed tick) means water_delta == absorbed from soil.
+    Genome g = default_genome();
+    WorldParams wp = default_world_params();
+    wp.soil_moisture = 1.0f;
+
+    // Root at 10% fill
+    Plant plant_low(g, glm::vec3(0.0f));
+    Node* root_low = plant_low.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
+    plant_low.seed_mut()->add_child(root_low);
+    float cap = water_cap(*root_low, g);
+    root_low->chemical(ChemicalID::Water) = 0.1f * cap;
+    root_low->chemical(ChemicalID::Sugar) = 10.0f;
+
+    float before_low = root_low->chemical(ChemicalID::Water);
+    root_low->tick(plant_low, wp);
+    float absorbed_low = root_low->chemical(ChemicalID::Water) - before_low;
+
+    // Root at 90% fill — same geometry, just more water inside
+    Plant plant_high(g, glm::vec3(0.0f));
+    Node* root_high = plant_high.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
+    plant_high.seed_mut()->add_child(root_high);
+    root_high->chemical(ChemicalID::Water) = 0.9f * cap;
+    root_high->chemical(ChemicalID::Sugar) = 10.0f;
+
+    float before_high = root_high->chemical(ChemicalID::Water);
+    root_high->tick(plant_high, wp);
+    float absorbed_high = root_high->chemical(ChemicalID::Water) - before_high;
+
+    // 10%-full root has gradient 0.9, 90%-full has gradient 0.1 → ratio ~9×
+    REQUIRE(absorbed_low > 0.0f);                       // 10%-full root absorbs
+    REQUIRE(absorbed_high < absorbed_low * 0.5f);       // 90%-full absorbs much less
+}
+
 // === Seed initialization regression test ===
 
 TEST_CASE("Seed water initializes within capacity (not to seed_sugar)", "[water]") {

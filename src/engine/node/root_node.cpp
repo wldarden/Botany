@@ -22,8 +22,10 @@ void RootNode::update_tissue(Plant& plant, const WorldParams& world) {
 void RootNode::absorb_water(const Genome& g, const WorldParams& world) {
     float length = std::max(glm::length(offset), 0.01f);
     float surface_area = 2.0f * 3.14159f * radius * length;
-    float absorbed = g.water_absorption_rate * surface_area * world.soil_moisture;
     float cap = water_cap(*this, g);
+    float fill_fraction = (cap > 1e-6f) ? chemical(ChemicalID::Water) / cap : 1.0f;
+    float gradient = std::max(0.0f, world.soil_moisture - fill_fraction);
+    float absorbed = g.water_absorption_rate * surface_area * gradient;
     chemical(ChemicalID::Water) = std::min(chemical(ChemicalID::Water) + absorbed, cap);
 }
 
