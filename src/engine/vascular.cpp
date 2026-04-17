@@ -104,7 +104,9 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
             if (n.type == NodeType::LEAF) {
                 float cap = sugar_cap(n, g);
                 float reserve = cap * g.phloem_reserve_fraction;
-                float surplus = std::max(0.0f, n.chemical(chem_id) - reserve);
+                // Also protect sugar reserved for local growth (set by pre_transport_growth()).
+                // This ensures leaves have sugar for expansion when update_tissue() runs later.
+                float surplus = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
                 info.supply += surplus;
             } else if (n.type == NodeType::APICAL || n.type == NodeType::ROOT_APICAL) {
                 // Only ACTIVE meristems are phloem sinks. Dormant lateral buds
@@ -201,7 +203,7 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
             if (chem_id == ChemicalID::Sugar && n.type == NodeType::LEAF) {
                 float cap = sugar_cap(n, g);
                 float reserve = cap * g.phloem_reserve_fraction;
-                local_supply = std::max(0.0f, n.chemical(chem_id) - reserve);
+                local_supply = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
             } else if (chem_id != ChemicalID::Sugar &&
                        (n.type == NodeType::ROOT || n.type == NodeType::ROOT_APICAL)) {
                 local_supply = std::max(0.0f, n.chemical(chem_id) * 0.5f);

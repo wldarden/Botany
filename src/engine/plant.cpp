@@ -141,7 +141,18 @@ static void tick_recursive(Node& node, Plant& plant, const WorldParams& world) {
     }
 }
 
+void Plant::pre_transport_growth(const WorldParams& world) {
+    // Each node computes how much sugar it will spend on growth this tick.
+    // This runs before vascular_transport() so the phloem pass sees
+    // (sugar - sugar_reserved_for_growth) as available leaf supply, ensuring
+    // nodes have sugar for their own growth when update_tissue() runs later.
+    for (auto& node : nodes_) {
+        node->compute_growth_reserve(genome_, world);
+    }
+}
+
 void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
+    pre_transport_growth(world);                // nodes claim sugar for growth before vascular
     vascular_transport(*this, genome_, world);  // bulk flow for sugar/water/cytokinin
     pin_transport(*this, genome_);              // PIN-mediated polar auxin transport
     tick_recursive(*nodes_[0], *this, world);

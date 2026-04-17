@@ -93,6 +93,9 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     // decide whether the node is dying. A node that receives enough sugar
     // each tick to cover maintenance must not accumulate starvation ticks.
     if (check_starvation(plant, world)) return;
+
+    // Clear growth reserve — update_tissue() has already used the sugar it needed.
+    sugar_reserved_for_growth = 0.0f;
 }
 
 // --- Tick helpers ---
@@ -274,6 +277,10 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
 }
 
 void Node::update_tissue(Plant& /*plant*/, const WorldParams& /*world*/) {}
+
+void Node::compute_growth_reserve(const Genome& /*g*/, const WorldParams& /*world*/) {
+    sugar_reserved_for_growth = 0.0f;
+}
 
 float Node::get_bias_multiplier(Node* child, const Genome& g) const {
     float flow = 0.0f;

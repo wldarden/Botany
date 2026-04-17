@@ -177,8 +177,8 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     Plant plant(g, glm::vec3(0.0f));
     Node* seed = plant.seed_mut();
 
-    // Leaf source: leaf_size = 1.0 → sugar_cap = 2.0, reserve = 1.0 (phloem_reserve_fraction=0.5).
-    // Setting sugar = 1.1 → surplus = 0.1, which is less than the combined
+    // Leaf source: leaf_size = 1.0 → sugar_cap = 2.0, reserve = 0.6 (phloem_reserve_fraction=0.3).
+    // Setting sugar = 0.7 → surplus = 0.1, which is less than the combined
     // demand of the two apicals (0.1g each at meristem_sink_fraction=0.05), so rationing applies.
     Node* leaf_src = plant.create_node(NodeType::LEAF,
                                        glm::vec3(0.1f, 0.0f, 0.0f), 0.01f);
@@ -210,7 +210,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
             n.chemical(ChemicalID::Sugar) = sugar_cap(n, g);
     });
     // Set the leaf source and empty sinks after the fill.
-    leaf_src->chemical(ChemicalID::Sugar)   = 1.1f;
+    leaf_src->chemical(ChemicalID::Sugar)   = 0.7f;
     apical_high->chemical(ChemicalID::Sugar) = 0.0f;
     apical_low->chemical(ChemicalID::Sugar)  = 0.0f;
 
