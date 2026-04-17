@@ -95,9 +95,9 @@ PIN and diffusion **coexist** for auxin. They are complementary:
      └── per node: update_tissue → diffusion → decay
 ```
 
-PIN runs after vascular so that the sugar needed for PIN's metabolic cost is already in place.
 PIN runs before the DFS walk so that auxin is in the correct position before `update_tissue`
-reads it this tick.
+reads it this tick. PIN runs after vascular for ordering consistency, though it has no
+dependency on vascular output (PIN carries no sugar cost — see Genome Parameters).
 
 ### Direction Model
 
@@ -125,28 +125,18 @@ float rate = std::clamp(
     0.0f, g.pin_max_rate
 );
 
-// Sugar cost gates the pump — no sugar = no PIN activity
-float auxin_available = chemical(ChemicalID::Auxin);
-float would_move = auxin_available * rate;
-float cost = would_move * g.pin_sugar_cost;
+float moved = chemical(ChemicalID::Auxin) * rate;
+chemical(ChemicalID::Auxin) -= moved;
+parent->transport_received[ChemicalID::Auxin] += moved;
 
-if (chemical(ChemicalID::Sugar) >= cost) {
-    chemical(ChemicalID::Sugar) -= cost;
-    chemical(ChemicalID::Auxin) -= would_move;
-    parent->transport_received[ChemicalID::Auxin] += would_move;
-} else {
-    // Partial pump proportional to available sugar
-    float fraction = chemical(ChemicalID::Sugar) / std::max(cost, 1e-8f);
-    float moved = would_move * fraction;
-    chemical(ChemicalID::Sugar) = 0.0f;
-    chemical(ChemicalID::Auxin) -= moved;
-    parent->transport_received[ChemicalID::Auxin] += moved;
-}
+// Record flux on parent for canalization (feeds auxin_flow_bias / update_canalization)
+parent->last_auxin_flux[this] += moved;
 ```
 
 The existing `transport_received` buffer is used for PIN exactly as in `transport_with_children`
 — anti-teleportation is already in place, and the flushing logic in `Node::tick()` applies to
-both.
+both. PIN records flux into `last_auxin_flux` on the parent, the same map that `update_canalization`
+already reads to update `auxin_flow_bias` each tick.
 
 **Seed junction:**
 
@@ -175,19 +165,41 @@ buffer (already filled by its parent's pass) and then distributes to its own roo
 the same conductance-weighted split. This mirrors how the xylem vascular pass distributes water
 pre-order, but with PIN-rate conductance instead of pipe cross-section.
 
-### Canalization Coupling
+### Canalization Coupling and Flux Recording
 
-`structural_flow_bias` on each parent-child edge encodes the history of auxin flux through
-that connection. Using it directly as the PIN conductance multiplier closes the Sachs feedback
-loop:
+PIN is now the **primary driver of `auxin_flow_bias`** (the transient canalization memory).
+Since PIN moves the bulk of long-range auxin, its per-connection flux is the meaningful signal
+for canalization decisions. Diffusion contributes only small lateral movements that don't
+reflect the main-axis transport history and should not be the primary input to `update_canalization`.
+
+In practice: `pin_transport()` records per-connection auxin flux into the parent node's
+`last_auxin_flux` map (same map `update_canalization` already reads). The diffusion pass may
+also record small amounts to `last_auxin_flux`, but those contributions are small relative to
+PIN flux and do not materially affect canalization on well-established connections.
+
+**The full feedback chain:**
 
 ```
-More auxin flux through a connection
-  → structural_flow_bias grows (update_canalization, existing)
-  → higher PIN rate on that connection
-  → more auxin transported through it
-  → more bias accumulation
+PIN moves auxin through a connection
+  → PIN records flux in parent.last_auxin_flux[child]
+  → update_canalization() reads flux → auxin_flow_bias grows (transient, decays when flux stops)
+  → sustained auxin_flow_bias above structural_threshold → structural_flow_bias ratchets up
+  → structural_flow_bias drives cambium (thicken()):
+      delta_radius = cambium_responsiveness × structural_flow_bias × sugar_gf
+  → larger radius → larger pipe cross-section (π × r²) → higher vascular conductance
+  → more sugar and water delivered → tissue grows faster → more auxin produced
+  → more auxin flows through the same connection → more flux recorded → more bias
 ```
+
+Two notes on the bias variables:
+
+- `auxin_flow_bias` (transient): fast-responding, decays when flux stops. Represents PIN
+  protein polarization state. Reacts to recent flow history.
+- `structural_flow_bias` (permanent ratchet): slow accumulation, never decays. Represents
+  committed vascular tissue. This is effectively the vascular development state of the
+  connection. Long-term it may merge conceptually with radius (both measure how much
+  conducting tissue exists on this path), but for now it stays as a separately tracked value
+  that captures vascular history independently of geometric radius.
 
 New internodes start with a small initial bias stamp (already implemented: ~0.01 at creation).
 Until bias accumulates, PIN transport through them is slow — auxin pools near the apex and
@@ -201,7 +213,10 @@ where procambium differentiation precedes mature PAT capacity.
 |-----------|---------|-------|-------------|
 | `pin_base_rate` | 0.30 | fraction/tick | Fraction of auxin pumped per tick at bias = 0 |
 | `pin_max_rate` | 0.80 | fraction/tick | Upper clamp after canalization scaling |
-| `pin_sugar_cost` | 0.001 | g glucose / AU | Sugar cost per unit auxin transported |
+
+PIN transport carries no sugar cost. The sugar economy is still being tuned; adding a PIN
+drain would make debugging harder. Sugar cost can be added later as a cost-of-coordination
+tradeoff once the economy is stable.
 
 With `pin_base_rate = 0.30` and `auxin_decay_rate = 0.12`, the effective reach in a chain:
 
@@ -300,9 +315,9 @@ void pin_transport(Plant& plant, const Genome& g);
 
 **Step 2: Genome parameters**
 
-In `genome.h`: add `pin_base_rate`, `pin_max_rate`, `pin_sugar_cost`.
+In `genome.h`: add `pin_base_rate`, `pin_max_rate`.
 In `default_genome()`: set to table values above.
-In `genome_bridge.cpp`: add all three to `build_genome_template()` with mutation config.
+In `genome_bridge.cpp`: add both to `build_genome_template()` with mutation config.
 In `CLAUDE.md`: add to Tuning Parameters section.
 
 **Step 3: Wire into plant.cpp**
@@ -328,7 +343,9 @@ Add PIN transport to the Chemical Transport Model table:
 | Auxin | PIN transport (long-range) + local diffusion | Basipetal in stems, acropetal in roots |
 ```
 
-Add to Tick Control Flow section. Add genome parameter entries for the three new params.
+Add to Tick Control Flow section. Add genome parameter entries for the two new params.
+Note that PIN records auxin flux into `last_auxin_flux` and that `update_canalization`
+runs after diffusion (same tick), reading that map to update both bias values.
 
 ---
 
