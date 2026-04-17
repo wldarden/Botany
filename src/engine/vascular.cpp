@@ -89,10 +89,20 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                 float surplus = std::max(0.0f, n.chemical(chem_id) - reserve);
                 info.supply += surplus;
             } else if (n.type == NodeType::APICAL || n.type == NodeType::ROOT_APICAL) {
-                // Meristems want sugar for growth — demand is their capacity deficit
-                float cap = sugar_cap(n, g);
-                float deficit = std::max(0.0f, cap - n.chemical(chem_id));
-                info.demand += deficit;
+                // Only ACTIVE meristems are phloem sinks. Dormant lateral buds
+                // (active=false) rely on local diffusion from their parent conduit
+                // node — registering them as vascular sinks bleeds sugar away from
+                // the active growing tip at every level of a long chain, starving it.
+                bool is_active = (n.type == NodeType::ROOT_APICAL)
+                    ? n.as_root_apical()->active
+                    : n.as_apical()->active;
+                if (is_active) {
+                    float cap = sugar_cap(n, g);
+                    float deficit = std::max(0.0f, cap - n.chemical(chem_id));
+                    info.demand += deficit;
+                }
+                // Inactive buds intentionally do NOT fall through to the starvation
+                // check below — they should not compete for phloem at all.
             } else if (n.starvation_ticks > 0) {
                 // Starving nodes are emergency sinks
                 float cap = sugar_cap(n, g);
@@ -181,8 +191,15 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
         float local_demand = 0.0f;
         if (chem_id == ChemicalID::Sugar) {
             if (n.type == NodeType::APICAL || n.type == NodeType::ROOT_APICAL) {
-                float cap = sugar_cap(n, g);
-                local_demand = std::max(0.0f, cap - n.chemical(chem_id));
+                // Mirror Phase 1: only deliver to active meristems via the vascular
+                // pass. Inactive buds receive sugar through local diffusion instead.
+                bool is_active = (n.type == NodeType::ROOT_APICAL)
+                    ? n.as_root_apical()->active
+                    : n.as_apical()->active;
+                if (is_active) {
+                    float cap = sugar_cap(n, g);
+                    local_demand = std::max(0.0f, cap - n.chemical(chem_id));
+                }
             } else if (n.starvation_ticks > 0) {
                 float cap = sugar_cap(n, g);
                 local_demand = std::max(0.0f, cap * 0.5f - n.chemical(chem_id));
