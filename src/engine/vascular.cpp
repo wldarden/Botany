@@ -101,10 +101,10 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                     float cap = water_cap(n, g);
                     float deficit = std::max(0.0f, cap - n.chemical(chem_id));
                     info.demand += deficit;
-                } else {
-                    // Cytokinin: leaves don't strongly demand it
-                    info.demand += 0.01f;
                 }
+                // Cytokinin: leaves are NOT xylem sinks. They receive cytokinin
+                // passively via local diffusion from their parent stem. Leaf CKX
+                // enzymes actively degrade it (handled by decay).
             } else if (n.type == NodeType::APICAL) {
                 if (chem_id == ChemicalID::Water) {
                     float cap = water_cap(n, g);
@@ -116,24 +116,18 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
             }
         }
 
-        // Propagate subtree supply/demand up to parent
-        // Conduit nodes pass through; non-conduit nodes only contribute
-        // their own supply/demand (children can't pipe through them).
+        // Propagate subtree supply AND demand separately to parent.
+        // No within-subtree netting — the seed sees total supply and total
+        // demand from the whole tree, so cross-branch flow works correctly
+        // (e.g., leaf sugar reaches root tips via the seed junction).
         if (info.parent_idx >= 0) {
             auto& parent_info = flat[info.parent_idx];
             if (info.is_conduit) {
-                // Conduit: pass subtree totals, bottlenecked by capacity
-                float net_supply = std::max(0.0f, info.supply - info.demand);
-                float net_demand = std::max(0.0f, info.demand - info.supply);
-                parent_info.supply += std::min(net_supply, info.capacity);
-                parent_info.demand += std::min(net_demand, info.capacity);
+                parent_info.supply += std::min(info.supply, info.capacity);
+                parent_info.demand += std::min(info.demand, info.capacity);
             } else {
-                // Non-conduit (leaf, meristem, young node): contribute own supply/demand
-                // but don't carry children's flow (they use local diffusion)
-                float net_supply = std::max(0.0f, info.supply - info.demand);
-                float net_demand = std::max(0.0f, info.demand - info.supply);
-                parent_info.supply += net_supply;
-                parent_info.demand += net_demand;
+                parent_info.supply += info.supply;
+                parent_info.demand += info.demand;
             }
         }
     }
@@ -186,12 +180,19 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                 float cap = sugar_cap(n, g);
                 local_demand = std::max(0.0f, cap * 0.5f - n.chemical(chem_id));
             }
-        } else if (n.type == NodeType::LEAF || n.type == NodeType::APICAL) {
+        } else if (n.type == NodeType::LEAF) {
+            // Leaves are xylem sinks for water only, not cytokinin
+            if (chem_id == ChemicalID::Water) {
+                float cap = water_cap(n, g);
+                local_demand = std::max(0.0f, cap - n.chemical(chem_id));
+            }
+        } else if (n.type == NodeType::APICAL) {
             if (chem_id == ChemicalID::Water) {
                 float cap = water_cap(n, g);
                 local_demand = std::max(0.0f, cap - n.chemical(chem_id));
             } else {
-                local_demand = (n.type == NodeType::APICAL) ? 0.05f : 0.01f;
+                // Cytokinin: shoot tips are the primary sink
+                local_demand = 0.05f;
             }
         }
 
@@ -201,22 +202,72 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
             available -= delivered;
         }
 
-        // Distribute remaining flow to children proportionally to their demand
+        // Distribute remaining flow to children by conductance weight, with demand
+        // as a ceiling. Conductance weight = pipe_capacity × (1 + canalization_weight × bias).
+        // Bias is structural_flow_bias on the parent-to-child connection: connections where
+        // auxin has flowed repeatedly have developed more conductive tissue and carry more flow.
+        // When a child is satisfied (allocation ≥ demand), its surplus redistributes to
+        // remaining siblings by conductance proportions. Iterate until budget exhausted or
+        // all children satisfied.
         if (available > 0 && !info.child_idxs.empty()) {
-            float total_child_demand = 0.0f;
-            for (int ci : info.child_idxs) {
-                total_child_demand += flat[ci].demand;
+            int n_ch = static_cast<int>(info.child_idxs.size());
+
+            // Compute conductance weights and demand+pipe ceilings for each child.
+            std::vector<float> weights(n_ch);
+            std::vector<float> ceilings(n_ch);
+            float total_weight = 0.0f;
+            for (int k = 0; k < n_ch; ++k) {
+                int ci = info.child_idxs[k];
+                float cap = pipe_capacity(*flat[ci].node, conductance);
+                auto it = info.node->structural_flow_bias.find(flat[ci].node);
+                float bias = (it != info.node->structural_flow_bias.end()) ? it->second : 0.0f;
+                weights[k] = cap * (1.0f + g.canalization_weight * bias);
+                total_weight += weights[k];
+                ceilings[k] = flat[ci].demand;
+                if (flat[ci].is_conduit)
+                    ceilings[k] = std::min(ceilings[k], flat[ci].capacity);
             }
-            if (total_child_demand > 1e-8f) {
-                for (int ci : info.child_idxs) {
-                    float share = available * (flat[ci].demand / total_child_demand);
-                    // Cap by child's pipe capacity
-                    if (flat[ci].is_conduit) {
-                        share = std::min(share, flat[ci].capacity);
+
+            if (total_weight > 1e-8f) {
+                // Iterative water-filling: each round allocates proportionally by
+                // conductance weight, caps any child that hits its ceiling, then
+                // redistributes the unclaimed surplus among the remaining children.
+                std::vector<float> alloc(n_ch, 0.0f);
+                std::vector<bool> done(n_ch, false);
+                float budget = available;
+
+                for (int iter = 0; iter <= n_ch; ++iter) {
+                    float active_w = 0.0f;
+                    for (int k = 0; k < n_ch; ++k)
+                        if (!done[k]) active_w += weights[k];
+                    if (active_w <= 1e-8f || budget <= 1e-8f) break;
+
+                    bool any_capped = false;
+                    for (int k = 0; k < n_ch; ++k) {
+                        if (done[k]) continue;
+                        float share = budget * (weights[k] / active_w);
+                        if (share >= ceilings[k]) {
+                            alloc[k] = ceilings[k];
+                            done[k] = true;
+                            any_capped = true;
+                        }
                     }
-                    // Reuse supply field to pass flow down to child
-                    flat[ci].supply = share;
+                    if (!any_capped) {
+                        // No child hit its ceiling — distribute remaining budget and finish.
+                        for (int k = 0; k < n_ch; ++k)
+                            if (!done[k])
+                                alloc[k] = budget * (weights[k] / active_w);
+                        break;
+                    }
+                    // Recompute remaining budget (available minus all capped allocations).
+                    budget = available;
+                    for (int k = 0; k < n_ch; ++k)
+                        budget -= alloc[k];
+                    if (budget <= 1e-8f) break;
                 }
+
+                for (int k = 0; k < n_ch; ++k)
+                    flat[info.child_idxs[k]].supply = alloc[k];
             }
         }
     }
