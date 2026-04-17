@@ -167,6 +167,11 @@ struct Genome {
     float xylem_conductance;              // throughput per dm² cross-section per tick (water + cytokinin)
     float phloem_conductance;             // throughput per dm² cross-section per tick (sugar)
     float phloem_reserve_fraction;        // fraction of sugar_cap leaves keep for themselves (don't load into phloem)
+    float meristem_sink_fraction;         // fraction of sugar_cap_meristem a meristem can demand per tick.
+                                          // Caps demand at cap×fraction instead of cap−current so meristems
+                                          // can't out-compete leaves for limited phloem sugar. At 0.05 and
+                                          // sugar_cap_meristem=2.0, max demand = 0.1g/tick — matches actual
+                                          // elongation cost and prevents the "leafless pole" starvation pattern.
     float vascular_radius_threshold;      // dm — minimum radius for bulk vascular admission.
                                           // Set below initial_radius (0.015 dm) so newly spawned
                                           // internodes qualify from birth. Only pre-initial-radius
@@ -319,7 +324,9 @@ inline Genome default_genome() {
         .xylem_conductance = 100.0f,          // primary long-range water mover (diffusion dropped to 0.02);
                                               // π×r²×100 at initial_radius = 0.071 ml/tick, above root absorption cap
         .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
-        .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap for themselves
+        .phloem_reserve_fraction = 0.5f,      // leaves keep 50% of sugar_cap for local growth before exporting
+        .meristem_sink_fraction = 0.05f,      // max demand per tick = 5% of cap (0.1g at cap=2.0) — matches
+                                              // actual elongation cost (~0.05g/tick) with a 2-tick buffer
         .vascular_radius_threshold = 0.01f,   // dm — below initial_radius (0.015), all new internodes qualify from birth
     };
 }

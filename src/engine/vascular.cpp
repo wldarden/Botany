@@ -116,7 +116,13 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                     : n.as_apical()->active;
                 if (is_active) {
                     float cap = sugar_cap(n, g);
-                    float deficit = std::max(0.0f, cap - n.chemical(chem_id));
+                    // Bound per-tick demand to cap×meristem_sink_fraction rather than
+                    // the full cap−current deficit. A hungry meristem with 2.0g cap
+                    // would otherwise demand 2.0g/tick — more than the whole plant
+                    // produces — starving leaves before they can expand. The bounded
+                    // pull matches actual elongation cost (~0.05g/tick) with headroom.
+                    float per_tick_max = cap * g.meristem_sink_fraction;
+                    float deficit = std::max(0.0f, per_tick_max - n.chemical(chem_id));
                     info.demand += deficit;
                 }
                 // Inactive buds intentionally do NOT fall through to the starvation
@@ -218,7 +224,9 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                     : n.as_apical()->active;
                 if (is_active) {
                     float cap = sugar_cap(n, g);
-                    local_demand = std::max(0.0f, cap - n.chemical(chem_id));
+                    // Mirror Phase 1 cap: deliver at most cap×meristem_sink_fraction per tick.
+                    float per_tick_max = cap * g.meristem_sink_fraction;
+                    local_demand = std::max(0.0f, per_tick_max - n.chemical(chem_id));
                 }
             } else if (n.starvation_ticks > 0) {
                 float cap = sugar_cap(n, g);
