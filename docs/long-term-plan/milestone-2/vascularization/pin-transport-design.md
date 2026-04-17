@@ -119,19 +119,22 @@ not reverse direction at the root tip and flow back up.
 Walk shoot nodes from leaves toward seed. For each shoot node (STEM, APICAL, LEAF):
 
 ```cpp
-// PIN capacity scales with radius — thicker stems have more developed PIN machinery.
-// radius_factor = 1.0 at initial_radius, grows with thickening.
-float radius_factor = radius / std::max(g.initial_radius, 1e-6f);
-float rate = std::clamp(
-    g.pin_base_rate + radius_factor * (g.pin_max_rate - g.pin_base_rate),
-    0.0f, g.pin_max_rate
-);
+// max_capacity = how much auxin this cross-section can handle at full efficiency.
+// pin_capacity_per_area is the same constant that appears in the saturation formula —
+// "how much can this cross-section handle" answers both questions.
+float max_capacity = radius * radius * g.pin_capacity_per_area;
 
-float moved = chemical(ChemicalID::Auxin) * rate;
+// efficiency: cold-start floor (constitutively active PINs) + upregulation from history.
+// Reads last tick's auxin_flow_bias — the PIN pass hasn't updated it yet this tick.
+auto it = parent->auxin_flow_bias.find(this);
+float bias = (it != parent->auxin_flow_bias.end()) ? it->second : 0.0f;
+float efficiency = g.pin_base_efficiency + bias * (1.0f - g.pin_base_efficiency);
+
+float moved = std::min(chemical(ChemicalID::Auxin), max_capacity * efficiency);
 chemical(ChemicalID::Auxin) -= moved;
 parent->transport_received[ChemicalID::Auxin] += moved;
 
-// Record flux on parent for canalization (feeds auxin_flow_bias / update_canalization)
+// Record flux for canalization; update_canalization reads this later in the same tick.
 parent->last_auxin_flux[this] += moved;
 ```
 
@@ -147,13 +150,16 @@ The seed is always at full PIN conductance (oldest, most-canalized node). After 
 
 ```cpp
 // Weight distribution to root children by radius — thicker roots have more PIN capacity.
+// Seed is fully canalized (efficiency ≈ 1.0), so each share is limited only by the
+// root child's connection capacity.
 float total_root_radius = 0.0f;
 for (Node* rc : root_children) total_root_radius += rc->radius;
 for (Node* root_child : root_children) {
     float share = (total_root_radius > 1e-8f)
         ? root_child->radius / total_root_radius
         : 1.0f / root_children.size();
-    float to_send = chemical(ChemicalID::Auxin) * share * g.pin_base_rate;
+    float max_cap = root_child->radius * root_child->radius * g.pin_capacity_per_area;
+    float to_send = std::min(chemical(ChemicalID::Auxin) * share, max_cap);
     root_child->transport_received[ChemicalID::Auxin] += to_send;
     chemical(ChemicalID::Auxin) -= to_send;
 }
@@ -304,7 +310,7 @@ feedback loop is intact, just not double-counted.
 | Vascular distribution | `r² × (1 + canalization_weight × structural_flow_bias)` | `r²` (pipe_capacity) | **Yes** — thicker stems still get more flow |
 | Diffusion sibling weighting | `radius_factor × (1 + canalization_weight × (auxin_flow_bias + structural_flow_bias))` | `radius_factor × (1 + canalization_weight × auxin_flow_bias)` | **Yes** — radius + transient bias both still weight |
 | Thickening | `cambium_responsiveness × structural_flow_bias × sugar_gf` | `cambium_responsiveness × auxin_flow_bias × sugar_gf` | **Intentionally changed** — current signal drives cambium, not frozen history |
-| PIN transport | `pin_base + structural_flow_bias × range` | `pin_base + radius_factor × range` | **Yes** — thicker stems carry more auxin |
+| PIN transport | `pin_base + structural_flow_bias × range` | `min(available, r² × capacity_per_area × efficiency)` | **Yes** — larger radius means higher capacity |
 
 **The full feedback loop is intact.** Removing `structural_flow_bias` does not break the
 self-reinforcing hierarchy — it just removes the extra amplifier:
@@ -331,56 +337,70 @@ too weak" is a larger `cambium_responsiveness`, not a secondary permanent tracki
 
 **PIN capacity scales with radius:**
 
-```cpp
-float radius_factor = radius / std::max(g.initial_radius, 1e-6f);
-float rate = clamp(pin_base_rate + radius_factor * (pin_max_rate - pin_base_rate), 0, pin_max_rate);
+```
+max_capacity = radius² × pin_capacity_per_area
+efficiency   = pin_base_efficiency + auxin_flow_bias × (1.0 - pin_base_efficiency)
+auxin_moved  = min(available_auxin, max_capacity × efficiency)
 ```
 
 Thicker stems have more developed PIN efflux machinery — more cells in the vascular cylinder,
-more PIN1 protein, higher auxin throughput. A newly-spawned thin internode starts near
-`pin_base_rate`; a mature trunk at 5× initial radius approaches `pin_max_rate`. The
-bootstrapping is self-consistent: new internodes carry little auxin → weak `auxin_flow_bias` →
-slow cambium → slow thickening → slow PIN rate increase. As the meristem lays down longer,
-healthier internodes (larger initial radius), they enter with a higher starting `radius_factor`
-and bootstrap faster. No separate "initial bias stamp" parameter is needed — initial radius
-at creation is already set by the meristem and already determines initial PIN capacity.
+more PIN1 protein, higher auxin throughput. `max_capacity` grows with the square of the radius,
+so a trunk at 5× initial radius has 25× the transport ceiling. A newly-spawned thin internode
+starts at `efficiency = pin_base_efficiency = 0.2` (constitutively active PINs), with
+`auxin_flow_bias = 0` and thus no upregulation bonus yet. As the meristem lays down longer,
+healthier internodes (larger initial radius), they enter with a higher starting `max_capacity`
+and bootstrap faster. No separate `radius_factor` or rate-interpolation parameter is needed —
+initial radius already determines initial PIN capacity, and efficiency grows from canalization
+history via `auxin_flow_bias`.
 
 ### New Genome Parameters
 
 | Parameter | Default | Units | Description |
 |-----------|---------|-------|-------------|
-| `pin_base_rate` | 0.30 | fraction/tick | Fraction of auxin pumped per tick at initial radius |
-| `pin_max_rate` | 0.80 | fraction/tick | Upper clamp after radius scaling |
-| `pin_capacity_per_area` | 100.0 | AU/(dm²·tick) | Max auxin throughput per unit cross-section; divides flux to get saturation |
+| `pin_capacity_per_area` | 100.0 | AU/(dm²·tick) | Max auxin transport per dm² cross-section per tick at full efficiency; also the denominator in the saturation formula |
+| `pin_base_efficiency` | 0.2 | dimensionless [0–1] | Cold-start PIN efficiency (fraction of capacity available when `auxin_flow_bias = 0`) |
 | `smoothing_rate` | 0.1 | dimensionless | Lerp rate for `auxin_flow_bias` toward current saturation (~20–30 tick response time) |
+
+`pin_capacity_per_area` does double duty: it is the **ceiling** in the transport formula
+(`max_capacity × efficiency`) and the **denominator** in the saturation formula
+(`auxin_flux / (r² × pin_capacity_per_area)`). Same number, same concept — "how much can
+this cross-section handle." Adjusting it up reduces both throughput and cambium sensitivity
+uniformly; adjusting it down does the opposite. It is the primary global calibration knob.
 
 PIN transport carries no sugar cost. The sugar economy is still being tuned; adding a PIN
 drain would make debugging harder. Sugar cost can be added later as a cost-of-coordination
 tradeoff once the economy is stable.
 
-With `pin_base_rate = 0.30` and `auxin_decay_rate = 0.12`, the effective reach in a chain:
+**Effective reach with the new formula:**
+
+Unlike the old rate-based model, throughput is now capacity-limited rather than fractional.
+A node moves at most `max_capacity × efficiency` AU per tick regardless of how much auxin it
+holds. On a **newly-created thin stem** (`r = initial_radius ≈ 0.05 dm`, efficiency = 0.2):
 
 ```
-ratio_per_hop ≈ pin_rate / (pin_rate + decay_rate)
-             = 0.30 / (0.30 + 0.12) ≈ 0.71
-
-At node 10:  0.71^10 ≈ 0.035   — meaningful signal
-At node 20:  0.71^20 ≈ 0.001   — very weak but present
+max_capacity = 0.05² × 100 = 0.25 AU/tick
+moves        = min(available, 0.25 × 0.2) = min(available, 0.05 AU/tick)
 ```
 
-On an established main axis at 5× initial radius (`radius_factor = 5.0`):
+A single apical produces ~0.15 AU/tick; the thin stem can pass ~0.05 AU/tick at cold-start —
+enough to establish flux and start building `auxin_flow_bias`. As bias grows toward 1.0:
 
 ```
-pin_rate = 0.30 + 5.0 × (0.80 - 0.30) = 0.30 + 2.5 → clamped to 0.80
-ratio_per_hop ≈ 0.80 / 0.92 ≈ 0.87
-
-At node 10:  0.87^10 ≈ 0.25    — strong signal even 10 nodes down
-At node 20:  0.87^20 ≈ 0.063   — still meaningful at 20 nodes
+efficiency → 1.0
+moves      → min(available, 0.25 AU/tick)   — easily passes the whole apical signal
 ```
 
-Main axis thickening extends auxin's effective reach from 2–3 nodes (current diffusion alone)
-to 15–20+ nodes, while thin lateral branches near `pin_base_rate` stay at shorter range. This
-creates the gradient needed for correct apical dominance.
+On an **established trunk** (`r = 0.25 dm`, 5× initial, efficiency = 1.0):
+
+```
+max_capacity = 0.25² × 100 = 6.25 AU/tick
+moves        = min(available, 6.25)         — trivially passes the entire whole-canopy auxin load
+```
+
+The trunk is never capacity-limited under normal conditions. Auxin traverses the full plant
+axis in a single tick on an established main axis — the whole-plant gradient forms immediately
+rather than building up over multiple ticks. New thin lateral branches bootstrap from
+`pin_base_efficiency = 0.2`, creating a gradient where established paths dominate.
 
 ### No Changes to Existing Diffusion Parameters
 
@@ -423,7 +443,7 @@ implemented and the whole-plant auxin loop is confirmed working, the right lever
 - Smooth gradient declining over 15–20 nodes down the main axis
 - Non-zero (dim) auxin visible in the upper root internodes
 - Lateral branches showing lower auxin than main axis at the same height
-- Near-zero auxin in newly-spawned thin internodes until PIN flux raises `auxin_flow_bias` and thickening increases `radius_factor`
+- Near-zero auxin in newly-spawned thin internodes until PIN flux raises `auxin_flow_bias` and thickening increases `radius` (and thus PIN capacity)
 
 **Apical dominance:**
 - Buds immediately below the apex remain suppressed (high auxin)
@@ -438,8 +458,8 @@ implemented and the whole-plant auxin loop is confirmed working, the right lever
 
 **Canalization divergence:**
 - Main shoot axis: continuous auxin flux since germination → `auxin_flow_bias` sustained →
-  cambium active → radius grows → larger radius → higher PIN rate → more auxin. Self-reinforcing.
-- Lateral branches that activated late: start thin → low PIN rate → less auxin → slow thickening.
+  cambium active → radius grows → larger radius → higher PIN capacity → more auxin. Self-reinforcing.
+- Lateral branches that activated late: start thin → low PIN capacity → less auxin → slow thickening.
   Competitive disadvantage that matches biological reality. Their radius is the permanent record
   of that disadvantage — even if they later receive more auxin, they start from a smaller pipe.
 
@@ -456,7 +476,7 @@ void pin_transport(Plant& plant, const Genome& g);
 
 **Step 2: Genome parameters**
 
-In `genome.h`: add `pin_base_rate`, `pin_max_rate`, `pin_capacity_per_area`, `smoothing_rate`.
+In `genome.h`: add `pin_capacity_per_area`, `pin_base_efficiency`, `smoothing_rate`.
 Remove `structural_growth_rate`, `structural_threshold`, `structural_max`,
 `vascular_conductance_threshold` (all `structural_flow_bias`-related).
 Add `vascular_radius_threshold` (replaces the bias-based admission gate).
@@ -488,7 +508,7 @@ Add PIN transport to the Chemical Transport Model table:
 | Auxin | PIN transport (long-range) + local diffusion | Basipetal in stems, acropetal in roots |
 ```
 
-Add to Tick Control Flow section. Add genome parameter entries for the two new params.
+Add to Tick Control Flow section. Add genome parameter entries for the three new params.
 Note that PIN records auxin flux into `last_auxin_flux` and that `update_canalization`
 runs after diffusion (same tick), reading that map to update `auxin_flow_bias`.
 Note that `structural_flow_bias` is deleted; radius is the structural memory.
