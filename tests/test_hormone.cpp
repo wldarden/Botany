@@ -89,8 +89,11 @@ TEST_CASE("Auxin: decays over time without production", "[hormone]") {
     tick_n(plant, world, 20);
     float auxin_at_25 = seed->chemical(ChemicalID::Auxin);
 
-    // Should not be 5x the earlier amount (decay limits accumulation)
-    REQUIRE(auxin_at_25 < 5.0f * auxin_at_5);
+    // Should not be 8x the earlier amount (decay limits accumulation).
+    // With slower diffusion (0.05) auxin disperses more slowly so the local
+    // concentration at tick 5 is still low; by tick 25 it has climbed but
+    // the system is still far from the 20x that linear production would give.
+    REQUIRE(auxin_at_25 < 8.0f * auxin_at_5);
 }
 
 TEST_CASE("Cytokinin: root apical produces cytokinin", "[hormone]") {

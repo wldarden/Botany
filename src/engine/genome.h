@@ -169,7 +169,7 @@ inline Genome default_genome() {
     return Genome{
         .apical_auxin_baseline = 0.15f,
         .apical_growth_auxin_multiplier = 2.0f,  // total = baseline * 3 at max growth
-        .auxin_diffusion_rate = 0.1f,          // slow polar transport — maintains tip-to-trunk gradient
+        .auxin_diffusion_rate = 0.05f,         // very slow polar transport — cell-to-cell only, ~1 cm/hr in real plants
         .auxin_decay_rate = 0.12f,             // moderate decay — half-life ~5.4 hours
         .auxin_threshold = 0.15f,
         .auxin_shade_boost = 0.5f,           // shade can increase production by 50%
@@ -230,8 +230,8 @@ inline Genome default_genome() {
         .leaf_bud_size = 0.02f,             // 2 mm bud
         .leaf_petiole_length = 0.5f,        // 5 cm petiole (realistic for broad leaves)
         .leaf_opacity = 0.85f,              // blocks 85%, transmits 15% — realistic for broadleaves
-        .initial_radius = 0.05f,            // 5 mm
-        .root_initial_radius = 0.025f,      // 2.5 mm
+        .initial_radius = 0.015f,            // 1.5 mm — realistic seedling stem
+        .root_initial_radius = 0.008f,       // 0.8 mm — realistic radicle
         .tip_offset = 0.01f,
         .growth_noise = 0.4f,               // ~23 degrees — larger than plagiotropism for organic shapes
 
@@ -264,7 +264,7 @@ inline Genome default_genome() {
         .ga_leaf_age_max = 168,               // 7 days
         .ga_elongation_sensitivity = 2.0f,
         .ga_length_sensitivity = 1.5f,
-        .ga_diffusion_rate = 0.2f,
+        .ga_diffusion_rate = 0.05f,           // local only — GA signals the internode below young leaves, not the whole plant
         .ga_decay_rate = 0.15f,
 
         // Leaf abscission
@@ -289,7 +289,7 @@ inline Genome default_genome() {
         .wood_flexibility = 0.5f,                 // droop starts at 50% of break stress
         .stress_hormone_threshold = 0.3f,            // no hormone below 30% of breaking capacity
         .stress_hormone_production_rate = 0.5f,      // input is now 0-1 stress ratio excess
-        .stress_hormone_diffusion_rate = 0.15f,   // moderate local diffusion
+        .stress_hormone_diffusion_rate = 0.10f,   // local alarm signal — spreads a few nodes, not the whole plant
         .stress_hormone_decay_rate = 0.2f,        // fades quickly — local signal
         .stress_thickening_boost = 1.0f,          // 1:1 hormone-to-thickening boost
         .stress_elongation_inhibition = 1.0f,     // 1:1 hormone-to-elongation suppression
