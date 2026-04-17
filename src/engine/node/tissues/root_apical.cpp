@@ -33,7 +33,9 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // local cytokinin ~20× above root_cytokinin_inhibition_threshold, permanently blocking
     // can_activate(). Shoot apicals follow the same convention: produce_auxin() is called
     // only inside the active branch.
-    chemical(ChemicalID::Cytokinin) += g.root_cytokinin_production_rate;
+    // Gate by local auxin — the genome comment says "cytokinin per unit auxin".
+    // Root apicals with more auxin (PIN-delivered + self-produced) signal more strongly.
+    chemical(ChemicalID::Cytokinin) += g.root_cytokinin_production_rate * chemical(ChemicalID::Auxin);
 
     ticks_since_last_node++;
     elongate(g, world);

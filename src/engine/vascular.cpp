@@ -145,8 +145,10 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                     float cap = water_cap(n, g);
                     info.demand += std::max(0.0f, cap - n.chemical(chem_id));
                 } else {
-                    // Cytokinin: shoot tips need it for growth
-                    info.demand += 0.05f;
+                    // Cytokinin: shoot tips pull only what they're missing — deficit-based.
+                    // Stops pulling once above cytokinin_growth_threshold (Km), so
+                    // well-supplied apicals don't crowd out farther ones.
+                    info.demand += std::max(0.0f, g.cytokinin_growth_threshold - n.chemical(ChemicalID::Cytokinin));
                 }
             }
         }
