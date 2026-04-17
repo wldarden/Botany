@@ -515,17 +515,19 @@ Note that `structural_flow_bias` is deleted; radius is the structural memory.
 
 ---
 
-## Open Questions (Not Blocking)
+## Resolved Design Questions
 
-**Root tip auxin maximum.** Real root tips have a local auxin maximum created by PIN2
-(epidermis) recycling auxin from the columella toward the elongation zone — the gradient that
-drives gravitropism. The sim uses direct angle adjustment via `meristem_gravitropism_rate`.
-Whether the PIN pass needs to model this recirculation, or whether the current gravitropism
-is sufficient, is an empirical question. Evaluate after base PIN is live.
+**Root tip auxin / PIN2.** Real root tips have a local auxin maximum created by PIN2 (root
+epidermis) recycling auxin from the columella toward the elongation zone — the gradient that
+drives gravitropism. **Decision:** keep current root-tip self-manufactured auxin as a patch;
+ignore PIN2 for now. The sim's direct gravitropism adjustment via `meristem_gravitropism_rate`
+is sufficient. Do not model root-tip auxin recirculation in this milestone.
 
 **Phototropic PIN redistribution.** Light causes lateral PIN redistribution, bending the shoot
-toward light via a lateral auxin gradient. The sim handles phototropism geometrically. Adding
-phototropic PIN redistribution is a potential future milestone.
+toward light via a lateral auxin gradient. **Decision:** out of scope. The sim handles
+phototropism geometrically and that is sufficient. Future direction only.
 
 **Wound response.** Stem removal causes auxin accumulation above the cut and vascular
-regeneration — a PIN-mediated response. The PIN pass infrastructure would support this later.
+regeneration — a PIN-mediated response. **Decision:** out of scope. Gravity stress rethink
+and wound vascular regeneration are both future milestones. The PIN pass infrastructure will
+support this when the time comes.
