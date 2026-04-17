@@ -53,9 +53,9 @@ struct Genome {
     float growth_rate;                // dm/hr — shoot tip extension speed
     uint32_t shoot_plastochron;       // ticks between node creation (time-based, like real meristems)
     float branch_angle;               // radians
-    float cambium_responsiveness;     // dm/hr·bias — thickening rate per unit structural_flow_bias.
-                                      // delta_radius = cambium_responsiveness × structural_flow_bias × sugar_gf × stress_boost.
-                                      // Zero = monocot (no secondary thickening). Replaces thickening_rate.
+    float cambium_responsiveness;     // dm/hr·bias — thickening rate per unit auxin_flow_bias (PIN saturation 0→1).
+                                      // delta_radius = cambium_responsiveness × auxin_flow_bias × sugar_gf × stress_boost.
+                                      // Zero = monocot (no secondary thickening).
     float internode_elongation_rate;  // dm/hr — intercalary stretch of young internodes
     float max_internode_length;       // dm — max internode length (elongation target)
     uint32_t internode_maturation_ticks; // hours until internode stops elongating (visual: stiff cylinders)
@@ -150,23 +150,23 @@ struct Genome {
     float stress_gravitropism_boost;      // gravitropism pull per unit stress hormone
     float elastic_recovery_rate;          // radians/tick — spring-back toward rest direction
 
-    // Canalization — auxin flow history biases transport
-    float transient_gain;                 // target bias per unit of auxin flux
-    float transient_rate;                 // how fast transient bias chases its target (0-1)
-    float structural_threshold;           // minimum auxin flux to grow structural bias
-    float structural_growth_rate;         // structural bias increment per tick above threshold
-    float structural_max;                 // cap on structural bias
-    float canalization_weight;            // global scaling on combined bias effect (0 = disabled)
+    // Canalization — PIN transport history biases auxin flow and cambium
+    float smoothing_rate;                 // lerp rate for auxin_flow_bias toward current PIN saturation (~20 tick response)
+    float canalization_weight;            // global scaling on auxin_flow_bias effect in local diffusion (0 = disabled)
+
+    // PIN transport
+    float pin_capacity_per_area;          // AU/(dm²·tick) — max auxin transport per unit cross-section at full efficiency.
+                                          // Also the denominator in saturation = flux / (r² × pin_capacity_per_area).
+    float pin_base_efficiency;            // [0–1] — cold-start PIN efficiency when auxin_flow_bias = 0 (constitutively active PINs)
 
     // Vascular transport
     float xylem_conductance;              // throughput per dm² cross-section per tick (water + cytokinin)
     float phloem_conductance;             // throughput per dm² cross-section per tick (sugar)
     float phloem_reserve_fraction;        // fraction of sugar_cap leaves keep for themselves (don't load into phloem)
-    float vascular_conductance_threshold; // minimum structural_flow_bias for bulk vascular admission.
-                                          // Below this threshold a node uses local diffusion only.
-                                          // Set low (< initial stamp) so newly spawned internodes
-                                          // immediately join the network. Only truly uncanalized
-                                          // nodes (bias = 0, never had any auxin flux) stay excluded.
+    float vascular_radius_threshold;      // dm — minimum radius for bulk vascular admission.
+                                          // Set below initial_radius (0.015 dm) so newly spawned
+                                          // internodes qualify from birth. Only pre-initial-radius
+                                          // manually-created nodes stay excluded.
 };
 
 inline Genome default_genome() {
@@ -300,21 +300,19 @@ inline Genome default_genome() {
         .elastic_recovery_rate = 0.005f,          // slow spring-back (half of droop_rate)
 
         // Canalization
-        .transient_gain = 2.0f,               // target = flux * 2 — responsive
-        .transient_rate = 0.2f,               // ~87% in 8 hours
-        .structural_threshold = 0.15f,        // only high-flux paths build permanent vascular bias
-        .structural_growth_rate = 0.005f,     // ~8 days to reach 1.0
-        .structural_max = 2.0f,               // at max: 1 + 2.0 = 3.0x weight
+        .smoothing_rate = 0.1f,               // 10% per tick → ~20 tick response; natural decay when flux stops
         .canalization_weight = 1.0f,          // full effect by default
+
+        // PIN transport
+        .pin_capacity_per_area = 500.0f,      // AU/(dm²·tick) — primary calibration knob; adjust up to reduce sensitivity
+        .pin_base_efficiency = 0.2f,          // cold-start: new stems transport 20% of capacity before PIN upregulates
 
         // Vascular transport
         .xylem_conductance = 100.0f,          // primary long-range water mover (diffusion dropped to 0.02);
                                               // π×r²×100 at initial_radius = 0.071 ml/tick, above root absorption cap
         .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
         .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap for themselves
-        .vascular_conductance_threshold = 0.005f, // just below the initial stamp (0.01) — newly spawned
-                                                  // internodes qualify immediately. Only zero-bias nodes
-                                                  // (never carried any flux) stay excluded.
+        .vascular_radius_threshold = 0.01f,   // dm — below initial_radius (0.015), all new internodes qualify from birth
     };
 }
 

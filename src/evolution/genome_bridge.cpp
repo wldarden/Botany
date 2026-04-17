@@ -144,19 +144,17 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "stress_gravitropism_boost",       g.stress_gravitropism_boost,       r, 0.0f,  5.0f, p);
     reg(sg, "elastic_recovery_rate",           g.elastic_recovery_rate,           r, 0.0f,  0.02f, p);
 
-    // --- Canalization group (6 genes) ---
-    reg(sg, "transient_gain",           g.transient_gain,           r, 0.0f, 20.0f, p);
-    reg(sg, "transient_rate",           g.transient_rate,           r, 0.0f, 1.0f, p);
-    reg(sg, "structural_threshold",     g.structural_threshold,     r, 0.0f, 1.0f, p);
-    reg(sg, "structural_growth_rate",   g.structural_growth_rate,   r, 0.0f, 0.1f, p);
-    reg(sg, "structural_max",           g.structural_max,           r, 0.0f, 10.0f, p);
-    reg(sg, "canalization_weight",      g.canalization_weight,      r, 0.0f, 5.0f, p);
+    // --- Canalization group (PIN transport params) ---
+    reg(sg, "smoothing_rate",         g.smoothing_rate,         r, 0.01f, 0.5f,    p);
+    reg(sg, "canalization_weight",    g.canalization_weight,    r, 0.0f,  5.0f,    p);
+    reg(sg, "pin_capacity_per_area",  g.pin_capacity_per_area,  r, 50.0f, 2000.0f, p);
+    reg(sg, "pin_base_efficiency",    g.pin_base_efficiency,    r, 0.05f, 0.5f,    p);
 
     // Vascular transport
-    reg(sg, "xylem_conductance",              g.xylem_conductance,              r, 1.0f,  50.0f,  p);
-    reg(sg, "phloem_conductance",             g.phloem_conductance,             r, 1.0f,  50.0f,  p);
-    reg(sg, "phloem_reserve_fraction",        g.phloem_reserve_fraction,        r, 0.05f, 0.8f,   p);
-    reg(sg, "vascular_conductance_threshold", g.vascular_conductance_threshold, r, 0.0f,  2.0f,   p);
+    reg(sg, "xylem_conductance",           g.xylem_conductance,           r, 1.0f,  500.0f, p);
+    reg(sg, "phloem_conductance",          g.phloem_conductance,          r, 1.0f,  50.0f,  p);
+    reg(sg, "phloem_reserve_fraction",     g.phloem_reserve_fraction,     r, 0.05f, 0.8f,   p);
+    reg(sg, "vascular_radius_threshold",   g.vascular_radius_threshold,   r, 0.001f, 0.05f, p);
 
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
@@ -209,7 +207,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "sugar_storage_density_wood", "sugar_storage_density_leaf",
         "sugar_cap_minimum", "sugar_cap_meristem",
         "xylem_conductance", "phloem_conductance", "phloem_reserve_fraction",
-        "vascular_conductance_threshold"
+        "vascular_radius_threshold"
     }});
 
     sg.add_linkage_group({"water_economy", {
@@ -241,9 +239,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     }});
 
     sg.add_linkage_group({"canalization", {
-        "transient_gain", "transient_rate",
-        "structural_threshold", "structural_growth_rate", "structural_max",
-        "canalization_weight"
+        "smoothing_rate", "canalization_weight",
+        "pin_capacity_per_area", "pin_base_efficiency"
     }});
 
     return sg;
@@ -381,21 +378,19 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.stress_gravitropism_boost       = sg.get("stress_gravitropism_boost");
     g.elastic_recovery_rate           = sg.get("elastic_recovery_rate");
 
-    // Canalization
-    g.transient_gain           = sg.get("transient_gain");
-    g.transient_rate           = sg.get("transient_rate");
-    g.structural_threshold     = sg.get("structural_threshold");
-    g.structural_growth_rate   = sg.get("structural_growth_rate");
-    g.structural_max           = sg.get("structural_max");
-    g.canalization_weight      = sg.get("canalization_weight");
+    // Canalization / PIN transport
+    g.smoothing_rate        = sg.get("smoothing_rate");
+    g.canalization_weight   = sg.get("canalization_weight");
+    g.pin_capacity_per_area = sg.get("pin_capacity_per_area");
+    g.pin_base_efficiency   = sg.get("pin_base_efficiency");
 
     // Vascular transport
-    g.xylem_conductance        = sg.get("xylem_conductance");
-    g.phloem_conductance       = sg.get("phloem_conductance");
-    g.phloem_reserve_fraction  = sg.get("phloem_reserve_fraction");
-    g.vascular_conductance_threshold = sg.has_gene("vascular_conductance_threshold")
-                                           ? sg.get("vascular_conductance_threshold")
-                                           : 0.005f;
+    g.xylem_conductance          = sg.get("xylem_conductance");
+    g.phloem_conductance         = sg.get("phloem_conductance");
+    g.phloem_reserve_fraction    = sg.get("phloem_reserve_fraction");
+    g.vascular_radius_threshold  = sg.has_gene("vascular_radius_threshold")
+                                       ? sg.get("vascular_radius_threshold")
+                                       : 0.01f;
 
     return g;
 }

@@ -343,7 +343,9 @@ void Node::transport_with_children(const Genome& g) {
 
     bool is_seed = (parent == nullptr);
 
-    last_auxin_flux.clear();
+    // NOTE: last_auxin_flux.clear() was here. Moved to end of update_canalization()
+    // so that PIN-recorded flux (written before the DFS walk) is preserved and
+    // accumulated together with diffusion flux before canalization reads it.
 
     float ref_radius = g.initial_radius;
     float parent_cap_sugar = sugar_cap(*this, g);
@@ -559,23 +561,30 @@ void Node::transport_with_children(const Genome& g) {
 
 void Node::update_canalization(const Genome& g) {
     for (Node* child : children) {
-        // Get auxin flux for this child (0 if none recorded)
+        // Get auxin flux for this child this tick (PIN + diffusion combined).
         float flux = 0.0f;
         auto it = last_auxin_flux.find(child);
         if (it != last_auxin_flux.end()) flux = it->second;
 
-        // Transient bias: exponential chase toward flux-derived target
-        float target = flux * g.transient_gain;
-        float& flow_bias = auxin_flow_bias[child];
-        flow_bias += (target - flow_bias) * g.transient_rate;
+        // Saturation = fraction of this connection's PIN capacity currently used.
+        // r² is the child's cross-sectional area; pin_capacity_per_area is the max
+        // flux density. Clamped to [0, 1] — physical PIN can't exceed full saturation.
+        float r2 = child->radius * child->radius;
+        float capacity = r2 * g.pin_capacity_per_area;
+        float saturation = (capacity > 1e-8f)
+            ? std::min(flux / capacity, 1.0f) : 0.0f;
 
-        // Structural bias: slow ratchet, never decays
-        float& struct_bias = structural_flow_bias[child];
-        if (flux > g.structural_threshold) {
-            struct_bias += g.structural_growth_rate;
-        }
-        struct_bias = std::min(struct_bias, g.structural_max);
+        // Exponential smoothing: bias chases saturation at smoothing_rate.
+        // Natural decay: when flux stops, saturation→0 and bias lerps toward 0
+        // over ~1/smoothing_rate ticks. No separate decay param needed.
+        float& flow_bias = auxin_flow_bias[child];
+        flow_bias += (saturation - flow_bias) * g.smoothing_rate;
     }
+
+    // Clear AFTER canalization reads, not at start of transport_with_children.
+    // PIN writes into last_auxin_flux before the DFS walk; diffusion accumulates
+    // during the walk. Both must be summed before canalization reads the map.
+    last_auxin_flux.clear();
 }
 
 void Node::decay_chemicals(const Genome& g) {

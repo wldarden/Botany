@@ -96,6 +96,9 @@ TEST_CASE("water_cap returns minimum for tiny nodes", "[water]") {
 
 TEST_CASE("Water diffuses from high to low concentration", "[water]") {
     Genome g = default_genome();
+    // Raise vascular_radius_threshold so local diffusion runs — this test calls
+    // transport_with_children directly without running the vascular pass.
+    g.vascular_radius_threshold = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
 
     Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.02f);

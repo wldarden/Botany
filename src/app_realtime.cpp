@@ -116,7 +116,7 @@ static Genome load_genome_file(const std::string& path) {
     get_f("stress_thickening_boost", g.stress_thickening_boost);
     get_f("stress_elongation_inhibition", g.stress_elongation_inhibition);
     get_f("stress_gravitropism_boost", g.stress_gravitropism_boost);
-    get_f("vascular_conductance_threshold", g.vascular_conductance_threshold);
+    get_f("vascular_radius_threshold", g.vascular_radius_threshold);
 
     return g;
 }

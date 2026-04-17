@@ -18,17 +18,12 @@ namespace botany {
 
 bool has_vasculature(const Node& n, const Genome& g) {
     if (!n.parent) return true;  // seed is always a vascular junction
-    // Vascular admission is path-dependent, not time-dependent. A node enters the
-    // bulk transport network when its parent-to-node structural_flow_bias reaches
-    // vascular_conductance_threshold. New internodes are stamped with an initial bias
-    // (0.01+) at creation so they qualify immediately. Truly uncanalized nodes —
-    // manually attached or bypassed — stay excluded until flux builds their bias.
-    // Leaves, meristems, and other non-stem/root types never have vasculature.
-    if (n.type == NodeType::STEM || n.type == NodeType::ROOT) {
-        auto it = n.parent->structural_flow_bias.find(const_cast<Node*>(&n));
-        if (it == n.parent->structural_flow_bias.end()) return false;
-        return it->second >= g.vascular_conductance_threshold;
-    }
+    // Vascular admission is radius-based. All stem/root nodes with radius >=
+    // vascular_radius_threshold qualify. initial_radius (0.015 dm) > threshold (0.01 dm)
+    // so newly spawned internodes join immediately. Leaves and meristems never join
+    // (they rely on last-mile local diffusion from the nearest vascular node).
+    if (n.type == NodeType::STEM || n.type == NodeType::ROOT)
+        return n.radius >= g.vascular_radius_threshold;
     return false;
 }
 

@@ -475,7 +475,8 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
     stem->chemical(ChemicalID::Sugar) = 5.0f;
     plant.seed_mut()->add_child(stem);
 
-    // Run without GA
+    // Run without GA — fill water so turgor_fraction is non-zero (required for elongation).
+    fill_water(plant, g);
     stem->chemical(ChemicalID::Gibberellin) = 0.0f;
     float offset_before = glm::length(stem->offset);
     plant.tick(wp);
@@ -485,6 +486,7 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
     stem->offset = glm::vec3(0.0f, 0.5f, 0.0f);
     stem->age = 1;
     stem->chemical(ChemicalID::Sugar) = 5.0f;
+    fill_water(plant, g);
 
     // Run with GA
     stem->chemical(ChemicalID::Gibberellin) = 1.0f;
@@ -679,33 +681,37 @@ TEST_CASE("Elastic recovery stops when offset matches rest_offset", "[meristem][
     REQUIRE(dot > 0.999f);
 }
 
-TEST_CASE("has_vasculature uses structural bias threshold, not node age", "[meristem][vascular]") {
-    // Vascular admission must be path-dependent (bias-based), not time-dependent (age-based).
-    // A node is vascular when structural_flow_bias >= vascular_conductance_threshold.
-    // Age should have no effect.
+TEST_CASE("has_vasculature uses radius threshold, not node age or bias", "[meristem][vascular]") {
+    // Vascular admission is radius-based. initial_radius (0.015 dm) > vascular_radius_threshold
+    // (0.01 dm), so all newly spawned internodes qualify immediately.
+    // Age and bias have no effect.
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
     Node* seed = plant.seed_mut();
 
-    // Attach a fresh STEM node — no bias entry yet.
-    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.05f);
-    seed->add_child(stem);
+    // Stem below threshold radius → not vascular.
+    Node* thin = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f),
+                                   g.vascular_radius_threshold * 0.5f);
+    seed->add_child(thin);
+    thin->age = 9999;
+    REQUIRE(has_vasculature(*thin, g) == false);
 
-    // No bias → not vascular, regardless of age.
-    stem->age = 9999;
-    REQUIRE(has_vasculature(*stem, g) == false);
+    // Stem at exactly threshold → vascular.
+    Node* at_thresh = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.2f, 0.0f),
+                                        g.vascular_radius_threshold);
+    seed->add_child(at_thresh);
+    REQUIRE(has_vasculature(*at_thresh, g) == true);
 
-    // Bias below threshold → still not vascular.
-    seed->structural_flow_bias[stem] = g.vascular_conductance_threshold * 0.5f;
-    REQUIRE(has_vasculature(*stem, g) == false);
+    // Normal internode (initial_radius = 0.015 > threshold 0.01) → vascular from birth.
+    Node* normal = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.3f, 0.0f),
+                                     g.initial_radius);
+    seed->add_child(normal);
+    REQUIRE(has_vasculature(*normal, g) == true);
 
-    // Bias at threshold → vascular.
-    seed->structural_flow_bias[stem] = g.vascular_conductance_threshold;
-    REQUIRE(has_vasculature(*stem, g) == true);
-
-    // Bias well above threshold → still vascular.
-    seed->structural_flow_bias[stem] = 1.5f;
-    REQUIRE(has_vasculature(*stem, g) == true);
+    // Leaf → never vascular.
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.4f, 0.0f), g.initial_radius);
+    seed->add_child(leaf);
+    REQUIRE(has_vasculature(*leaf, g) == false);
 
     // Seed itself (no parent) is always vascular.
     REQUIRE(has_vasculature(*seed, g) == true);

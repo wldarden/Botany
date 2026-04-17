@@ -74,6 +74,7 @@ add_library(botany_engine STATIC
     src/engine/node/tissues/apical.cpp
     src/engine/node/tissues/root_apical.cpp
     src/engine/plant.cpp
+    src/engine/pin_transport.cpp
     src/engine/sugar.cpp
     src/engine/light.cpp
     src/engine/debug_log.cpp

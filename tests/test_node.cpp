@@ -130,6 +130,9 @@ TEST_CASE("Canalization: get_bias_multiplier scales with canalization_weight", "
 TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]") {
     Genome g = default_genome();
     g.canalization_weight = 1.0f;
+    // Raise vascular_radius_threshold above node radii so local diffusion runs —
+    // these unit tests call transport_with_children directly without the vascular pass.
+    g.vascular_radius_threshold = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
 
     // Use small parent sugar so children don't hit headroom caps.
@@ -164,6 +167,7 @@ TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]"
 TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization]") {
     Genome g = default_genome();
     g.canalization_weight = 0.0f;  // disabled
+    g.vascular_radius_threshold = 1.0f;  // same vascular bypass as the bias test above
     Plant plant(g, glm::vec3(0.0f));
 
     // Same small-sugar setup as the bias test
@@ -226,10 +230,9 @@ TEST_CASE("Canalization: transport with biases doesn't break child-to-parent flo
     REQUIRE(childB->chemical(ChemicalID::Auxin) < 5.0f);
 }
 
-TEST_CASE("Canalization: transient bias builds from auxin flux", "[canalization]") {
+TEST_CASE("Canalization: auxin_flow_bias builds from auxin flux", "[canalization]") {
     Genome g = default_genome();
-    g.transient_gain = 2.0f;
-    g.transient_rate = 0.5f;  // fast for testing
+    g.smoothing_rate = 0.5f;  // fast lerp for testing
     g.canalization_weight = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world_params();
@@ -243,7 +246,7 @@ TEST_CASE("Canalization: transient bias builds from auxin flux", "[canalization]
         plant.tick(world);
     }
 
-    // The seed should have non-zero transient bias toward the shoot apical child
+    // The seed should have non-zero auxin_flow_bias toward the shoot apical child
     bool found_nonzero_bias = false;
     Node* seed = plant.seed_mut();
     for (auto& [child, bias] : seed->auxin_flow_bias) {
@@ -252,11 +255,11 @@ TEST_CASE("Canalization: transient bias builds from auxin flux", "[canalization]
     REQUIRE(found_nonzero_bias);
 }
 
-TEST_CASE("Canalization: transient bias decays without flux", "[canalization]") {
+TEST_CASE("Canalization: auxin_flow_bias decays without flux", "[canalization]") {
     Genome g = default_genome();
-    g.transient_gain = 2.0f;
-    g.transient_rate = 0.5f;
+    g.smoothing_rate = 0.5f;  // fast lerp — bias drops to 0 in ~10 ticks
     g.apical_auxin_baseline = 0.0f;  // no auxin production
+    g.root_tip_auxin_production_rate = 0.0f;  // no root auxin either
     g.canalization_weight = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
 
@@ -270,22 +273,25 @@ TEST_CASE("Canalization: transient bias decays without flux", "[canalization]") 
     // Manually set a transient bias
     seed->auxin_flow_bias[child] = 1.0f;
 
-    // Tick with no auxin production — bias should decay toward 0
+    // Tick with no auxin production — bias should lerp toward 0 (saturation = 0)
     WorldParams world = default_world_params();
     for (int i = 0; i < 10; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Auxin) = 0.0f;
+        });
         plant.tick(world);
     }
 
-    // Bias should have decayed significantly (target=0, rate=0.5)
+    // Bias should have decayed significantly (smoothing_rate=0.5, 10 ticks → ~0.001)
     REQUIRE(seed->auxin_flow_bias[child] < 0.1f);
 }
 
-TEST_CASE("Canalization: structural bias builds with sustained flux", "[canalization]") {
+TEST_CASE("Canalization: auxin_flow_bias builds with sustained PIN flux", "[canalization]") {
+    // PIN flux through a connection saturates auxin_flow_bias toward 1.
+    // After 10 ticks with active apical, the seed→shoot connection should have non-zero bias.
     Genome g = default_genome();
-    g.structural_threshold = 0.01f;  // low for testing
-    g.structural_growth_rate = 0.1f; // fast for testing
-    g.structural_max = 5.0f;
+    g.smoothing_rate = 0.5f;  // fast lerp for testing
     g.canalization_weight = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world = default_world_params();
@@ -298,20 +304,22 @@ TEST_CASE("Canalization: structural bias builds with sustained flux", "[canaliza
         plant.tick(world);
     }
 
-    bool found_structural = false;
+    bool found_nonzero_bias = false;
     Node* seed = plant.seed_mut();
-    for (auto& [child, bias] : seed->structural_flow_bias) {
-        if (bias > 0.01f) found_structural = true;
+    for (auto& [child, bias] : seed->auxin_flow_bias) {
+        if (bias > 0.01f) found_nonzero_bias = true;
     }
-    REQUIRE(found_structural);
+    REQUIRE(found_nonzero_bias);
 }
 
-TEST_CASE("Canalization: structural bias does NOT decay", "[canalization]") {
+TEST_CASE("Canalization: auxin_flow_bias lerps toward zero when flux stops", "[canalization]") {
+    // Unlike the old structural ratchet, auxin_flow_bias decays when PIN flux stops.
+    // This is correct: the wood (radius) is the permanent structural memory; the bias
+    // is a live signal reflecting current PIN protein polarization.
     Genome g = default_genome();
-    g.structural_threshold = 0.01f;
-    g.structural_growth_rate = 0.1f;
-    g.structural_max = 5.0f;
-    g.apical_auxin_baseline = 0.0f;  // disable auxin production for decay test
+    g.smoothing_rate = 0.5f;
+    g.apical_auxin_baseline = 0.0f;
+    g.root_tip_auxin_production_rate = 0.0f;
     g.canalization_weight = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
 
@@ -322,11 +330,10 @@ TEST_CASE("Canalization: structural bias does NOT decay", "[canalization]") {
     }
     REQUIRE(shoot != nullptr);
 
-    // Manually set structural bias
-    seed->structural_flow_bias[shoot] = 1.5f;
-    float bias_before = seed->structural_flow_bias[shoot];
+    // Manually set bias to a high value
+    seed->auxin_flow_bias[shoot] = 1.5f;
 
-    // Tick with zero auxin — no flux, structural should NOT decay
+    // Tick with zero auxin — bias should lerp toward zero
     WorldParams world = default_world_params();
     for (int i = 0; i < 20; i++) {
         plant.for_each_node_mut([](Node& n) {
@@ -336,12 +343,15 @@ TEST_CASE("Canalization: structural bias does NOT decay", "[canalization]") {
         plant.tick(world);
     }
 
-    REQUIRE(seed->structural_flow_bias[shoot] >= bias_before);
+    // After 20 ticks at smoothing_rate=0.5, bias should be negligible
+    REQUIRE(seed->auxin_flow_bias[shoot] < 0.1f);
 }
 
-TEST_CASE("Canalization: structural bias capped at structural_max", "[canalization]") {
+TEST_CASE("Canalization: auxin_flow_bias clamped to [0, 1]", "[canalization]") {
+    // Saturation = flux / (r² × pin_capacity_per_area) is clamped to [0, 1].
+    // Even with extreme flux, auxin_flow_bias must not exceed 1.
     Genome g = default_genome();
-    g.structural_max = 1.0f;
+    g.smoothing_rate = 1.0f;  // instant convergence for testing
     Plant plant(g, glm::vec3(0.0f));
 
     Node* seed = plant.seed_mut();
@@ -349,11 +359,12 @@ TEST_CASE("Canalization: structural bias capped at structural_max", "[canalizati
     for (Node* c : seed->children) { child = c; break; }
     REQUIRE(child != nullptr);
 
-    // Set bias above max
-    seed->structural_flow_bias[child] = 5.0f;
+    // Inject enormous auxin flux into the record
+    seed->last_auxin_flux[child] = 1e6f;
 
-    // update_canalization should clamp to max
+    // update_canalization should clamp saturation to 1.0
     seed->update_canalization(plant.genome());
 
-    REQUIRE(seed->structural_flow_bias[child] <= g.structural_max);
+    REQUIRE(seed->auxin_flow_bias[child] <= 1.0f + 1e-5f);
+    REQUIRE(seed->auxin_flow_bias[child] >= 0.0f);
 }
