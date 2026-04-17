@@ -18,20 +18,22 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 
     absorb_water(g, world);
 
-    // Cytokinin production: root apicals produce a baseline of cytokinin each tick,
-    // symmetrical to how shoot apicals produce a baseline of auxin.
-    chemical(ChemicalID::Cytokinin) += g.root_cytokinin_production_rate;
-
-    // Auxin production: real root tips maintain a local auxin maximum via
-    // PIN-mediated recycling. This auxin flows acropetally (toward seed in
-    // root-space) and promotes lateral root initiation in nearby internodes.
-    // Rate is ~1/5th of shoot apical baseline — root tips are minor auxin sources.
+    // Auxin production: unconditional (active and dormant). Real root tips maintain
+    // a local auxin maximum via PIN-mediated recycling regardless of growth state.
+    // Dormant buds need this to self-supply the auxin required for can_activate().
     chemical(ChemicalID::Auxin) += g.root_tip_auxin_production_rate;
 
     if (!active) {
         if (can_activate(g, world)) activate(g, world);
         return;
     }
+
+    // Cytokinin production: only ACTIVE root apicals signal "the plant wants more roots".
+    // Dormant buds must NOT produce cytokinin — their own production would saturate their
+    // local cytokinin ~20× above root_cytokinin_inhibition_threshold, permanently blocking
+    // can_activate(). Shoot apicals follow the same convention: produce_auxin() is called
+    // only inside the active branch.
+    chemical(ChemicalID::Cytokinin) += g.root_cytokinin_production_rate;
 
     ticks_since_last_node++;
     elongate(g, world);
