@@ -45,7 +45,7 @@ static void print_genome(const Genome& g) {
     std::cout << "  growth_rate:              " << g.growth_rate << std::endl;
     std::cout << "  max_internode_length:     " << g.max_internode_length << std::endl;
     std::cout << "  branch_angle:             " << g.branch_angle << " rad (" << (g.branch_angle * 180.0f / 3.14159f) << " deg)" << std::endl;
-    std::cout << "  thickening_rate:          " << g.thickening_rate << std::endl;
+    std::cout << "  cambium_responsiveness:   " << g.cambium_responsiveness << std::endl;
     std::cout << "  root_growth_rate:         " << g.root_growth_rate << std::endl;
     std::cout << "  max_internode_length:     " << g.max_internode_length << std::endl;
     std::cout << "  root_branch_angle:        " << g.root_branch_angle << " rad (" << (g.root_branch_angle * 180.0f / 3.14159f) << " deg)" << std::endl;

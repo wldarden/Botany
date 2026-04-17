@@ -81,6 +81,10 @@ public:
 
     float get_bias_multiplier(Node* child, const Genome& g) const;
 
+    // Returns the structural_flow_bias this node's parent has recorded for it.
+    // Stored on the parent keyed by child pointer — zero if no parent or no entry yet.
+    float get_parent_structural_bias() const;
+
     // --- Lifecycle ---
     Node(uint32_t id, NodeType type, glm::vec3 position, float radius);
     virtual ~Node() = default;

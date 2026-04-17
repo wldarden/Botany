@@ -53,12 +53,12 @@ struct Genome {
     float growth_rate;                // dm/hr — shoot tip extension speed
     uint32_t shoot_plastochron;       // ticks between node creation (time-based, like real meristems)
     float branch_angle;               // radians
-    float thickening_rate;            // dm/hr — radial growth of interior nodes
-    float auxin_thickening_threshold; // auxin level for full-speed cambial growth (lower than branching threshold)
+    float cambium_responsiveness;     // dm/hr·bias — thickening rate per unit structural_flow_bias.
+                                      // delta_radius = cambium_responsiveness × structural_flow_bias × sugar_gf × stress_boost.
+                                      // Zero = monocot (no secondary thickening). Replaces thickening_rate.
     float internode_elongation_rate;  // dm/hr — intercalary stretch of young internodes
     float max_internode_length;       // dm — max internode length (elongation target)
     uint32_t internode_maturation_ticks; // hours until internode stops elongating (visual: stiff cylinders)
-    uint32_t cambium_maturation_ticks;   // hours until secondary growth (thickening) begins
 
     // Root growth
     float root_growth_rate;           // dm/hr — root tip extension speed
@@ -66,7 +66,6 @@ struct Genome {
     float root_branch_angle;          // radians
     float root_internode_elongation_rate;  // dm/hr
     uint32_t root_internode_maturation_ticks; // hours until root internode stops elongating
-    uint32_t root_cambium_maturation_ticks;  // hours until root secondary growth begins
     float root_gravitropism_strength; // how strongly roots turn downward near surface
     float root_gravitropism_depth;    // dm — depth at which gravitropism correction begins
     float root_cytokinin_production_rate; // baseline cytokinin produced per tick (mirrors apical_auxin_baseline)
@@ -204,19 +203,18 @@ inline Genome default_genome() {
         .growth_rate = 0.002f,              // ~5 mm/day = 0.2 mm/hr
         .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
         .branch_angle = 0.785f,             // ~45 degrees
-        .thickening_rate = 0.00004f,        // ~3.5 mm radius/year
-        .auxin_thickening_threshold = 0.03f, // cambium responds to low auxin — mid-trunk gets near-full thickening
+        .cambium_responsiveness = 0.00002f, // dm/hr·bias — calibrated so main trunk (bias ~2.0) thickens at
+                                            // ~0.00004 dm/hr, matching old thickening_rate. Lateral branches
+                                            // with weaker canalization thicken proportionally less.
         .internode_elongation_rate = 0.004f, // dm/hr — intercalary stretch after creation
         .max_internode_length = 1.0f,       // 10 cm — elongation target
         .internode_maturation_ticks = 72,    // 3 days until elongation lockout (visual constraint)
-        .cambium_maturation_ticks = 336,     // 14 days until thickening begins (real cambium activation)
 
         .root_growth_rate = 0.004f,         // ~1 cm/day = 0.4 mm/hr
         .root_plastochron = 24,             // 1 day between root node creation
         .root_branch_angle = 0.35f,         // ~20 degrees
         .root_internode_elongation_rate = 0.002f, // dm/hr
         .root_internode_maturation_ticks = 48,    // 2 days until elongation lockout
-        .root_cambium_maturation_ticks = 168,     // 7 days until root thickening begins
         .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
         .root_cytokinin_production_rate = 0.15f,   // cytokinin per unit auxin — moderate signal

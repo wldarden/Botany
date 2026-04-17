@@ -28,7 +28,7 @@ static Genome make_frozen_genome() {
     Genome g = default_genome();
     g.growth_rate = 0.0f;
     g.root_growth_rate = 0.0f;
-    g.thickening_rate = 0.0f;
+    g.cambium_responsiveness = 0.0f;
     g.internode_elongation_rate = 0.0f;
     g.root_internode_elongation_rate = 0.0f;
     g.leaf_growth_rate = 0.0f;

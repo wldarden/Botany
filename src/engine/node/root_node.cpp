@@ -30,20 +30,19 @@ void RootNode::absorb_water(const Genome& g, const WorldParams& world) {
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {
-    // Secondary growth only begins after cambium matures — separate from
-    // elongation lockout (which is a visual constraint for stiff cylinders).
-    if (age < g.root_cambium_maturation_ticks) return;
+    // Same vascular-driven model as StemNode. Root connections accumulate
+    // structural_flow_bias from sugar and cytokinin transport (not auxin —
+    // real root polar auxin transport governs patterning/gravitropism, not
+    // cambial signaling). Well-used root connections thicken; lateral roots
+    // with low flux stay thin.
+    float bias = get_parent_structural_bias();
+    if (bias < 1e-6f) return;
 
-    // Root secondary growth is sugar-gated only — not auxin-driven.
-    // Real root cambial activity responds to mechanical load and local
-    // signals, not the polar auxin stream (patterning/gravitropism).
-    float effective_rate = g.thickening_rate;
-
-    float max_cost = effective_rate * world.sugar_cost_stem_growth;
+    float max_cost = g.cambium_responsiveness * bias * world.sugar_cost_stem_growth;
     float sugar_gf = (max_cost > 1e-6f) ? std::min(chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
     if (sugar_gf <= 1e-6f) return;
 
-    float actual_rate = effective_rate * sugar_gf;
+    float actual_rate = g.cambium_responsiveness * bias * sugar_gf;
     chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
     radius += actual_rate;
 }

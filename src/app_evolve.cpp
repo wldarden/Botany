@@ -39,7 +39,7 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "shoot_plastochron=" << g.shoot_plastochron << "\n";
     out << "max_internode_length=" << g.max_internode_length << "\n";
     out << "branch_angle=" << g.branch_angle << "\n";
-    out << "thickening_rate=" << g.thickening_rate << "\n";
+    out << "cambium_responsiveness=" << g.cambium_responsiveness << "\n";
     out << "internode_elongation_rate=" << g.internode_elongation_rate << "\n";
     out << "internode_maturation_ticks=" << g.internode_maturation_ticks << "\n";
     out << "root_growth_rate=" << g.root_growth_rate << "\n";

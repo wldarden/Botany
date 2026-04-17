@@ -17,6 +17,7 @@
 #include "engine/node/tissues/root_apical.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
+#include "engine/node/meristems/helpers.h"
 #include "engine/chemical/chemical_registry.h"
 #include "renderer/renderer.h"
 #include "format.h"
@@ -62,7 +63,7 @@ static Genome load_genome_file(const std::string& path) {
     get_f("growth_rate", g.growth_rate);
     get_u("shoot_plastochron", g.shoot_plastochron);
     get_f("branch_angle", g.branch_angle);
-    get_f("thickening_rate", g.thickening_rate);
+    get_f("cambium_responsiveness", g.cambium_responsiveness);
     get_f("internode_elongation_rate", g.internode_elongation_rate);
     get_f("max_internode_length", g.max_internode_length);
     get_u("internode_maturation_ticks", g.internode_maturation_ticks);
@@ -323,7 +324,7 @@ int main(int argc, char* argv[]) {
     ImGui_ImplOpenGL3_Init("#version 410");
     ImGui::StyleColorsDark();
 
-    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE, STRESS, WATER };
+    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE, STRESS, WATER, GROWTH };
     Overlay active_overlay = Overlay::NONE;
     bool playing = false;
     int steps_remaining = 0;
@@ -608,6 +609,31 @@ int main(int argc, char* argv[]) {
                 renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Water); });
                 active_overlay = Overlay::WATER;
             }
+            ImGui::SameLine();
+            if (ImGui::Button("Growth")) {
+                renderer.set_color_by_type(false);
+                const Genome& og = engine.get_plant(plant_id).genome();
+                const WorldParams& ow = engine.world_params();
+                renderer.set_color_mode([og, ow](const Node& n) -> float {
+                    using namespace meristem_helpers;
+                    if (auto* ap = n.as_apical()) {
+                        if (!ap->active) return 0.0f;
+                        float max_cost = og.growth_rate * ow.sugar_cost_meristem_growth;
+                        float gf = growth_fraction(n.chemical(ChemicalID::Sugar), max_cost,
+                                                   n.chemical(ChemicalID::Cytokinin), og.cytokinin_growth_threshold);
+                        float wgf = turgor_fraction(n.chemical(ChemicalID::Water), water_cap(n, og));
+                        return gf * wgf;
+                    } else if (auto* ra = n.as_root_apical()) {
+                        if (!ra->active) return 0.0f;
+                        float max_cost = og.root_growth_rate * ow.sugar_cost_root_growth;
+                        float gf = sugar_growth_fraction(n.chemical(ChemicalID::Sugar), max_cost);
+                        float wgf = turgor_fraction(n.chemical(ChemicalID::Water), water_cap(n, og));
+                        return gf * wgf;
+                    }
+                    return 0.0f;  // non-meristems: dark
+                });
+                active_overlay = Overlay::GROWTH;
+            }
 
             if (active_overlay == Overlay::NODE_TYPE) {
                 ImGui::Spacing();
@@ -845,11 +871,65 @@ int main(int argc, char* argv[]) {
                 }
                 ImGui::Text("Type: %s", type_str);
 
-                // Meristem info
+                // Meristem info with growth factor breakdown
                 if (auto* ap = sel.as_apical()) {
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    const WorldParams& mw = engine.world_params();
                     ImGui::Text("Meristem: %s", ap->active ? "active" : "dormant");
+                    if (ap->active) {
+                        float max_cost = mg.growth_rate * mw.sugar_cost_meristem_growth;
+                        float sugar_gf = (max_cost > 1e-6f) ? std::min(sel.chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+                        float cyt = sel.chemical(ChemicalID::Cytokinin);
+                        float cyt_gf = cyt / (cyt + std::max(mg.cytokinin_growth_threshold, 1e-6f));
+                        float water_gf = meristem_helpers::turgor_fraction(sel.chemical(ChemicalID::Water), water_cap(sel, mg));
+                        float total = sugar_gf * cyt_gf * water_gf;
+                        ImGui::Text("Growth: %.1f%%", total * 100);
+                        ImGui::Text("  Sugar: %3.0f%%  Cyt: %3.0f%%  Water: %3.0f%%",
+                                    sugar_gf * 100, cyt_gf * 100, water_gf * 100);
+                    } else {
+                        // Activation conditions for dormant shoot apicals
+                        float stem_auxin = sel.parent ? sel.parent->chemical(ChemicalID::Auxin) : sel.chemical(ChemicalID::Auxin);
+                        float local_cyt = sel.parent ? sel.parent->chemical(ChemicalID::Cytokinin) : sel.chemical(ChemicalID::Cytokinin);
+                        float sugar = sel.chemical(ChemicalID::Sugar);
+                        bool auxin_ok = stem_auxin < mg.auxin_threshold;
+                        bool cyt_ok = local_cyt >= mg.cytokinin_threshold;
+                        bool sugar_ok = sugar >= mw.sugar_cost_activation;
+                        ImGui::Text("Activation: %s", (auxin_ok && cyt_ok && sugar_ok) ? "READY" : "blocked");
+                        ImGui::Text("  Auxin: %.3f / %.3f %s",
+                                    stem_auxin, mg.auxin_threshold, auxin_ok ? "" : "(HIGH)");
+                        ImGui::Text("  Cyt:   %.3f / %.3f %s",
+                                    local_cyt, mg.cytokinin_threshold, cyt_ok ? "" : "(LOW)");
+                        ImGui::Text("  Sugar: %s / %s %s",
+                                    fmt_mass(sugar), fmt_mass(mw.sugar_cost_activation), sugar_ok ? "" : "(LOW)");
+                    }
                 } else if (auto* ra = sel.as_root_apical()) {
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    const WorldParams& mw = engine.world_params();
                     ImGui::Text("Meristem: %s", ra->active ? "active" : "dormant");
+                    if (ra->active) {
+                        float max_cost = mg.root_growth_rate * mw.sugar_cost_root_growth;
+                        float sugar_gf = (max_cost > 1e-6f) ? std::min(sel.chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+                        float water_gf = meristem_helpers::turgor_fraction(sel.chemical(ChemicalID::Water), water_cap(sel, mg));
+                        float total = sugar_gf * water_gf;
+                        ImGui::Text("Growth: %.1f%%", total * 100);
+                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%",
+                                    sugar_gf * 100, water_gf * 100);
+                    } else {
+                        // Activation conditions for dormant root apicals
+                        float auxin = sel.chemical(ChemicalID::Auxin);
+                        float cyt = sel.chemical(ChemicalID::Cytokinin);
+                        float sugar = sel.chemical(ChemicalID::Sugar);
+                        bool auxin_ok = auxin >= mg.root_auxin_activation_threshold;
+                        bool cyt_ok = cyt <= mg.root_cytokinin_inhibition_threshold;
+                        bool sugar_ok = sugar >= mw.sugar_cost_activation;
+                        ImGui::Text("Activation: %s", (auxin_ok && cyt_ok && sugar_ok) ? "READY" : "blocked");
+                        ImGui::Text("  Auxin: %.3f / %.3f %s",
+                                    auxin, mg.root_auxin_activation_threshold, auxin_ok ? "" : "(LOW)");
+                        ImGui::Text("  Cyt:   %.3f / %.3f %s",
+                                    cyt, mg.root_cytokinin_inhibition_threshold, cyt_ok ? "" : "(HIGH)");
+                        ImGui::Text("  Sugar: %s / %s %s",
+                                    fmt_mass(sugar), fmt_mass(mw.sugar_cost_activation), sugar_ok ? "" : "(LOW)");
+                    }
                 }
 
                 ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);

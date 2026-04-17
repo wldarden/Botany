@@ -275,6 +275,22 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
 
 void Node::update_tissue(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
+float Node::get_parent_structural_bias() const {
+    if (!parent) {
+        // Seed node has no parent. Use the maximum bias it has recorded for any child
+        // as a proxy for the throughput this junction has experienced. The seed is the
+        // most-used transit point in the plant, so its cambial activity reflects the
+        // dominant flow path through it.
+        float max_bias = 0.0f;
+        for (const auto& [child, bias] : structural_flow_bias)
+            max_bias = std::max(max_bias, bias);
+        return max_bias;
+    }
+    auto it = parent->structural_flow_bias.find(const_cast<Node*>(this));
+    if (it == parent->structural_flow_bias.end()) return 0.0f;
+    return it->second;
+}
+
 float Node::get_bias_multiplier(Node* child, const Genome& g) const {
     float flow = 0.0f, structural = 0.0f;
     auto it_f = auxin_flow_bias.find(child);

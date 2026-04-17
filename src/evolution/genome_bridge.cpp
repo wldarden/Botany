@@ -57,8 +57,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "shoot_plastochron",          static_cast<float>(g.shoot_plastochron), r, 6.0f, 168.0f, p);
     reg(sg, "max_internode_length",       g.max_internode_length,       r, 0.05f,  3.0f, p);
     reg(sg, "branch_angle",              g.branch_angle,              r, 0.05f,  1.57f, p);
-    reg(sg, "thickening_rate",           g.thickening_rate,           r, 0.00001f, 0.001f, p);
-    reg(sg, "auxin_thickening_threshold", g.auxin_thickening_threshold, r, 0.005f, 0.2f, p);
+    reg(sg, "cambium_responsiveness",    g.cambium_responsiveness,    r, 0.0f, 0.001f, p);
     reg(sg, "internode_elongation_rate", g.internode_elongation_rate, r, 0.0005f, 0.02f, p);
     reg(sg, "internode_maturation_ticks", static_cast<float>(g.internode_maturation_ticks),
                                                                       r, 12.0f, 500.0f, p);
@@ -69,7 +68,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "root_branch_angle",             g.root_branch_angle,             r, 0.05f,  1.57f, p);
     reg(sg, "root_internode_elongation_rate", g.root_internode_elongation_rate, r, 0.0005f, 0.02f, p);
     reg(sg, "root_internode_maturation_ticks", static_cast<float>(g.root_internode_maturation_ticks),
-                                                                                r, 12.0f, 500.0f, p);
+                                                                               r, 12.0f, 500.0f, p);
     reg(sg, "root_gravitropism_strength",    g.root_gravitropism_strength,    r, 0.1f, 10.0f, p);
     reg(sg, "root_gravitropism_depth",       g.root_gravitropism_depth,       r, 0.1f, 5.0f, p);
 
@@ -186,7 +185,7 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
 
     sg.add_linkage_group({"shoot_growth", {
         "growth_rate", "shoot_plastochron", "max_internode_length", "branch_angle",
-        "thickening_rate", "auxin_thickening_threshold",
+        "cambium_responsiveness",
         "internode_elongation_rate", "internode_maturation_ticks"
     }});
 
@@ -296,8 +295,11 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.shoot_plastochron          = static_cast<uint32_t>(sg.get("shoot_plastochron"));
     g.max_internode_length       = sg.get("max_internode_length");
     g.branch_angle               = sg.get("branch_angle");
-    g.thickening_rate            = sg.get("thickening_rate");
-    g.auxin_thickening_threshold = sg.get("auxin_thickening_threshold");
+    // Backwards compatibility: old genomes have thickening_rate but not cambium_responsiveness.
+    // Graceful default if the gene is missing from a saved genome file.
+    g.cambium_responsiveness     = sg.has_gene("cambium_responsiveness")
+                                       ? sg.get("cambium_responsiveness")
+                                       : 0.00002f;
     g.internode_elongation_rate  = sg.get("internode_elongation_rate");
     g.internode_maturation_ticks = static_cast<uint32_t>(sg.get("internode_maturation_ticks"));
 

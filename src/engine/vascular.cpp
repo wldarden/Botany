@@ -15,12 +15,18 @@
 
 namespace botany {
 
-bool has_vasculature(const Node& n, const Genome& g) {
+bool has_vasculature(const Node& n, const Genome& /*g*/) {
     if (!n.parent) return true;  // seed is always a vascular junction
-    if (n.type == NodeType::STEM)
-        return n.age >= g.cambium_maturation_ticks;
-    if (n.type == NodeType::ROOT)
-        return n.age >= g.root_cambium_maturation_ticks;
+    // Vascular admission is path-dependent, not time-dependent. A node is vascular
+    // when its parent-to-node connection has accumulated structural_flow_bias, meaning
+    // auxin has flowed through it repeatedly and built conductive tissue. New internodes
+    // get an initial stamp (0.01+) at creation, so they join the network immediately.
+    // Leaves, meristems, and other non-stem/root types never have vasculature.
+    if (n.type == NodeType::STEM || n.type == NodeType::ROOT) {
+        auto it = n.parent->structural_flow_bias.find(const_cast<Node*>(&n));
+        if (it == n.parent->structural_flow_bias.end()) return false;
+        return it->second > 1e-6f;
+    }
     return false;
 }
 

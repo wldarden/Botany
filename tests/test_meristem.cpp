@@ -43,7 +43,7 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    const Node* seed = plant.seed();
+    Node* seed = plant.seed_mut();
     const Node* shoot = nullptr;
     for (const Node* c : seed->children) {
         if (c->type == NodeType::APICAL) { shoot = c; break; }
@@ -52,16 +52,18 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     float seed_r_before = seed->radius;
     float shoot_r_before = shoot->radius;
 
+    // Pre-populate structural_flow_bias on the seed — thickening is now bias-gated,
+    // not age-gated. The seed thickens via max of its children's bias entries.
+    seed->structural_flow_bias[const_cast<Node*>(shoot)] = 1.0f;
+
     plant.for_each_node_mut([&](Node& n) {
         n.chemical(ChemicalID::Sugar) = 100.0f;
-        n.chemical(ChemicalID::Auxin) = 1.0f; // thickening is auxin-gated
-        n.age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
     });
     plant.tick(default_world_params());
 
-    // Seed (mature interior node) should thicken
+    // Seed (StemNode with canalization bias) should thicken
     REQUIRE(seed->radius > seed_r_before);
-    // Shoot tip (active apical meristem) should NOT thicken
+    // Shoot tip (ApicalNode, not a StemNode) should NOT thicken
     REQUIRE(shoot->radius == shoot_r_before);
 }
 
@@ -354,6 +356,14 @@ TEST_CASE("Thickening does not occur without sugar", "[meristem][sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* seed = plant.seed_mut();
+
+    // Set up bias so the test isolates sugar-gating (not bias-gating).
+    Node* shoot = nullptr;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::APICAL) { shoot = c; break; }
+    }
+    if (shoot) seed->structural_flow_bias[shoot] = 1.0f;
+
     float radius_before = seed->radius;
     seed->chemical(ChemicalID::Sugar) = 0.0f;
 
@@ -366,9 +376,15 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* seed = plant.seed_mut();
+    // Thickening is now bias-gated — seed thickens via max of children's biases.
+    Node* shoot = nullptr;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::APICAL) { shoot = c; break; }
+    }
+    REQUIRE(shoot != nullptr);
+    seed->structural_flow_bias[shoot] = 1.0f;
+
     seed->chemical(ChemicalID::Sugar) = 100.0f;
-    seed->chemical(ChemicalID::Auxin) = 1.0f; // thickening is auxin-gated
-    seed->age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
     float sugar_before = seed->chemical(ChemicalID::Sugar);
 
     plant.tick(default_world_params());
@@ -524,26 +540,32 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     Node* seed1 = plant1.seed_mut();
     Node* seed2 = plant2.seed_mut();
 
-    WorldParams w = default_world_params();
-    // With reserve_fraction, a node with more sugar has more available for growth
-    // (available = sugar * (1 - reserve_fraction))
-    // Thickening cost is tiny (~0.00002g). Need very low sugar so
-    // reserve fraction actually limits growth.
-    // Zero ALL sugar in plant1, then give seed barely any — prevents diffusion from children
-    // Both plants get auxin so thickening isn't auxin-limited
-    plant1.for_each_node_mut([&](Node& n) {
-        n.chemical(ChemicalID::Sugar) = 0.0f;
-        n.chemical(ChemicalID::Auxin) = 1.0f;
-        n.age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
-    });
-    seed1->chemical(ChemicalID::Sugar) = 0.00002f; // below thickening cost to force partial rate
+    // Thickening is now bias-gated. Set bias=1.0 on both seeds so that only
+    // sugar availability limits the rate. The seed thickens via max-bias of children.
+    // Full-rate max_cost = cambium_responsiveness × 1.0 × density_scale × sugar_cost_stem_growth
+    //                    = 0.00002 × 1.0 × 1.0 × 1.0 = 0.00002g per tick.
+    // Use seed1 sugar = 0.000005 (quarter cost) → sugar_gf ≈ 0.25 → partial thickening.
 
-    // Plant2 gets plenty everywhere so diffusion doesn't drain the seed
-    plant2.for_each_node_mut([&](Node& n) {
-        n.chemical(ChemicalID::Sugar) = 1.0f;
-        n.chemical(ChemicalID::Auxin) = 1.0f;
-        n.age = g.cambium_maturation_ticks; // cambium mature — eligible for thickening
-    });
+    // Find apical children to use as bias keys
+    Node* shoot1 = nullptr;
+    for (Node* c : seed1->children) {
+        if (c->type == NodeType::APICAL) { shoot1 = c; break; }
+    }
+    Node* shoot2 = nullptr;
+    for (Node* c : seed2->children) {
+        if (c->type == NodeType::APICAL) { shoot2 = c; break; }
+    }
+    REQUIRE(shoot1 != nullptr);
+    REQUIRE(shoot2 != nullptr);
+    seed1->structural_flow_bias[shoot1] = 1.0f;
+    seed2->structural_flow_bias[shoot2] = 1.0f;
+
+    // Zero all nodes in plant1 to prevent diffusion inflows — then give seed barely any sugar.
+    plant1.for_each_node_mut([&](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    seed1->chemical(ChemicalID::Sugar) = 0.000005f;  // quarter of max_cost → partial rate
+
+    // Plant2 gets plenty everywhere.
+    plant2.for_each_node_mut([&](Node& n) { n.chemical(ChemicalID::Sugar) = 1.0f; });
 
     float r1_before = seed1->radius;
     float r2_before = seed2->radius;
@@ -556,6 +578,47 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
 
     REQUIRE(thicken1 > 0.0f);
     REQUIRE(thicken2 > thicken1);
+}
+
+TEST_CASE("Thickening proportional to structural_flow_bias", "[meristem][vascular]") {
+    // Two StemNodes with identical sugar but 2× different structural_flow_bias
+    // should thicken at a 2:1 ratio — bias is the direct driver of cambium activity.
+    Genome g = default_genome();
+    Plant plant1(g, glm::vec3(0.0f));
+    Plant plant2(g, glm::vec3(0.0f));
+
+    // Manually attach one StemNode child to each seed.
+    Node* parent1 = plant1.seed_mut();
+    Node* stem1 = plant1.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), g.initial_radius);
+    parent1->add_child(stem1);
+    stem1->position = parent1->position + stem1->offset;
+
+    Node* parent2 = plant2.seed_mut();
+    Node* stem2 = plant2.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), g.initial_radius);
+    parent2->add_child(stem2);
+    stem2->position = parent2->position + stem2->offset;
+
+    // Set 2× bias difference; equal abundant sugar so sugar_gf = 1.0 for both.
+    parent1->structural_flow_bias[stem1] = 0.5f;
+    parent2->structural_flow_bias[stem2] = 1.0f;
+
+    // Fund everything so diffusion and maintenance don't interfere.
+    plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 10.0f; });
+    plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 10.0f; });
+
+    float r1_before = stem1->radius;
+    float r2_before = stem2->radius;
+
+    plant1.tick(default_world_params());
+    plant2.tick(default_world_params());
+
+    float thicken1 = stem1->radius - r1_before;
+    float thicken2 = stem2->radius - r2_before;
+
+    REQUIRE(thicken1 > 0.0f);
+    REQUIRE(thicken2 > thicken1);
+    // With equal sugar (gf=1) and no stress, thickening scales linearly with bias.
+    REQUIRE_THAT(thicken2 / thicken1, WithinAbs(2.0f, 0.05f));
 }
 
 TEST_CASE("Elastic recovery rotates drooped stem toward rest_offset", "[meristem][stress]") {
