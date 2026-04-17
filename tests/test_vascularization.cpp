@@ -205,7 +205,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     apical_low->chemical(ChemicalID::Sugar)  = 0.0f;
 
     // Single vascular transport pass — tests the distribution algorithm directly.
-    vascular_transport(plant, g);
+    vascular_transport(plant, g, static_world());
 
     float got_high = apical_high->chemical(ChemicalID::Sugar);
     float got_low  = apical_low->chemical(ChemicalID::Sugar);

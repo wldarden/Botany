@@ -5,6 +5,7 @@
 #pragma once
 
 #include "engine/chemical/chemical.h"
+#include "engine/world_params.h"
 
 namespace botany {
 
@@ -14,7 +15,8 @@ class Node;
 
 // Run vascular transport for the entire plant.
 // Call once per tick, before the DFS tree walk.
-void vascular_transport(Plant& plant, const Genome& g);
+// Pass world so the call can gate optional debug logging via world.vascular_debug_log.
+void vascular_transport(Plant& plant, const Genome& g, const WorldParams& world);
 
 // Is this chemical transported via vasculature (bulk flow)?
 inline bool is_vascular_chemical(ChemicalID id) {

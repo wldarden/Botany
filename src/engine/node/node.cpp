@@ -72,7 +72,7 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     sync_world_position();
 
     float s0 = chemical(ChemicalID::Sugar);
-    if (pay_maintenance(plant, world)) return;
+    deduct_maintenance_sugar(world);
     tick_sugar_maintenance = s0 - chemical(ChemicalID::Sugar);
 
     float s1 = chemical(ChemicalID::Sugar);
@@ -93,6 +93,12 @@ void Node::tick(Plant& plant, const WorldParams& world) {
         chemical(id) += amount;
     }
     transport_received.clear();
+
+    // Starvation check runs after the flush so that vascular sugar delivered
+    // this tick (held in transport_received until now) is credited before we
+    // decide whether the node is dying. A node that receives enough sugar
+    // each tick to cover maintenance must not accumulate starvation ticks.
+    if (check_starvation(plant, world)) return;
 }
 
 // --- Tick helpers ---

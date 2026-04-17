@@ -141,7 +141,7 @@ static void tick_recursive(Node& node, Plant& plant, const WorldParams& world) {
 }
 
 void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
-    vascular_transport(*this, genome_);  // bulk flow for sugar/water/cytokinin
+    vascular_transport(*this, genome_, world);  // bulk flow for sugar/water/cytokinin
     tick_recursive(*nodes_[0], *this, world);
     flush_removals();
 }

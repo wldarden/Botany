@@ -12,6 +12,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
+#include <fstream>
 
 namespace botany {
 
@@ -62,10 +63,32 @@ static void build_flat(Node* node, int parent_idx,
 }
 
 // Run one vascular system (phloem or xylem) for one chemical.
+static const char* chem_name(ChemicalID id) {
+    switch (id) {
+        case ChemicalID::Sugar:     return "Sugar";
+        case ChemicalID::Water:     return "Water";
+        case ChemicalID::Cytokinin: return "Cytokinin";
+        default:                    return "Other";
+    }
+}
+
+static const char* node_type_name(NodeType t) {
+    switch (t) {
+        case NodeType::STEM:        return "STEM";
+        case NodeType::ROOT:        return "ROOT";
+        case NodeType::LEAF:        return "LEAF";
+        case NodeType::APICAL:      return "SA";
+        case NodeType::ROOT_APICAL: return "RA";
+        default:                    return "?";
+    }
+}
+
 static void run_vascular(std::vector<VascNodeInfo>& flat,
                          ChemicalID chem_id,
                          float conductance,
-                         const Genome& g) {
+                         const Genome& g,
+                         std::ofstream* log,
+                         uint32_t current_tick = 0) {
     if (flat.empty()) return;
 
     // --- Phase 1: Post-order (leaves→seed) ---
@@ -290,14 +313,31 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                     if (budget <= 1e-8f) break;
                 }
 
-                for (int k = 0; k < n_ch; ++k)
+                for (int k = 0; k < n_ch; ++k) {
                     flat[info.child_idxs[k]].supply = alloc[k];
+
+                    if (log) {
+                        int ci = info.child_idxs[k];
+                        Node* child = flat[ci].node;
+                        float bias = 0.0f;
+                        auto it = info.node->structural_flow_bias.find(child);
+                        if (it != info.node->structural_flow_bias.end()) bias = it->second;
+                        *log << current_tick << ','
+                             << info.node->id << ',' << child->id << ','
+                             << node_type_name(child->type) << ','
+                             << chem_name(chem_id) << ','
+                             << ceilings[k] << ','
+                             << weights[k] << ','
+                             << alloc[k] << ','
+                             << bias << '\n';
+                    }
+                }
             }
         }
     }
 }
 
-void vascular_transport(Plant& plant, const Genome& g) {
+void vascular_transport(Plant& plant, const Genome& g, const WorldParams& world) {
     Node* seed = plant.seed_mut();
     if (!seed) return;
 
@@ -306,8 +346,26 @@ void vascular_transport(Plant& plant, const Genome& g) {
     flat.reserve(plant.node_count());
     build_flat(seed, -1, flat);
 
+    // Optional per-junction debug log.
+    // On tick 0 the file is truncated (new run); subsequent ticks append.
+    std::ofstream log_file;
+    std::ofstream* log = nullptr;
+    if (world.vascular_debug_log) {
+        auto mode = (world.current_tick == 0)
+            ? (std::ios::out | std::ios::trunc)
+            : (std::ios::out | std::ios::app);
+        log_file.open("debug/vascular_log.csv", mode);
+        if (log_file.is_open()) {
+            if (world.current_tick == 0)
+                log_file << "tick,junction_node_id,child_node_id,child_type,"
+                            "chemical,demand,conductance_weight,delivered,"
+                            "structural_flow_bias\n";
+            log = &log_file;
+        }
+    }
+
     // Phloem: sugar from leaves to sinks
-    run_vascular(flat, ChemicalID::Sugar, g.phloem_conductance, g);
+    run_vascular(flat, ChemicalID::Sugar, g.phloem_conductance, g, log, world.current_tick);
 
     // Reset supply/demand for xylem pass
     for (auto& info : flat) {
@@ -316,7 +374,7 @@ void vascular_transport(Plant& plant, const Genome& g) {
     }
 
     // Xylem: water from roots to shoots
-    run_vascular(flat, ChemicalID::Water, g.xylem_conductance, g);
+    run_vascular(flat, ChemicalID::Water, g.xylem_conductance, g, log, world.current_tick);
 
     // Reset for cytokinin
     for (auto& info : flat) {
@@ -325,7 +383,7 @@ void vascular_transport(Plant& plant, const Genome& g) {
     }
 
     // Xylem: cytokinin from roots to shoots (carried in water stream)
-    run_vascular(flat, ChemicalID::Cytokinin, g.xylem_conductance, g);
+    run_vascular(flat, ChemicalID::Cytokinin, g.xylem_conductance, g, log, world.current_tick);
 }
 
 } // namespace botany

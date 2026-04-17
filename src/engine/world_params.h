@@ -56,6 +56,10 @@ struct WorldParams {
     float meristem_mass = 0.1f;             // g — fixed mass for meristem tips
     float ground_support_height = 0.5f;     // dm — below this Y, stress is zeroed
     float droop_rate = 0.01f;               // radians/tick — max angular droop when overstressed
+
+    // Debug / diagnostics
+    bool vascular_debug_log = false;        // write per-junction vascular flow to debug/vascular_log.csv
+    uint32_t current_tick = 0;              // set by caller each tick; used to label vascular log rows
 };
 
 inline WorldParams default_world_params() {
