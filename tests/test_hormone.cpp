@@ -301,28 +301,33 @@ TEST_CASE("Auxin: leaf auxin scales with growth amount", "[hormone]") {
     g2.shoot_plastochron = 1;
     Plant plant2(g2, glm::vec3(0.0f));
 
-    // Grow both until leaves exist, then measure auxin
+    // Grow both until leaves exist, then measure auxin.
+    // Set water high so leaves are fully hydrated — this test is about auxin, not water balance.
     for (int i = 0; i < 5; i++) {
         plant1.for_each_node_mut([](Node& n) {
             n.chemical(ChemicalID::Sugar) = 100.0f;
             n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.chemical(ChemicalID::Water) = 100.0f;
         });
         plant2.for_each_node_mut([](Node& n) {
             n.chemical(ChemicalID::Sugar) = 100.0f;
             n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.chemical(ChemicalID::Water) = 100.0f;
         });
         plant1.tick(world);
         plant2.tick(world);
     }
 
-    // Zero auxin, give sugar, tick once more
+    // Zero auxin, give sugar + water, tick once more
     plant1.for_each_node_mut([](Node& n) {
         n.chemical(ChemicalID::Auxin) = 0.0f;
         n.chemical(ChemicalID::Sugar) = 100.0f;
+        n.chemical(ChemicalID::Water) = 100.0f;
     });
     plant2.for_each_node_mut([](Node& n) {
         n.chemical(ChemicalID::Auxin) = 0.0f;
         n.chemical(ChemicalID::Sugar) = 100.0f;
+        n.chemical(ChemicalID::Water) = 100.0f;
     });
     plant1.tick(world);
     plant2.tick(world);

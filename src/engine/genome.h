@@ -253,10 +253,10 @@ inline Genome default_genome() {
         .water_storage_density_stem = 800.0f,    // ml / dm³ — wood is ~80% water by volume
         .water_storage_density_leaf = 3.0f,      // ml / dm² — leaves hold water in vacuoles
         .water_cap_meristem = 1.0f,              // ml — small active reserve
-        .water_diffusion_rate = 0.9f,            // faster than sugar (0.8) — water moves easily
+        .water_diffusion_rate = 0.02f,           // local only (same range as auxin); xylem handles long-distance
         .water_bias = 0.05f,                     // slight upward bias (transpiration pull)
-        .water_base_transport = 0.2f,            // higher floor than sugar — xylem is open pipes
-        .water_transport_scale = 4.0f,           // radius matters but less than sugar
+        .water_base_transport = 0.2f,            // throughput cap floor (rarely limiting at 0.02 diffusion)
+        .water_transport_scale = 4.0f,           // radius scaling on cap (rarely limiting at 0.02 diffusion)
 
         .leaf_phototropism_rate = 0.02f,    // ~1.1 deg/hr — full correction in ~3 days
         .meristem_gravitropism_rate = 0.02f, // gentle always-on pull toward set-point angle
@@ -308,7 +308,8 @@ inline Genome default_genome() {
         .canalization_weight = 1.0f,          // full effect by default
 
         // Vascular transport
-        .xylem_conductance = 10.0f,           // generous — xylem is open dead tubes
+        .xylem_conductance = 100.0f,          // primary long-range water mover (diffusion dropped to 0.02);
+                                              // π×r²×100 at initial_radius = 0.071 ml/tick, above root absorption cap
         .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
         .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap for themselves
         .vascular_conductance_threshold = 0.005f, // just below the initial stamp (0.01) — newly spawned

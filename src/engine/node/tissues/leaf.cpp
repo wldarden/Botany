@@ -37,7 +37,11 @@ void LeafNode::produce_gibberellin(const Genome& g) {
 
 void LeafNode::transpire(const Genome& g, const WorldParams& world) {
     float leaf_area = leaf_size * leaf_size;
-    float transpired = g.transpiration_rate * leaf_area * light_exposure;
+    float wcap = water_cap(*this, g);
+    float stomatal = wcap > 1e-6f
+        ? std::clamp(chemical(ChemicalID::Water) / wcap, 0.2f, 1.0f)
+        : 1.0f;
+    float transpired = g.transpiration_rate * leaf_area * light_exposure * stomatal;
     chemical(ChemicalID::Water) = std::max(0.0f, chemical(ChemicalID::Water) - transpired);
 }
 
