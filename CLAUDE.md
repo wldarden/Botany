@@ -27,44 +27,39 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 ### Engine (`src/engine/`)
 - **genome.h** - `Genome` struct with all tunable parameters + `default_genome()`
 - **node/** - Node subfolder:
-  - `node.h/cpp` — `Node` base class (position, radius, parent/children, hormones, sugar) with virtual `tick()`, `transport_chemicals()`. `NodeType` enum: `STEM, ROOT, LEAF, SHOOT_APICAL, SHOOT_AXILLARY, ROOT_APICAL, ROOT_AXILLARY`. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`, `as_shoot_apical()`, `as_shoot_axillary()`, `as_root_apical()`, `as_root_axillary()`. `is_meristem()` type-group check.
-  - `stem_node.h/cpp` — `StemNode` (thickening, intercalary elongation)
-  - `root_node.h/cpp` — `RootNode` (same with root params)
-  - `leaf_node.h/cpp` — `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; `produce()` for photosynthesis/GA/abscission, `grow()` for phototropism + size growth)
-  - **meristems/** — Meristem node subfolder:
-    - `meristem_types.h` — convenience umbrella, includes all 4 type headers
-    - `shoot_apical.h/cpp` — `ShootApicalNode` extends `Node` (chain growth via self-reparenting, phyllotaxis, auxin production; owns `ticks_since_last_node`)
-    - `shoot_axillary.h/cpp` — `ShootAxillaryNode` extends `Node` (auxin-gated activation, replaces self with apical; owns `active`)
-    - `root_apical.h/cpp` — `RootApicalNode` extends `Node` (gravitropism, root chain growth, cytokinin production; owns `ticks_since_last_node`)
-    - `root_axillary.h/cpp` — `RootAxillaryNode` extends `Node` (cytokinin-gated activation; owns `active`)
-    - `helpers.h` — shared helper functions (growth_direction, branch_direction, perturb, sugar_growth_fraction, etc.)
+  - `node.h/cpp` — `Node` base class (position, radius, parent/children, chemicals) with non-virtual `tick()` and virtual `update_tissue()`. `NodeType` enum: `STEM, ROOT, LEAF, APICAL, ROOT_APICAL`. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`, `as_apical()`, `as_root_apical()`. `is_meristem()` returns true for APICAL and ROOT_APICAL.
+  - `stem_node.h/cpp` — `StemNode` (secondary thickening via structural_flow_bias, intercalary elongation)
+  - `root_node.h/cpp` — `RootNode` (same with root params, gradient-based water absorption)
+  - `tissues/leaf.h/cpp` — `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; photosynthesis gated by stomatal conductance, phototropism, expansion)
+  - `tissues/apical.h/cpp` — `ApicalNode` (chain growth via self-reparenting, phyllotaxis, auxin production)
+  - `tissues/root_apical.h/cpp` — `RootApicalNode` (gravitropism, root chain growth, auxin-gated cytokinin production)
+  - `meristems/helpers.h` — shared growth helpers (`turgor_fraction`, `auxin_growth_factor`, `sugar_growth_fraction`, etc.)
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
-- **vascular.h/cpp** - `vascular_transport()` — global xylem/phloem pass. Moves sugar (phloem) and water+cytokinin (xylem) via bulk flow, bypassing mature conduit nodes. Runs before the DFS tree walk.
-- **sugar.h/cpp** - `transport_sugar()` — sugar production (leaves), maintenance consumption, starvation pruning. Diffusion moved to `Node::transport_chemicals()`.
+- **vascular.h/cpp** - `vascular_transport()` — global xylem/phloem bulk-flow pass. Moves sugar (phloem) and water+cytokinin (xylem) with conductance-first distribution weighted by `structural_flow_bias`. Runs before the DFS tree walk. `has_vasculature()` checks `structural_flow_bias >= vascular_conductance_threshold`.
+- **sugar.h/cpp** - `sugar_cap()`, `transport_sugar()` helpers. Diffusion itself lives in `Node::transport_chemicals()`.
 - **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
 - **world_params.h** - `WorldParams` struct (light level, construction costs, sugar_production_rate, maintenance rates, soil_moisture 0-1) — non-genetic physical constants
-- **plant.h/cpp** - `Plant` class owns all nodes, has root meristem cap (100). `Plant::tick()` orchestrates per-plant tick order: global chemical passes, then `tick_tree()` (recursive DFS walk from seed, snapshots children for safe reparenting, flushes removals). `queue_removal()` / `flush_removals()` for deferred node cleanup.
+- **plant.h/cpp** - `Plant` class owns all nodes, hard-caps root meristems at 10 000. `Plant::tick()` orchestrates: `vascular_transport()`, then `tick_tree()` (recursive DFS walk from seed, snapshots children for safe reparenting, flushes removals). `queue_removal()` / `flush_removals()` for deferred node cleanup.
 - **engine.h/cpp** - `Engine` iterates plants and calls `plant.tick(world_params)`
 
 ### Node Class Hierarchy
 ```
-Node (base — position, chemicals, tick, transport_chemicals)
-├── StemNode (thickening, intercalary elongation)
-├── RootNode (same with root params)
-├── LeafNode (leaf_size, light_exposure, phototropism, growth)
-├── ShootApicalNode (chain growth, phyllotaxis, auxin production)
-├── ShootAxillaryNode (auxin-gated activation, owns `active`)
-├── RootApicalNode (gravitropism, chain growth, cytokinin production)
-└── RootAxillaryNode (cytokinin-gated activation, owns `active`)
+Node (base — position, chemicals, non-virtual tick, virtual update_tissue)
+├── StemNode   (thicken via structural_flow_bias, elongate)
+├── RootNode   (same with root params, gradient water absorption)
+├── LeafNode   (leaf_size, light_exposure, photosynthesize, expand, phototropism)
+├── ApicalNode (chain growth, phyllotaxis, auxin production)
+└── RootApicalNode (gravitropism, chain growth, auxin-gated cytokinin production)
 ```
 
-All 7 node types extend `Node` directly — flat hierarchy, no intermediate classes. Meristems are real nodes in the tree graph, participating in chemical transport naturally.
+All 5 node types extend `Node` directly — flat hierarchy, no intermediate classes. Meristems are real nodes in the tree graph, participating in chemical transport naturally. No axillary node types.
 
 ### Renderer (`src/renderer/`)
 - OpenGL 4.1 core profile, GLFW window, orbit camera
 - Draws cylinders between parent-child nodes, leaves as quads
-- Color modes: default (brown), chemical heatmap (auxin/cytokinin/sugar/gibberellin/ethylene), type (green=shoot, orange=root, red/blue=meristems)
+- Color modes: default (brown stem/root), chemical heatmap (auxin/cytokinin/sugar/gibberellin/ethylene), type (green=shoot, orange=root, red/blue=meristems)
+- **GPU shadow system** — deep shadow maps (opacity shadow maps) with power-curve slice distribution, 5 samples per leaf for soft penumbras, arbitrary sun angle via ImGui sliders, ground shadow plane rendering
 
 ### Evolution (`src/evolution/`)
 - **genome_bridge.h/cpp** — `build_genome_template()`, `to_structured()`, `from_structured()` convert between `botany::Genome` and `evolve::StructuredGenome`. Each genome field is a named gene with per-gene mutation config (strength = % of valid range). 8 linkage groups for crossover (auxin, cytokinin, shoot_growth, root_growth, geometry, sugar_economy, gibberellin, ethylene).
@@ -78,93 +73,135 @@ All 7 node types extend `Node` directly — flat hierarchy, no intermediate clas
 - **app_evolve.cpp** - Evolution app with ImGui config (population, competitors, max ticks, threads, 8 fitness weight sliders), progress bar, live stats table, fitness history plot, best plant + competitors rendering (best at full color, competitors dimmed), Export Best button. Autosaves best_genome.txt on improvement.
 - **app_sugar_test.cpp** - Headless sugar economy tester. Builds 3 hardcoded static trees (seedling/medium/large), freezes growth, runs N ticks of production/maintenance/transport. Reports production/maintenance ratios. Usage: `./build/botany_sugar_test [--ticks N] [--csv] [--tree seedling|medium|large]`
 
+### Tests (`tests/`)
+149 tests / 9 594 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, and vascularization.  
+Key file: `tests/test_vascularization.cpp` — 4 integration tests: no-bias no-thicken, bias-proportional growth rate, canalization ratchet, conductance-weighted phloem distribution.
+
+### Planning docs (`docs/long-term-plan/`)
+Milestone folders with design + review documents. Current vascularization plan and code-review docs live at `docs/long-term-plan/milestone-2/vascularization/`.
+
 ## Chemical Transport Model
 
 The plant uses a **dual transport system** matching real plant biology:
 
-1. **Vascular transport** (`vascular.h/cpp`) — global pass before the DFS walk. Moves sugar (phloem), water, and cytokinin (xylem) via bulk flow. Sources load chemicals, sinks unload, mature stems/roots are conduits that pass through without consuming. Two O(N) walks: post-order aggregates supply/demand, pre-order distributes actual flow.
+1. **Vascular bulk flow** (`vascular.h/cpp`) — global pass before the DFS walk. Moves sugar (phloem), water, and cytokinin (xylem) via conductance-first bulk flow. Conduit weights = `π × r² × conductance × (1 + canalization_weight × structural_flow_bias)` — high-canalization paths carry proportionally more flow. Two O(N) walks: post-order aggregates supply/demand, pre-order distributes via iterative water-filling. Runs before the DFS tree walk.
 
-2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk. Handles auxin, gibberellin, stress (cell-to-cell signaling) and "last-mile" delivery of vascular chemicals to/from leaves, meristems, and young nodes that lack vasculature.
+2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk. Handles auxin, gibberellin, and stress (cell-to-cell signaling) and last-mile delivery of vascular chemicals to/from leaves, meristems, and non-vascular nodes. Diffusion rates are kept low (auxin 0.05, gibberellin 0.05, stress 0.10) to keep these signals genuinely local.
 
 | Chemical | Transport | Notes |
 |----------|-----------|-------|
-| Auxin | Local diffusion | Polar cell-to-cell transport |
+| Auxin | Local diffusion | Polar cell-to-cell, basipetal bias (-0.1) |
 | Gibberellin | Local diffusion | Short-range, local to producing leaf |
-| Stress | Local diffusion | Local mechanical signal |
-| Ethylene | Spatial gas diffusion | Global 3D pass (existing) |
+| Stress | Local diffusion | Local mechanical alarm signal |
+| Ethylene | Spatial gas diffusion | Global 3D pass (reset each tick) |
 | Sugar | **Vascular (phloem)** + last-mile local | Source (leaves) → sink (growing tips) |
 | Water | **Vascular (xylem)** + last-mile local | Root → shoot bulk flow |
-| Cytokinin | **Vascular (xylem)** + last-mile local | Carried in xylem stream |
+| Cytokinin | **Vascular (xylem)** + last-mile local | Carried in xylem stream; root tips → shoot |
 
-**Vasculature maturity:** Only `StemNode` with `age >= cambium_maturation_ticks` and `RootNode` with `age >= root_cambium_maturation_ticks` have vasculature. The seed always has vasculature (junction). Leaves, meristems, and young internodes use local diffusion exclusively. On mature-to-mature edges, local diffusion skips vascular chemicals (handled by the global pass).
+**Vasculature admission:** `has_vasculature(node, genome)` returns true when the parent's `structural_flow_bias[node] >= vascular_conductance_threshold` (0.005). The seed is always vascular (junction). Leaves, meristems, and nodes with no accumulated flux stay on local diffusion. Newly created internodes are stamped with an initial bias (~0.01) at birth so they enter the network immediately — only truly uncanalized nodes (bias = 0, never carried any auxin) stay excluded.
 
 ### Vascular Sources and Sinks
 
-**Phloem (sugar):** Leaves with sugar above `phloem_reserve_fraction × sugar_cap` are sources. Apical meristems, root apical meristems, and starving nodes are sinks. Capacity = `π × radius² × phloem_conductance`.
+**Phloem (sugar):** Leaves with sugar above `phloem_reserve_fraction × sugar_cap` are sources. Apical meristems, root apical meristems, and starving nodes are sinks. Pipe capacity = `π × radius² × phloem_conductance`.
 
-**Xylem (water + cytokinin):** Root nodes and root apicals are sources. Leaves (transpiration demand) and shoot apicals (turgor + cytokinin for growth) are sinks. Capacity = `π × radius² × xylem_conductance`.
+**Xylem (water + cytokinin):** Root nodes and root apicals are sources. Leaves (transpiration demand) and shoot apicals (turgor + cytokinin for growth) are sinks. Pipe capacity = `π × radius² × xylem_conductance`.
 
 ### Local Diffusion: Concentration + Shifted Equilibrium + Throughput Cap + Equalization
 
-### Unified Transport: Concentration + Shifted Equilibrium + Throughput Cap + Equalization
-
 ```
 concentration = has_capacity ? level / capacity : level
-effective_diff = (my_conc - parent_conc) - bias
-desired_flow = effective_diff * diffusion_rate * (has_cap ? avg_cap : 1) * radius_factor
-flow = clamp(desired_flow, -max_transport, max_transport)
-equalize = flow_to_reach_bias_adjusted_equilibrium  // never overshoot
-flow = clamp(flow, min(0, equalize), max(0, equalize))
+diff = (parent_conc - child_conc) + bias
+desired = diff * diffusion_rate [* avg_cap if capped] * radius_factor
+desired = clamp(desired, -max_transport, max_transport)
+equalize = flow_to_reach_bias_adjusted_equilibrium   // never overshoot
+desired = clamp(desired, min(0, equalize), max(0, equalize))
 ```
 
 Five mechanisms work together:
 
 1. **Concentration gradient** — flow driven by relative fullness (sugar) or raw level (hormones). Prevents large nodes from draining small ones at equal concentration.
-2. **Shifted equilibrium (bias)** — offsets where "equal" is. `bias < 0` = chemical accumulates root-ward (auxin). `bias > 0` = chemical accumulates tip-ward (cytokinin). Self-correcting: gradient still governs flow, just from an offset resting point. **Root-type inversion:** for `ROOT` and `ROOT_APICAL` children, the bias is negated during `transport_with_children`. Root apices are at the bottom of the plant, so "acropetal" in the whole-plant sense means toward the seed for root-side nodes. This makes the seed a correct transit junction: cytokinin flows root-tip → seed → shoot, auxin flows shoot → seed → root-tip, without cycling.
-3. **Throughput cap** — `max_transport = base_transport + radius_factor * transport_scale`. Bottlenecked by the thinner of two connected nodes. `base_transport` floor ensures even thin tips can transport.
-4. **Equalization clamp** — flow can never overshoot the bias-adjusted equilibrium between two nodes. For uncapped chemicals: `equalize = (parent - child + bias) / 2`. For capped: solved from equal-concentration constraint. Prevents oscillation and vacuum effects.
-5. **Multi-way equalization cap** — when a node distributes to multiple children, per-child equalization clamps can sum to more than the parent has, draining it to zero (causing tick-to-tick oscillation). The cap computes the multi-way equilibrium (parent retains proportional share of total) and limits total Phase 2 outflow. Only activates when per-pair totals would exceed the budget — in chain topologies the per-pair clamps are sufficient.
+2. **Shifted equilibrium (bias)** — offsets where "equal" is. `bias < 0` = chemical accumulates root-ward (auxin). `bias > 0` = chemical accumulates tip-ward (cytokinin). **Root-type inversion:** bias sign flips for `ROOT` and `ROOT_APICAL` children so the seed is a correct transit junction: cytokinin flows root-tip → seed → shoot, auxin flows shoot → seed → root-tip, without cycling.
+3. **Throughput cap** — `max_transport = base_transport + radius_factor * transport_scale`. Bottlenecked by the thinner of two connected nodes. `base_transport` floor ensures even thin tips can signal.
+4. **Equalization clamp** — flow can never overshoot the bias-adjusted equilibrium. For uncapped chemicals: `equalize = (parent - child + bias) / 2`. For capped: solved from equal-concentration constraint. Prevents oscillation.
+5. **Multi-way equalization cap** — limits total Phase 2 outflow when per-child equalization clamps would together drain the parent to zero. Computes multi-way equilibrium (parent retains proportional share). Only activates for branching nodes; chain topologies use per-pair clamps.
 
-**Anti-teleportation (received buffer):**
-DFS tick order means a parent transports to children before those children tick. Without protection, chemicals received by a child cascade forward through the entire branch in one tick. To prevent this, **all** Phase 2 outflows (including from the seed) go into the child's `transport_received` buffer (not `chemical()`). The child's own `transport_with_children` can't see the buffered chemicals. After the child's transport completes, the buffer is flushed into `chemical()`. Result: chemicals move at most one hop per tick.
-
-**Seed recomputed Phase 2:**
-The seed node (parent == nullptr) recomputes Phase 2 desired flows after Phase 1 inflows update its level. This gives receivers more flow because the seed has more chemical post-inflow. However, like all nodes, the seed writes Phase 2 outflows to `transport_received`, not directly to `chemical()`. The seed has a one-tick buffer delay like every other node.
+**Anti-teleportation:** All Phase 2 outflows go into `transport_received` buffer, not `chemical()`. Flushed after the node's own transport completes. Chemicals move at most one hop per tick.
 
 **Capacity model:**
-- **Sugar** (resource): per-node capacity from `sugar_cap()` — proportional to tissue volume. Concentration-based diffusion, destination headroom clamped.
-- **Hormones** (signals): no capacity (cap=0). Concentration = raw level. No destination clamp — hormones can accumulate freely. Decay limits accumulation instead.
+- **Sugar / Water** (resources): per-node capacity proportional to tissue volume. Concentration-based diffusion, destination headroom clamped.
+- **Hormones** (signals): no capacity. Concentration = raw level. Decay limits accumulation.
 
 **Auxin** (bias -0.1, basipetal):
-- **Persistent** across ticks (not reset)
-- Produced by active `ShootApicalNode` during its `tick()`, modulated by growth rate (growth_gf multiplier)
-- Also produced by growing `LeafNode` during `grow_size()` — proportional to growth rate, zero when full-size
-- Shifted equilibrium pushes auxin root-ward; decay creates a gradient from apex to base
-- Decays by `auxin_decay_rate` per tick
+- Persistent across ticks (not reset)
+- Produced by `ApicalNode` each tick (modulated by growth rate)
+- Also produced by growing `LeafNode` proportional to growth rate (zero when full-size)
 - Shoot axillary buds sense **parent's** auxin level; activate when low
+- Decays by `auxin_decay_rate` per tick
 
 **Cytokinin** (bias +0.1, acropetal):
-- **Persistent** across ticks (not reset)
-- Produced by active `RootApicalNode` during its `tick()`
-- Shifted equilibrium pushes cytokinin tip-ward
+- Persistent across ticks (not reset)
+- Produced by `RootApicalNode` gated by auxin (`root_cytokinin_production_rate × local_auxin`)
+- Feedback loop: shoot auxin → flows to root tips → cytokinin produced → flows back to shoot
 - Decays by `cytokinin_decay_rate` per tick
-- Root axillary buds sense **parent's** cytokinin level; activate when low
+- Root axillary activation gated by `root_cytokinin_inhibition_threshold`
 
 **Sugar** (bias 0, gradient):
-- **Persistent** across ticks
-- Produced by leaf nodes via `LeafNode::produce()` (photosynthesis)
+- Persistent across ticks
+- Produced by `LeafNode` via photosynthesis (gated by stomatal conductance — see Water Model)
 - Concentration-based diffusion with radius-bottlenecked throughput cap
 - Consumed by all nodes (maintenance costs in WorldParams)
-- Leaves use effective petiole radius (`leaf_size * initial_radius`) for transport — guarantees they can export full production
+
+## Secondary Thickening (Cambium)
+
+Radial growth is driven by vascular history, not node age:
+
+```
+delta_radius = cambium_responsiveness × structural_flow_bias × sugar_gf × stress_boost
+```
+
+- `structural_flow_bias` stored on the parent, keyed by child pointer — connections where auxin has flowed repeatedly have stronger canalization and thicker cambium
+- `sugar_gf` = `sugar / max_cost`, capped at 1 — sugar-limited when starved
+- `stress_boost = 1 + stress × stress_thickening_boost` — mechanical load accelerates thickening
+- Early return if `structural_flow_bias < 1e-6` — zero-flux connections never thicken (monocot behavior)
+- **No age gate** — `cambium_maturation_ticks` is gone; the bias threshold is the gate
+
+The self-reinforcing loop: main axis carries most flux → highest bias → fastest thickening → widest pipe → more flow → more bias. Lateral branches with weak canalization stay thin automatically.
+
+## Canalization Model
+
+Auxin flow through parent-child connections builds transport preference over time. Two layers of memory on the parent node, keyed by child pointer:
+
+**Transient bias (auxin_flow_bias)** — fast, reversible. Represents PIN protein polarization.
+- `target = auxin_flux × transient_gain`, bias chases target exponentially at `transient_rate`
+- Decays toward 0 when flux stops.
+
+**Structural bias (structural_flow_bias)** — slow, permanent. Represents built xylem/phloem.
+- Grows by `structural_growth_rate` per tick when auxin flux exceeds `structural_threshold`
+- Never decays. Capped at `structural_max`.
+- Also gates vasculature admission (`has_vasculature`) and cambial thickening rate.
+
+**Effect on transport:** Both biases multiply the conductance weight for each child connection. `weight = pipe_cap × (1 + canalization_weight × (flow_bias + structural_bias))`. This redistributes flow (all chemicals, not just auxin) among siblings proportionally — does **not** amplify total flow.
+
+**Lifecycle:** Biases transfer on `replace_child` (chain growth preserves branch history). New children start at 0, 0. Cleaned up on `die()`.
+
+## Water Model
+
+Water is a **persistent** capacity-based resource (like sugar):
+
+- **Absorbed** by `RootNode` and `RootApicalNode` proportional to surface area and `soil_moisture`. Absorption is gradient-based: `desired = (soil_moisture - water_conc) × absorption_rate × surface_area` — self-limiting when the root is full (concentration approaches soil moisture).
+- **Lost** by leaves via transpiration (proportional to leaf area and light exposure) and photosynthesis water cost
+- **Stomatal conductance** — `stomatal = clamp(water / water_cap, 0.2, 1.0)` scales photosynthesis output. Water deficit partially closes stomata, reducing sugar production. (Minimum 20% conductance — stressed leaves still photosynthesize slowly.)
+- **Transported** via vascular xylem bulk flow + local diffusion with upward bias (`water_bias = 0.05`)
+
+Surface area: `2π r L` for root segments, `2π r²` (hemisphere) for root apical tips.
 
 ## Gibberellin Model
 
 GA is **reset to zero every tick** (signal model):
 
 - Produced by young LEAF nodes only (`leaf_age < ga_leaf_age_max`)
-- Applied locally — `ga_production_rate * leaf_size` is added to the leaf's parent and grandparent stem nodes
-- Not transported through the rest of the tree; effect is purely local to the internode being elongated
-- **Effects:** boosts internode elongation rate (`* ga_elongation_sensitivity`) and max internode length (`* ga_length_sensitivity`) on nodes that receive GA
+- Applied locally — `ga_production_rate × leaf_size` added to the leaf's parent and grandparent stem nodes
+- **Effects:** boosts internode elongation rate (`× ga_elongation_sensitivity`) and max internode length (`× ga_length_sensitivity`)
 
 ## Ethylene Model
 
@@ -175,78 +212,45 @@ Ethylene is **reset to zero every tick** (signal model). Four production trigger
 3. **Old age** — leaf age exceeds species maximum
 4. **Crowding** — local node density above threshold
 
-**Spatial diffusion** — ethylene spreads as a gas through 3D space (NOT via the tree graph). Each emitting node contributes to all nodes within `diffusion_radius`, attenuated by distance.
+**Spatial diffusion** — spreads as a gas through 3D space (NOT via the tree graph). Each emitting node contributes to all nodes within `diffusion_radius`, attenuated by distance.
 
 **Effects:**
-- **Leaf abscission** — if a leaf's ethylene exceeds `ethylene_abscission_threshold`, senescence begins; the leaf yellows and is removed after `senescence_duration` ticks
+- **Leaf abscission** — ethylene > threshold → senescence flag set → leaf yellows → removed after `senescence_duration` ticks
 - **Elongation inhibition** — high ethylene suppresses internode elongation in nearby stem nodes
-
-**Abscission lifecycle:** ethylene > threshold → senescence flag set → leaf gradually yellows (visual only) → removed from graph after `senescence_duration` ticks have elapsed
-
-## Canalization Model
-
-Auxin flow through parent-child connections builds transport preference over time. Two layers of memory:
-
-**Transient bias (auxin_flow_bias)** — fast, reversible. Represents PIN protein polarization.
-- Each tick: `target = auxin_flux * transient_gain`, bias chases target exponentially at `transient_rate`
-- Decays toward 0 when flux stops. Responds within hours/days.
-
-**Structural bias (structural_flow_bias)** — slow, permanent. Represents built xylem/phloem.
-- Grows by `structural_growth_rate` per tick when auxin flux exceeds `structural_threshold`
-- Never decays. Capped at `structural_max`.
-
-**Effect on transport:** Both biases stored on the parent node, keyed by child pointer. During `transport_with_children()`, each child's proportional weight is multiplied by `1 + canalization_weight * (flow_bias + structural_bias)`. This redistributes chemical flow (all chemicals, not just auxin) among siblings — biased connections get a larger share of the same total. Does not amplify total flow.
-
-**Lifecycle:** Biases transfer on `replace_child` (chain growth preserves branch history). New children start at 0, 0. Cleaned up on `die()`.
-
-## Water Model
-
-Water is a **persistent** capacity-based resource (like sugar):
-
-- **Absorbed** by all root tissue (`RootNode` + `RootApicalNode`) proportional to surface area and `soil_moisture`
-- **Lost** by leaves via transpiration (proportional to leaf area and light exposure) and photosynthesis water cost
-- **Transported** through the tree graph via the unified transport system with a slight upward bias
-- **No step-one effects** — water deficit does not gate growth or cause wilting (future enhancement)
-
-Surface area: `2 * pi * r * length` for root segments, `2 * pi * r * r` (hemisphere) for root apical tips.
 
 ## Tick Control Flow
 
-The recursive tick walks the tree from seed outward. Each node's `tick()`:
-1. Position (recomputed from parent + offset)
-2. `age++`
-3. Maintenance (sugar deducted based on WorldParams rates)
-4. Sugar cap clamp
-5. Starvation tracking (resets to 0 if sugar > 0; death after `starvation_ticks_max`)
-6. `produce()` — virtual: LeafNode does photosynthesis + GA + abscission tracking; base is no-op
-7. `grow()` — virtual: type-specific growth (tip extension, thickening, elongation, leaf size)
-8. Mass & stress computation
-9. Droop & break (stems only)
-10. `transport_chemicals()` — unified diffusion for all chemicals
-11. Flush `transport_received` — chemicals received from parent during step 10 are now added to `chemical()` (anti-teleportation: they were invisible during this node's own transport)
-12. Children ticked recursively (snapshot of children list for safe reparenting)
+`Plant::tick()` runs two phases:
+1. `vascular_transport(plant, genome)` — global bulk-flow pass (phloem + xylem)
+2. `tick_recursive(seed)` — DFS walk: parent ticks before children
 
-Meristem chain growth: the meristem node inserts an internode above itself (self-reparenting). Axillary activation: the node replaces itself in the parent's children with a new apical node, queues itself for deferred removal.
+Each `Node::tick()` (non-virtual, same for all types):
+1. `age++`
+2. `sync_world_position()` — recompute world position from offset chain
+3. `pay_maintenance()` — deduct sugar; die and return if starvation ticks exceed max
+4. `update_tissue(plant, world)` — **virtual** type-specific growth (see below)
+5. `sync_world_position()` — re-sync after tissue may have changed offset
+6. `update_physics()` — compute mass, stress; apply droop and break if overstressed
+7. `transport_chemicals()` → `transport_with_children()` + `update_canalization()` + `decay_chemicals()`
+8. Flush `transport_received` buffer into `chemical()`
+
+Children are ticked recursively after step 8 using a snapshot of the children list (safe for reparenting).
+
+**`update_tissue` convention** — subclass-specific growth happens entirely inside this virtual method. Recommended call order within `update_tissue`: produce → consume → evaluate → grow → orient. Growth verbs: `elongate` (extend offset), `thicken` (increase radius), `expand` (increase leaf_size). Meristem chain growth and axillary activation also happen inside `update_tissue` via `Plant::queue_removal()`.
 
 ## Key Design Decisions
-- **Meristems are nodes** — 4 meristem types extend `Node` directly (flat hierarchy). Real children in the tree graph, participate in chemical diffusion naturally. No intermediate `MeristemNode` class.
-- **Local chemical transport** — each node handles its own transport during `tick()` via `transport_chemicals()`. No global tree passes for auxin/cytokinin/sugar diffusion.
-- **Unified transport with shifted equilibrium** — single `transport_chemical()` function handles all chemicals. Concentration-based diffusion (sugar uses per-node capacity, hormones use raw levels) with shifted equilibrium bias and radius-bottlenecked throughput cap. Same function for basipetal (auxin), acropetal (cytokinin), and bidirectional (sugar).
-- **Flat node hierarchy** — `Node` base class with 7 direct subclasses (`StemNode`, `RootNode`, `LeafNode`, `ShootApicalNode`, `ShootAxillaryNode`, `RootApicalNode`, `RootAxillaryNode`). Each subclass owns its type-specific fields and growth behavior via `virtual tick()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_shoot_apical()`/etc. (fast `static_cast` gated on `NodeType` enum, no RTTI).
-- Leaves are real `LeafNode` graph nodes — they own `leaf_size`, `light_exposure`, `senescence_ticks`
-- Chain growth inserts an internode above the meristem: parent → new_internode → [meristem, axillary, leaf]
-- **Shoot** axillary buds check their **parent's** hormone level for activation; **root** dormant apicals check their **own** chemical levels (auxin arrives via transport, cytokinin is produced locally)
-- **Root elongation is sugar-gated only** — real root tips maintain their own auxin maximum via PIN recycling, so root apical `elongate()` uses `sugar_growth_fraction()` with no auxin gate. Shoot-derived auxin affects root *activation* (not elongation).
+- **Meristems are nodes** — 2 meristem types (`ApicalNode`, `RootApicalNode`) extend `Node` directly. Real children in the tree graph, participate in chemical transport naturally. No axillary node types.
+- **Local diffusion rates are low by design** — auxin/GA/stress use low diffusion rates (0.05–0.10) so they remain cell-to-cell signals, not whole-plant gradients. Radius bottleneck handles the rest.
+- **Vascular admission is bias-gated** — `has_vasculature()` checks `structural_flow_bias >= vascular_conductance_threshold`. No age gate. New internodes stamped with initial bias at creation so they join the network immediately.
+- **Thickening is bias-driven** — `cambium_responsiveness × structural_flow_bias` replaces old fixed `thickening_rate`. Zero-flux branches never thicken.
+- **Conductance-first vascular distribution** — water-filling allocation weights by `pipe_capacity × (1 + bias)`. High-canalization branches receive proportionally more flow at every tick.
+- **Flat node hierarchy** — `Node` base class with 5 direct subclasses. Each owns type-specific fields and behavior via `virtual update_tissue()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_apical()`/`as_root_apical()` — fast `static_cast` gated on `NodeType` enum, no RTTI.
+- **Root elongation is sugar-gated only** — root apical `elongate()` uses `sugar_growth_fraction()` with no auxin gate. Shoot-derived auxin affects root *activation*, not elongation.
 - **Dormant meristems cost zero maintenance** — only active meristems pay `sugar_maintenance_meristem`
-- Root meristems are hard-capped at 100 (`Plant::max_root_meristems`) to prevent runaway root growth
-- Sugar persists across ticks (resource model); auxin/cytokinin persist too (not reset each tick)
-- Gibberellin and ethylene still use reset-each-tick signal model (global passes)
-- **Produce vs grow** — `Node::produce()` handles resource/signal generation (photosynthesis, GA), `Node::grow()` handles structural change (tip extension, thickening, leaf expansion). Called as separate steps in tick pipeline — production isn't gated by growth.
-- **Sugar economy: physics in WorldParams, strategy in Genome** — production rate, maintenance costs, and construction costs are physical constants in WorldParams (not evolvable). Evolution optimizes plant *shape* (leaf size, branching, growth rates), not metabolism. Storage capacity and transport params remain evolvable.
+- **Sugar economy: physics in WorldParams, strategy in Genome** — production rate, maintenance costs, and construction costs are physical constants in WorldParams (not evolvable). Evolution optimizes plant shape/structure, not metabolism.
 
 ## Tuning Parameters (genome.h)
 - `auxin_threshold` (0.15) - lower = fewer shoot branches, higher = more
-- `auxin_thickening_threshold` (0.03) - auxin level for full-speed cambial thickening (much lower than branching threshold — cambium is very sensitive to auxin)
 - `cytokinin_threshold` (0.15) - lower = fewer root branches, higher = more
 - `auxin_bias` (-0.1) - shifted equilibrium for basipetal flow (negative = toward root)
 - `stem_auxin_max_boost` (0.5) - max elongation promotion from auxin (saturating)
@@ -260,21 +264,22 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `root_apical_auxin_max_boost` (-0.2) - max root tip extension inhibition from auxin
 - `root_apical_auxin_half_saturation` (0.1) - auxin level for half-max root apical effect
 - `cytokinin_bias` (0.1) - shifted equilibrium for acropetal flow (positive = toward tips); negated for root-type children (see transport model)
-- `root_cytokinin_production_rate` (0.15) - baseline cytokinin produced per tick by root apicals (mirrors `apical_auxin_baseline`)
-- `root_auxin_growth_threshold` (0.10) - UNUSED: root elongation is sugar-gated only (real root tips maintain own auxin via PIN recycling)
+- `root_cytokinin_production_rate` (0.15) - baseline cytokinin produced per tick by root apicals, scaled by local auxin
 - `root_auxin_activation_threshold` (0.05) - minimum auxin to activate a dormant root meristem
 - `root_cytokinin_inhibition_threshold` (0.15) - cytokinin above this inhibits new root meristem activation
-- `auxin_diffusion_rate` / `cytokinin_diffusion_rate` (0.1) - gradient responsiveness (slow polar transport)
+- `auxin_diffusion_rate` (0.05) - slow polar transport (cell-to-cell only)
+- `cytokinin_diffusion_rate` (0.1) - moderate; bulk xylem flow handles the rest
 - `hormone_base_transport` (0.5) - throughput floor for hormones (even thin tips can signal)
 - `hormone_transport_scale` (1.0) - how much radius amplifies hormone throughput
-- `sugar_base_transport` (0.01) - throughput floor for sugar (small — sugar is radius-dependent)
+- `sugar_base_transport` (0.1) - throughput floor for sugar
 - `sugar_transport_scale` (5.0) - how much radius amplifies sugar throughput
 - `apical_auxin_baseline` (0.15) - base auxin output of shoot apical meristem per tick
-- `apical_growth_auxin_multiplier` (2.0) - growth bonus: total = baseline * (1 + multiplier * growth_fraction). 0 = no bonus, 2 = 3x at max growth
-- `leaf_auxin_baseline` (0.15) - scaling constant for leaf auxin production (decoupled from apical rate)
-- `leaf_growth_auxin_multiplier` (0.1) - fraction of leaf_auxin_baseline at max growth. Single leaf at max growth = 10% of apical baseline
-- `branch_angle` (0.785 rad / 45 deg) - angle of shoot branches from parent stem
-- `root_branch_angle` (0.35 rad / 20 deg) - angle of root branches
+- `apical_growth_auxin_multiplier` (2.0) - growth bonus: total = baseline × (1 + multiplier × growth_fraction)
+- `leaf_auxin_baseline` (0.15) - scaling constant for leaf auxin production
+- `leaf_growth_auxin_multiplier` (0.1) - fraction of leaf_auxin_baseline at max growth (10% of apical baseline)
+- `cambium_responsiveness` (0.00002 dm/hr·bias) - thickening rate per unit structural_flow_bias. Main trunk (bias ~2.0) thickens at ~0.00004 dm/hr; laterals with weak canalization thicken proportionally less.
+- `branch_angle` (0.785 rad / 45°) - angle of shoot branches from parent stem
+- `root_branch_angle` (0.35 rad / 20°) - angle of root branches
 - `ga_production_rate` (0.5) - GA per dm leaf_size per tick from young leaves
 - `ga_leaf_age_max` (168) - only leaves younger than 7 days produce GA
 - `ga_elongation_sensitivity` (2.0) - GA boost to elongation rate
@@ -282,21 +287,22 @@ Meristem chain growth: the meristem node inserts an internode above itself (self
 - `ethylene_abscission_threshold` (0.5) - triggers leaf senescence
 - `ethylene_shade_threshold` (0.3) - light_exposure below which shade-ethylene kicks in
 - `senescence_duration` (48) - ticks from senescence to leaf drop
-- `transient_gain` (2.0) - target transient bias per unit of auxin flux. Higher = stronger short-term flow reinforcement
-- `transient_rate` (0.2) - exponential chase speed for transient bias (0.2 = ~87% in 8 hours)
-- `structural_threshold` (0.05) - minimum auxin flux to build structural bias (filters noise)
-- `structural_growth_rate` (0.005) - structural bias growth per tick when flux exceeds threshold (~8 days to reach 1.0)
-- `structural_max` (2.0) - cap on structural bias. At max: connection gets 1 + 2.0 = 3x weight
+- `transient_gain` (2.0) - target transient bias per unit of auxin flux
+- `transient_rate` (0.2) - exponential chase speed for transient bias (~87% in 8 hours)
+- `structural_threshold` (0.15) - minimum auxin flux per tick to grow structural bias (filters noise)
+- `structural_growth_rate` (0.005) - structural bias increment per tick above threshold (~8 days to reach 1.0)
+- `structural_max` (2.0) - cap on structural bias. At max: connection weight = 1 + 2.0 = 3×
 - `canalization_weight` (1.0) - global scaling on bias effect. 0 = canalization disabled entirely
-- `water_absorption_rate` (0.05) - ml / (dm² root surface · hr) per unit soil moisture
+- `vascular_conductance_threshold` (0.005) - minimum structural_flow_bias for vascular admission. Just below the initial stamp so new internodes join immediately; zero-flux nodes stay excluded.
+- `water_absorption_rate` (0.5) - ml / (dm² root surface · hr) per unit soil moisture
 - `transpiration_rate` (0.04) - ml / (dm² leaf area · hr) at full light
-- `photosynthesis_water_ratio` (0.5) - ml water per g sugar produced
+- `photosynthesis_water_ratio` (0.5) - ml water consumed per g sugar produced
 - `water_storage_density_stem` (800.0) - ml / dm³ stem/root tissue
 - `water_storage_density_leaf` (3.0) - ml / dm² leaf area
 - `water_cap_meristem` (1.0) - ml fixed cap for meristems
-- `water_diffusion_rate` (0.9) - gradient responsiveness (faster than sugar's 0.8)
-- `water_bias` (0.05) - slight upward equilibrium shift
-- `water_base_transport` (0.2) - throughput floor (higher than sugar's 0.1)
+- `water_diffusion_rate` (0.9) - gradient responsiveness (faster than sugar)
+- `water_bias` (0.05) - slight upward equilibrium shift (transpiration pull)
+- `water_base_transport` (0.2) - throughput floor (higher than sugar — xylem is open pipes)
 - `water_transport_scale` (4.0) - radius scaling on throughput
 - `xylem_conductance` (10.0) - vascular throughput per dm² cross-section per tick (water + cytokinin)
 - `phloem_conductance` (8.0) - vascular throughput per dm² cross-section per tick (sugar)
