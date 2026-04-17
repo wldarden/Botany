@@ -19,22 +19,24 @@ void StemNode::update_tissue(Plant& plant, const WorldParams& world) {
 }
 
 void StemNode::thicken(const Genome& g, const WorldParams& world) {
-    // Cambium activity is driven by vascular history (structural_flow_bias), not age.
-    // Connections where auxin has flowed repeatedly have built cambium; those that
-    // haven't stay thin regardless of sugar supply. This creates the self-reinforcing
-    // loop: main axis carries most flux → highest bias → fastest thickening → widest
-    // pipe → more flow → more bias. Lateral branches with weak flux stay thin.
+    // Cambium activity is driven by PIN canalization history (auxin_flow_bias), not age.
+    // Connections where auxin has flowed repeatedly have higher PIN saturation and thus
+    // stronger bias; those that haven't stay thin. This creates the self-reinforcing
+    // loop: main axis carries most auxin flux → highest bias → fastest thickening →
+    // widest pipe → more vascular flow → more flux. Lateral branches stay thin.
     float bias;
     if (!parent) {
-        // Seed node: no parent stores its bias. Use the max of its children's bias
-        // entries (the seed IS the junction, so its thickening reflects the strongest
-        // connection passing through it — typically the main trunk path).
+        // Seed node: use the max of its children's auxin_flow_bias entries.
         bias = 0.0f;
-        for (auto& [child, b] : structural_flow_bias) {
+        for (auto& [child, b] : auxin_flow_bias) {
             bias = std::max(bias, b);
         }
     } else {
-        bias = get_parent_structural_bias();
+        // Get the bias this parent has recorded for this child connection.
+        float b = 0.0f;
+        auto it = parent->auxin_flow_bias.find(this);
+        if (it != parent->auxin_flow_bias.end()) b = it->second;
+        bias = b;
     }
     if (bias < 1e-6f) return;
 

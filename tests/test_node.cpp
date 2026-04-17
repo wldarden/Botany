@@ -68,15 +68,12 @@ TEST_CASE("Canalization: replace_child transfers biases", "[canalization]") {
     parent_node->add_child(old_child);
 
     parent_node->auxin_flow_bias[old_child] = 0.5f;
-    parent_node->structural_flow_bias[old_child] = 0.3f;
 
     parent_node->replace_child(old_child, new_child);
 
     REQUIRE(parent_node->auxin_flow_bias.count(new_child) == 1);
     REQUIRE(parent_node->auxin_flow_bias[new_child] == 0.5f);
-    REQUIRE(parent_node->structural_flow_bias[new_child] == 0.3f);
     REQUIRE(parent_node->auxin_flow_bias.count(old_child) == 0);
-    REQUIRE(parent_node->structural_flow_bias.count(old_child) == 0);
 }
 
 TEST_CASE("Canalization: die cleans up parent bias entries", "[canalization]") {
@@ -90,12 +87,10 @@ TEST_CASE("Canalization: die cleans up parent bias entries", "[canalization]") {
     parent_node->add_child(child_node);
 
     parent_node->auxin_flow_bias[child_node] = 0.7f;
-    parent_node->structural_flow_bias[child_node] = 0.4f;
 
     child_node->die(plant);
 
     REQUIRE(parent_node->auxin_flow_bias.count(child_node) == 0);
-    REQUIRE(parent_node->structural_flow_bias.count(child_node) == 0);
 }
 
 TEST_CASE("Canalization: get_bias_multiplier returns 1.0 with no bias", "[canalization]") {
@@ -121,9 +116,8 @@ TEST_CASE("Canalization: get_bias_multiplier scales with canalization_weight", "
     parent_node->add_child(child_node);
 
     parent_node->auxin_flow_bias[child_node] = 0.5f;
-    parent_node->structural_flow_bias[child_node] = 0.3f;
 
-    float expected = 1.0f + 2.0f * (0.5f + 0.3f);
+    float expected = 1.0f + 2.0f * 0.5f;
     REQUIRE(parent_node->get_bias_multiplier(child_node, g) == expected);
 }
 

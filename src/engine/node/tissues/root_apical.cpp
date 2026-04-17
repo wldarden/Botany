@@ -100,15 +100,6 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
     parent->replace_child(this, internode);
     internode->position = internode->parent->position + internode->offset;
 
-    // Stamp initial structural_flow_bias: procambium is pre-specified by the meristem.
-    // Longer internodes (more active meristem) get more starting vasculature.
-    // Use max() so replace_child-transferred history is never downgraded.
-    if (internode->parent) {
-        float internode_length = glm::length(internode->offset);
-        float initial_bias = 0.01f + internode_length * 0.1f;
-        float& entry = internode->parent->structural_flow_bias[internode];
-        entry = std::max(entry, initial_bias);
-    }
     offset = growth_dir * g.tip_offset;
     internode->add_child(this);
     position = internode->position + offset;

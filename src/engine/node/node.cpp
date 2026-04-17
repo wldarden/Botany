@@ -54,12 +54,6 @@ void Node::replace_child(Node* old_child, Node* new_child) {
                 auxin_flow_bias[new_child] = it_flow->second;
                 auxin_flow_bias.erase(it_flow);
             }
-            auto it_struct = structural_flow_bias.find(old_child);
-            if (it_struct != structural_flow_bias.end()) {
-                structural_flow_bias[new_child] = it_struct->second;
-                structural_flow_bias.erase(it_struct);
-            }
-
             return;
         }
     }
@@ -281,36 +275,29 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
 
 void Node::update_tissue(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
-float Node::get_parent_structural_bias() const {
+float Node::get_bias_multiplier(Node* child, const Genome& g) const {
+    float flow = 0.0f;
+    auto it_f = auxin_flow_bias.find(child);
+    if (it_f != auxin_flow_bias.end()) flow = it_f->second;
+    return 1.0f + g.canalization_weight * flow;
+}
+
+float Node::get_parent_auxin_flow_bias() const {
     if (!parent) {
-        // Seed node has no parent. Use the maximum bias it has recorded for any child
-        // as a proxy for the throughput this junction has experienced. The seed is the
-        // most-used transit point in the plant, so its cambial activity reflects the
-        // dominant flow path through it.
         float max_bias = 0.0f;
-        for (const auto& [child, bias] : structural_flow_bias)
+        for (const auto& [child, bias] : auxin_flow_bias)
             max_bias = std::max(max_bias, bias);
         return max_bias;
     }
-    auto it = parent->structural_flow_bias.find(const_cast<Node*>(this));
-    if (it == parent->structural_flow_bias.end()) return 0.0f;
+    auto it = parent->auxin_flow_bias.find(const_cast<Node*>(this));
+    if (it == parent->auxin_flow_bias.end()) return 0.0f;
     return it->second;
-}
-
-float Node::get_bias_multiplier(Node* child, const Genome& g) const {
-    float flow = 0.0f, structural = 0.0f;
-    auto it_f = auxin_flow_bias.find(child);
-    if (it_f != auxin_flow_bias.end()) flow = it_f->second;
-    auto it_s = structural_flow_bias.find(child);
-    if (it_s != structural_flow_bias.end()) structural = it_s->second;
-    return 1.0f + g.canalization_weight * (flow + structural);
 }
 
 void Node::die(Plant& plant) {
     // Detach from parent
     if (parent) {
         parent->auxin_flow_bias.erase(this);
-        parent->structural_flow_bias.erase(this);
         auto& siblings = parent->children;
         siblings.erase(std::remove(siblings.begin(), siblings.end(), this), siblings.end());
         parent = nullptr;

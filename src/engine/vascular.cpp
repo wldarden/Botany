@@ -246,8 +246,8 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
 
         // Distribute remaining flow to children by conductance weight, with demand
         // as a ceiling. Conductance weight = pipe_capacity × (1 + canalization_weight × bias).
-        // Bias is structural_flow_bias on the parent-to-child connection: connections where
-        // auxin has flowed repeatedly have developed more conductive tissue and carry more flow.
+        // Bias is auxin_flow_bias on the parent-to-child connection: connections where
+        // auxin has flowed repeatedly (higher PIN saturation) carry proportionally more flow.
         // When a child is satisfied (allocation ≥ demand), its surplus redistributes to
         // remaining siblings by conductance proportions. Iterate until budget exhausted or
         // all children satisfied.
@@ -261,8 +261,8 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
             for (int k = 0; k < n_ch; ++k) {
                 int ci = info.child_idxs[k];
                 float cap = pipe_capacity(*flat[ci].node, conductance);
-                auto it = info.node->structural_flow_bias.find(flat[ci].node);
-                float bias = (it != info.node->structural_flow_bias.end()) ? it->second : 0.0f;
+                auto it = info.node->auxin_flow_bias.find(flat[ci].node);
+                float bias = (it != info.node->auxin_flow_bias.end()) ? it->second : 0.0f;
                 weights[k] = cap * (1.0f + g.canalization_weight * bias);
                 total_weight += weights[k];
                 ceilings[k] = flat[ci].demand;
@@ -315,8 +315,8 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
                         int ci = info.child_idxs[k];
                         Node* child = flat[ci].node;
                         float bias = 0.0f;
-                        auto it = info.node->structural_flow_bias.find(child);
-                        if (it != info.node->structural_flow_bias.end()) bias = it->second;
+                        auto it = info.node->auxin_flow_bias.find(child);
+                        if (it != info.node->auxin_flow_bias.end()) bias = it->second;
                         *log << current_tick << ','
                              << info.node->id << ',' << child->id << ','
                              << node_type_name(child->type) << ','
@@ -354,7 +354,7 @@ void vascular_transport(Plant& plant, const Genome& g, const WorldParams& world)
             if (world.current_tick == 0)
                 log_file << "tick,junction_node_id,child_node_id,child_type,"
                             "chemical,demand,conductance_weight,delivered,"
-                            "structural_flow_bias\n";
+                            "auxin_flow_bias\n";
             log = &log_file;
         }
     }

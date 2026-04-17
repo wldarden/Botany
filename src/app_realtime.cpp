@@ -306,7 +306,7 @@ int main(int argc, char* argv[]) {
             } else if (color_chemical == "water") {
                 accessor = [](const Node& n) { return n.chemical(ChemicalID::Water); };
             } else if (color_chemical == "vascular") {
-                accessor = [](const Node& n) { return n.get_parent_structural_bias(); };
+                accessor = [](const Node& n) { return n.get_parent_auxin_flow_bias(); };
             } else {
                 std::cerr << "Unknown chemical: " << color_chemical
                           << " (available: auxin, cytokinin, sugar, gibberellin, ethylene, water, vascular, type)" << std::endl;
@@ -640,7 +640,7 @@ int main(int argc, char* argv[]) {
             ImGui::SameLine();
             if (ImGui::Button("Vascular")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.get_parent_structural_bias(); });
+                renderer.set_color_mode([](const Node& n) { return n.get_parent_auxin_flow_bias(); });
                 active_overlay = Overlay::VASCULAR;
             }
 
@@ -1000,7 +1000,7 @@ int main(int argc, char* argv[]) {
                     }
 
                     // Thickening (bias-driven, sugar-limited)
-                    float bias = sel.get_parent_structural_bias();
+                    float bias = sel.get_parent_auxin_flow_bias();
                     if (bias < 1e-6f) {
                         ImGui::Text("Thicken:  0%% (no flux)");
                     } else {
@@ -1030,7 +1030,7 @@ int main(int argc, char* argv[]) {
                     }
 
                     // Thickening (bias-driven, sugar-limited; no density scale for roots)
-                    float bias = sel.get_parent_structural_bias();
+                    float bias = sel.get_parent_auxin_flow_bias();
                     if (bias < 1e-6f) {
                         ImGui::Text("Thicken:  0%% (no flux)");
                     } else {

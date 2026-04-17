@@ -30,12 +30,16 @@ void RootNode::absorb_water(const Genome& g, const WorldParams& world) {
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {
-    // Same vascular-driven model as StemNode. Root connections accumulate
-    // structural_flow_bias from sugar and cytokinin transport (not auxin —
-    // real root polar auxin transport governs patterning/gravitropism, not
-    // cambial signaling). Well-used root connections thicken; lateral roots
-    // with low flux stay thin.
-    float bias = get_parent_structural_bias();
+    // Same PIN canalization model as StemNode. Root connections accumulate
+    // auxin_flow_bias from polar auxin transport. Well-used root connections
+    // thicken; lateral roots with low flux stay thin.
+    float bias = 0.0f;
+    if (parent) {
+        auto it = parent->auxin_flow_bias.find(this);
+        if (it != parent->auxin_flow_bias.end()) bias = it->second;
+    } else {
+        for (auto& [child, b] : auxin_flow_bias) bias = std::max(bias, b);
+    }
     if (bias < 1e-6f) return;
 
     float max_cost = g.cambium_responsiveness * bias * world.sugar_cost_stem_growth;

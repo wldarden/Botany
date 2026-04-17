@@ -75,15 +75,15 @@ public:
     std::unordered_map<ChemicalID, float> transport_received;
 
     // Canalization — per-child transport bias (stored on parent, keyed by child pointer)
-    std::unordered_map<Node*, float> auxin_flow_bias;       // transient — fast, decays
-    std::unordered_map<Node*, float> structural_flow_bias;  // persistent — slow, permanent
+    std::unordered_map<Node*, float> auxin_flow_bias;       // transient — fast, decays toward PIN saturation
     std::unordered_map<Node*, float> last_auxin_flux;       // transient per-tick: auxin moved per child
 
     float get_bias_multiplier(Node* child, const Genome& g) const;
 
-    // Returns the structural_flow_bias this node's parent has recorded for it.
+    // Returns the auxin_flow_bias this node's parent has recorded for it.
     // Stored on the parent keyed by child pointer — zero if no parent or no entry yet.
-    float get_parent_structural_bias() const;
+    // For the seed (no parent) returns the max of all its children's biases.
+    float get_parent_auxin_flow_bias() const;
 
     // --- Lifecycle ---
     Node(uint32_t id, NodeType type, glm::vec3 position, float radius);

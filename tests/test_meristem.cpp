@@ -53,9 +53,9 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     float seed_r_before = seed->radius;
     float shoot_r_before = shoot->radius;
 
-    // Pre-populate structural_flow_bias on the seed — thickening is now bias-gated,
-    // not age-gated. The seed thickens via max of its children's bias entries.
-    seed->structural_flow_bias[const_cast<Node*>(shoot)] = 1.0f;
+    // Pre-populate auxin_flow_bias on the seed — thickening is bias-gated.
+    // The seed thickens via max of its children's auxin_flow_bias entries.
+    seed->auxin_flow_bias[const_cast<Node*>(shoot)] = 1.0f;
 
     plant.for_each_node_mut([&](Node& n) {
         n.chemical(ChemicalID::Sugar) = 100.0f;
@@ -363,7 +363,7 @@ TEST_CASE("Thickening does not occur without sugar", "[meristem][sugar]") {
     for (Node* c : seed->children) {
         if (c->type == NodeType::APICAL) { shoot = c; break; }
     }
-    if (shoot) seed->structural_flow_bias[shoot] = 1.0f;
+    if (shoot) seed->auxin_flow_bias[shoot] = 1.0f;
 
     float radius_before = seed->radius;
     seed->chemical(ChemicalID::Sugar) = 0.0f;
@@ -383,7 +383,7 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
         if (c->type == NodeType::APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
-    seed->structural_flow_bias[shoot] = 1.0f;
+    seed->auxin_flow_bias[shoot] = 1.0f;
 
     seed->chemical(ChemicalID::Sugar) = 100.0f;
     float sugar_before = seed->chemical(ChemicalID::Sugar);
@@ -560,8 +560,8 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     }
     REQUIRE(shoot1 != nullptr);
     REQUIRE(shoot2 != nullptr);
-    seed1->structural_flow_bias[shoot1] = 1.0f;
-    seed2->structural_flow_bias[shoot2] = 1.0f;
+    seed1->auxin_flow_bias[shoot1] = 1.0f;
+    seed2->auxin_flow_bias[shoot2] = 1.0f;
 
     // Zero all nodes in plant1 to prevent diffusion inflows — then give seed barely any sugar.
     plant1.for_each_node_mut([&](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
@@ -583,8 +583,8 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     REQUIRE(thicken2 > thicken1);
 }
 
-TEST_CASE("Thickening proportional to structural_flow_bias", "[meristem][vascular]") {
-    // Two StemNodes with identical sugar but 2× different structural_flow_bias
+TEST_CASE("Thickening proportional to auxin_flow_bias", "[meristem][vascular]") {
+    // Two StemNodes with identical sugar but 2× different auxin_flow_bias
     // should thicken at a 2:1 ratio — bias is the direct driver of cambium activity.
     Genome g = default_genome();
     Plant plant1(g, glm::vec3(0.0f));
@@ -602,8 +602,8 @@ TEST_CASE("Thickening proportional to structural_flow_bias", "[meristem][vascula
     stem2->position = parent2->position + stem2->offset;
 
     // Set 2× bias difference; equal abundant sugar so sugar_gf = 1.0 for both.
-    parent1->structural_flow_bias[stem1] = 0.5f;
-    parent2->structural_flow_bias[stem2] = 1.0f;
+    parent1->auxin_flow_bias[stem1] = 0.5f;
+    parent2->auxin_flow_bias[stem2] = 1.0f;
 
     // Fund everything so diffusion and maintenance don't interfere.
     plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 10.0f; });

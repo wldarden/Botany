@@ -1,5 +1,5 @@
 // tests/test_vascularization.cpp — Integration tests for vascular-driven thickening,
-// canalization ratchet, and bias-weighted vascular distribution.
+// PIN canalization, and bias-weighted vascular distribution.
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "engine/plant.h"
@@ -14,7 +14,7 @@ using Catch::Approx;
 
 // Genome with all autonomous growth disabled so tests control the topology and
 // chemicals directly.  cambium_responsiveness is kept at default so thickening
-// can happen when structural bias IS present.
+// can happen when auxin_flow_bias IS present.
 static Genome frozen_genome() {
     Genome g = default_genome();
     g.apical_auxin_baseline          = 0.0f;  // no shoot auxin production
@@ -35,26 +35,27 @@ static WorldParams static_world() {
 }
 
 // -----------------------------------------------------------------------
-// Test 1: Zero structural_flow_bias → zero thickening
+// Test 1: Zero auxin_flow_bias → zero thickening
 //
 // A manually-attached STEM with no bias entry in seed's map should never
 // thicken regardless of sugar supply.  With frozen auxin production the
-// structural bias cannot accumulate either, so the radius must stay exactly
+// auxin_flow_bias cannot build up either, so the radius must stay exactly
 // at its initial value after 50 ticks.
 // -----------------------------------------------------------------------
-TEST_CASE("Vascularization: no structural bias means no thickening", "[vascularization]") {
+TEST_CASE("Vascularization: no auxin_flow_bias means no thickening", "[vascularization]") {
     Genome g = frozen_genome();
-    // cambium_responsiveness is non-zero by default — thickening WOULD happen
-    // if there were any structural bias.
+    // Disable cambium so the test is purely about "no bias → no thickening" logic,
+    // isolated from any floating-point noise at near-zero bias values.
+    g.cambium_responsiveness = 0.0f;
 
     Plant plant(g, glm::vec3(0.0f));
     Node* seed = plant.seed_mut();
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.05f);
     seed->add_child(stem);
 
-    // No structural_flow_bias entry set — seed->structural_flow_bias[stem] = 0.
-    // With no auxin production, update_canalization() sees zero flux each tick,
-    // so the structural bias never rises above the 1e-6 threshold in thicken().
+    // No auxin_flow_bias entry set. With no auxin production, PIN transport moves
+    // nothing, update_canalization() sees zero flux each tick, so bias stays at 0
+    // (or lerps to 0 on the first tick) and never exceeds the 1e-6 threshold.
     stem->chemical(ChemicalID::Sugar) = 10.0f;
     seed->chemical(ChemicalID::Sugar) = 10.0f;
 
@@ -67,11 +68,16 @@ TEST_CASE("Vascularization: no structural bias means no thickening", "[vasculari
 }
 
 // -----------------------------------------------------------------------
-// Test 2: Higher structural bias → faster thickening
+// Test 2: Higher auxin_flow_bias → faster thickening
 //
 // Two sibling STEM nodes start with the same radius and ample sugar but
-// different structural_flow_bias values on the parent (seed) side.  After
+// different auxin_flow_bias values on the parent (seed) side.  After
 // 50 ticks the high-bias stem must have a larger radius gain.
+//
+// Both biases decay proportionally each tick (frozen genome = no auxin flux
+// → saturation = 0 → lerp toward 0 at smoothing_rate).  Decay is identical
+// in shape for both so the 5:1 initial ratio is preserved throughout and
+// the proportional thickening difference remains measurable.
 // -----------------------------------------------------------------------
 TEST_CASE("Vascularization: higher bias produces faster thickening", "[vascularization]") {
     Genome g = frozen_genome();
@@ -84,9 +90,8 @@ TEST_CASE("Vascularization: higher bias produces faster thickening", "[vasculari
     seed->add_child(stem_b);
 
     // 5:1 bias ratio gives a clear, measurable thickening difference.
-    // With no auxin production the biases are stable across all 50 ticks.
-    seed->structural_flow_bias[stem_a] = 0.5f;
-    seed->structural_flow_bias[stem_b] = 0.1f;
+    seed->auxin_flow_bias[stem_a] = 0.5f;
+    seed->auxin_flow_bias[stem_b] = 0.1f;
 
     // Sugar is far above the maintenance threshold so sugar_gf ≈ 1 for both.
     stem_a->chemical(ChemicalID::Sugar) = 20.0f;
@@ -102,19 +107,20 @@ TEST_CASE("Vascularization: higher bias produces faster thickening", "[vasculari
     float a_growth = stem_a->radius - a_initial;
     float b_growth = stem_b->radius - b_initial;
 
-    REQUIRE(b_growth > 0.0f);     // low-bias stem also thickens (bias=0.1 > 1e-6)
+    REQUIRE(b_growth > 0.0f);     // low-bias stem also thickens (bias=0.1 decays but stays > 1e-6 for many ticks)
     REQUIRE(a_growth > b_growth); // high-bias stem thickens proportionally more
 }
 
 // -----------------------------------------------------------------------
-// Test 3: Canalization ratchet: auxin flux builds structural_flow_bias
+// Test 3: PIN canalization builds auxin_flow_bias from auxin flux
 //
-// Manually seeded auxin on a stem flows basipetally toward the seed.
-// Each tick the flow is recorded in seed->last_auxin_flux[stem] and if it
-// exceeds structural_threshold the permanent bias ratchets up by
-// structural_growth_rate.  After 100 ticks the bias must be > 0.
+// Manually seeded auxin on a stem flows basipetally toward the seed via
+// both PIN transport (Phase A) and local diffusion.  Each tick the flux is
+// recorded in seed->last_auxin_flux[stem] and update_canalization() lerps
+// auxin_flow_bias toward the saturation level.  After ticks the bias must
+// be > 0 on the seed→stem connection.
 // -----------------------------------------------------------------------
-TEST_CASE("Vascularization: canalization ratchet builds from auxin flow", "[vascularization]") {
+TEST_CASE("Vascularization: auxin flux builds auxin_flow_bias from zero", "[vascularization]") {
     Genome g = frozen_genome();
     g.cambium_responsiveness = 0.0f;  // thickening off — don't consume test sugar
 
@@ -125,13 +131,17 @@ TEST_CASE("Vascularization: canalization ratchet builds from auxin flow", "[vasc
     seed->add_child(stem);
     stem->add_child(leaf);
 
-    // No bias at start — canalization must build it from scratch.
-    REQUIRE(seed->structural_flow_bias.count(stem) == 0);
+    // No bias at start.
+    {
+        auto it = seed->auxin_flow_bias.find(stem);
+        float initial = (it != seed->auxin_flow_bias.end()) ? it->second : 0.0f;
+        REQUIRE(initial == 0.0f);
+    }
 
-    // Seed auxin at the stem end.  With basipetal bias (auxin_bias = -0.1)
-    // this flows toward the seed, registering as flux on the seed↔stem edge.
-    // A large initial amount sustains flux above structural_threshold long enough
-    // to build measurable bias before the auxin decays away.
+    // Seed auxin at the stem end.  With basipetal bias (auxin_bias = -0.1) and
+    // PIN Phase A this flows toward the seed, registering flux on the seed↔stem
+    // edge.  A large initial amount sustains flux above zero long enough to build
+    // measurable bias before the auxin decays away.
     stem->chemical(ChemicalID::Auxin) = 5.0f;
 
     // Ample sugar and a full-sized leaf prevent starvation interfering.
@@ -143,9 +153,9 @@ TEST_CASE("Vascularization: canalization ratchet builds from auxin flow", "[vasc
     WorldParams world = static_world();
     for (int i = 0; i < 100; i++) plant.tick(world);
 
-    // The structural bias on the seed→stem connection must have grown from auxin flow.
-    REQUIRE(seed->structural_flow_bias.count(stem) > 0);
-    REQUIRE(seed->structural_flow_bias.at(stem) > 0.0f);
+    // The auxin_flow_bias on the seed→stem connection must have built from auxin flux.
+    REQUIRE(seed->auxin_flow_bias.count(stem) > 0);
+    REQUIRE(seed->auxin_flow_bias.at(stem) > 0.0f);
 }
 
 // -----------------------------------------------------------------------
@@ -153,8 +163,8 @@ TEST_CASE("Vascularization: canalization ratchet builds from auxin flow", "[vasc
 //
 // Topology: seed → leaf_src (phloem source) + stem_high→apical_high (sink) +
 //                                               stem_low→apical_low  (sink).
-// stem_high has 2× the structural_flow_bias of stem_low (both above
-// vascular_conductance_threshold so both are vascular conduits).
+// stem_high has 2× the auxin_flow_bias of stem_low (both above
+// vascular_radius_threshold so both are vascular conduits).
 // Both apicals start empty, so they have equal demand.  leaf_src provides
 // limited sugar (surplus < combined demand), forcing the water-filling loop
 // to ration by conductance weight: weight = pipe_cap × (1 + bias).
@@ -175,7 +185,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     leaf_src->as_leaf()->leaf_size = 1.0f;
     seed->add_child(leaf_src);
 
-    // Two branches with same stem radius but different structural bias.
+    // Two branches with same stem radius but different auxin_flow_bias.
     float stem_r = 0.05f;
     Node* stem_high   = plant.create_node(NodeType::STEM,
                                           glm::vec3(-0.3f, 0.5f, 0.0f), stem_r);
@@ -183,7 +193,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
                                           glm::vec3(0.0f,  0.1f, 0.0f), 0.02f);
     seed->add_child(stem_high);
     stem_high->add_child(apical_high);
-    seed->structural_flow_bias[stem_high] = 2.0f;  // above vascular_conductance_threshold
+    seed->auxin_flow_bias[stem_high] = 2.0f;  // above vascular_radius_threshold
 
     Node* stem_low   = plant.create_node(NodeType::STEM,
                                          glm::vec3( 0.3f, 0.5f, 0.0f), stem_r);
@@ -191,7 +201,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
                                          glm::vec3(0.0f,  0.1f, 0.0f), 0.02f);
     seed->add_child(stem_low);
     stem_low->add_child(apical_low);
-    seed->structural_flow_bias[stem_low] = 1.0f;   // above vascular_conductance_threshold
+    seed->auxin_flow_bias[stem_low] = 1.0f;   // above vascular_radius_threshold
 
     // Pre-fill every default node to its cap so their sugar demand = 0.
     // This isolates our two test apicals as the only active phloem sinks.
@@ -218,16 +228,16 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
 }
 
 // -----------------------------------------------------------------------
-// Test 5: get_parent_structural_bias() accessor used by the Vascular overlay
+// Test 5: get_parent_auxin_flow_bias() accessor
 //
-// The Vascular color overlay uses `node.get_parent_structural_bias()` as its
+// The Vascular color overlay uses `node.get_parent_auxin_flow_bias()` as its
 // ChemicalAccessor.  This test verifies the three cases that accessor will hit:
 //   (a) a regular node returns its parent's recorded bias for it
 //   (b) a node with no parent entry yet returns 0
 //   (c) the seed (no parent) returns the max of all its children's biases,
 //       giving it a color proportional to the busiest branch through it.
 // -----------------------------------------------------------------------
-TEST_CASE("Vascularization overlay: get_parent_structural_bias returns correct values", "[vascularization]") {
+TEST_CASE("Vascularization overlay: get_parent_auxin_flow_bias returns correct values", "[vascularization]") {
     Genome g = frozen_genome();
     Plant plant(g, glm::vec3(0.0f));
     Node* seed   = plant.seed_mut();
@@ -238,17 +248,17 @@ TEST_CASE("Vascularization overlay: get_parent_structural_bias returns correct v
     seed->add_child(stem_b);
     seed->add_child(stem_c);
 
-    seed->structural_flow_bias[stem_a] = 0.4f;
-    seed->structural_flow_bias[stem_b] = 1.8f;
+    seed->auxin_flow_bias[stem_a] = 0.4f;
+    seed->auxin_flow_bias[stem_b] = 1.8f;
     // stem_c has no entry — should return 0
 
     // (a) node with a recorded entry returns that value
-    REQUIRE(stem_a->get_parent_structural_bias() == Approx(0.4f));
-    REQUIRE(stem_b->get_parent_structural_bias() == Approx(1.8f));
+    REQUIRE(stem_a->get_parent_auxin_flow_bias() == Approx(0.4f));
+    REQUIRE(stem_b->get_parent_auxin_flow_bias() == Approx(1.8f));
 
     // (b) node with no entry in parent's map returns 0
-    REQUIRE(stem_c->get_parent_structural_bias() == Approx(0.0f));
+    REQUIRE(stem_c->get_parent_auxin_flow_bias() == Approx(0.0f));
 
     // (c) seed (no parent) returns max of its children's biases
-    REQUIRE(seed->get_parent_structural_bias() == Approx(1.8f));
+    REQUIRE(seed->get_parent_auxin_flow_bias() == Approx(1.8f));
 }
