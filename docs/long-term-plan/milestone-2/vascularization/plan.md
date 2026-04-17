@@ -148,6 +148,22 @@ radius increases pipe_capacity → more flow delivered → more auxin → more P
 
 The memory of past canalization is encoded in the physical geometry of the stem, readable from `radius` alone. No separate tracking variable is needed.
 
+**Why canalization is preserved after removing structural_flow_bias.** The current system
+double-biases: both `radius` and `structural_flow_bias` weight flow simultaneously. Removing
+the ratchet brings weighting to single-strength via radius alone. Canalization remains intact
+across all systems:
+
+| System | Current | After removal | Preserved? |
+|--------|---------|---------------|------------|
+| Vascular distribution | `r² × (1 + canalization_weight × structural_flow_bias)` | `r²` | **Yes** — thicker stems still get more flow |
+| Diffusion sibling weighting | `radius_factor × (1 + auxin_flow_bias + structural_flow_bias)` | `radius_factor × (1 + auxin_flow_bias)` | **Yes** — radius + transient bias both weight |
+| Thickening | `cambium_responsiveness × structural_flow_bias` | `cambium_responsiveness × auxin_flow_bias` | **Changed by design** — current signal drives cambium |
+| PIN transport | `pin_base + structural_flow_bias × range` | `pin_base + radius_factor × range` | **Yes** — thicker stems carry more auxin |
+
+If radius-only weighting feels too weak in practice, increase `cambium_responsiveness`. That
+is a calibration knob, not an architecture problem. The double-weighting was masking what
+should have been a `cambium_responsiveness` tuning exercise.
+
 **6. Make the architectural separation explicit in code comments.**
 
 `vascular.cpp` should explain the vascular/diffusion split, which chemicals use each path, and the canalization bridge. `node.cpp`'s `transport_with_children` should note that it handles only non-vascular chemicals plus last-mile delivery. `plant.cpp`'s `tick_tree` should annotate the call order. `stem_node.cpp`'s thicken function should explain that it is cambium activity driven by vascular history. `CLAUDE.md`'s Chemical Transport Model section should summarize the two-system split and the physics-driven distribution model.

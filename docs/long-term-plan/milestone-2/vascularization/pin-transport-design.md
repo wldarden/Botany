@@ -204,6 +204,45 @@ is the wood itself, readable from `radius` alone.
 radius. Its role as "cambium driver" is served by `auxin_flow_bias`. No separate ratchet
 variable is needed.
 
+### Canalization Behavior After Removing structural_flow_bias
+
+**We are currently double-biasing.** Both `radius` and `structural_flow_bias` weight flow
+simultaneously across all three transport systems. The result is that canalization is amplified
+beyond what either factor alone would produce — established paths get a bonus from their radius
+AND another bonus from their accumulated structural bias. Removing `structural_flow_bias` brings
+weighting to single-strength via radius alone. This is a simplification, not a weakening: the
+feedback loop is intact, just not double-counted.
+
+| System | Current weighting | After removal | Canalization preserved? |
+|--------|------------------|---------------|------------------------|
+| Vascular distribution | `r² × (1 + canalization_weight × structural_flow_bias)` | `r²` (pipe_capacity) | **Yes** — thicker stems still get more flow |
+| Diffusion sibling weighting | `radius_factor × (1 + canalization_weight × (auxin_flow_bias + structural_flow_bias))` | `radius_factor × (1 + canalization_weight × auxin_flow_bias)` | **Yes** — radius + transient bias both still weight |
+| Thickening | `cambium_responsiveness × structural_flow_bias × sugar_gf` | `cambium_responsiveness × auxin_flow_bias × sugar_gf` | **Intentionally changed** — current signal drives cambium, not frozen history |
+| PIN transport | `pin_base + structural_flow_bias × range` | `pin_base + radius_factor × range` | **Yes** — thicker stems carry more auxin |
+
+**The full feedback loop is intact.** Removing `structural_flow_bias` does not break the
+self-reinforcing hierarchy — it just removes the extra amplifier:
+
+```
+auxin flow (PIN)
+  → auxin_flow_bias builds (transient)
+  → cambium activates → radius grows
+  → larger radius → more vascular conductance (π × r²)
+  → more sugar + water → faster growth → more auxin
+  → more PIN flux → auxin_flow_bias stays high → more thickening
+```
+
+The loop closes cleanly through radius. Every step still favors established paths over new
+ones. The difference is that thickening now stops when auxin stops — which is correct. Old
+wood keeps its conductance advantage permanently; new wood only forms when auxin is currently
+flowing.
+
+**If radius-only weighting feels too weak:** increase `cambium_responsiveness`. This makes
+thickening respond more aggressively to the transient `auxin_flow_bias` signal, building
+radius faster from the same flux history. The double-weighting was masking what should have
+been a calibration exercise on `cambium_responsiveness`. The right fix for "canalization feels
+too weak" is a larger `cambium_responsiveness`, not a secondary permanent tracking variable.
+
 **PIN capacity scales with radius:**
 
 ```cpp
