@@ -48,6 +48,16 @@ The same genome parameter that controls how fast a plant builds wood also determ
 
 **The maturation gate should also move.** Currently `has_vasculature()` uses an age-based gate (`cambium_maturation_ticks`) to decide whether a node participates in the vascular bulk transport pass. This is wrong for the same reason thickening-by-rate is wrong: a young internode on the main axis of an active meristem has been carrying auxin since day one and should be building vascular tissue fast. A young internode on a dormant lateral that activated two ticks ago should have weak vasculature regardless of age. The data we already track — `structural_flow_bias` — IS the vascular development state. Replace the age gate with a bias threshold: a node participates in the vascular pass when its `structural_flow_bias` (on the connection from its parent) exceeds a minimum conductance threshold. Until then it relies on local diffusion for everything, same as a leaf or meristem. Once it crosses the threshold, it is admitted to the vascular network, and its pipe capacity scales with its bias rather than just with radius. This makes vascular development path-dependent rather than time-dependent, which is biologically accurate.
 
+**Initial vascular bias at internode creation.** New internodes do not start at zero `structural_flow_bias`. Zero would disconnect the branch above the new internode from the vascular network until auxin has slowly rebuilt the bias from scratch — a bootstrapping gap that doesn't reflect how real procambium works (it is pre-specified by the meristem before the internode even elongates). But the starting value should not be a fixed genome constant either, because that would make all internodes identical regardless of conditions. Instead, the meristem stamps initial vasculature based on its state at creation time:
+
+```
+initial_structural_flow_bias = base_minimum + internode_length_at_creation × vascular_scaling
+```
+
+`base_minimum` is a small floor ensuring every new internode has at least some vasculature — enough to stay connected to the network and begin accumulating auxin-driven bias normally. The length scaling captures the meristem's health at the moment of deposit: a well-fed, actively growing meristem produces long internodes with more procambium pre-specified; a starved meristem barely pushing out a stub creates minimal initial vasculature. Both values (`base_minimum` and `vascular_scaling`) are genome parameters.
+
+This information is already available in `spawn_internode()` — the meristem knows the growth rate and the internode length it just deposited, so the stamp requires no new data. The result is a natural early-life gradient: seedling internodes (short, resource-poor) start with thin vasculature; internodes laid down by a mature, well-supplied meristem start thicker. This matches real plant development, where trunk base wood is denser than recent apical extension, and where the procambium density in a new internode reflects the meristem's recent activity level rather than being uniform across all growth stages.
+
 ---
 
 ## Flow Physics: Deficit, Surplus, and Competition
