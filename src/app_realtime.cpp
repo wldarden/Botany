@@ -305,9 +305,11 @@ int main(int argc, char* argv[]) {
                 accessor = [](const Node& n) { return n.chemical(ChemicalID::Ethylene); };
             } else if (color_chemical == "water") {
                 accessor = [](const Node& n) { return n.chemical(ChemicalID::Water); };
+            } else if (color_chemical == "vascular") {
+                accessor = [](const Node& n) { return n.get_parent_structural_bias(); };
             } else {
                 std::cerr << "Unknown chemical: " << color_chemical
-                          << " (available: auxin, cytokinin, sugar, gibberellin, ethylene, water, type)" << std::endl;
+                          << " (available: auxin, cytokinin, sugar, gibberellin, ethylene, water, vascular, type)" << std::endl;
                 renderer.shutdown();
                 return 1;
             }
@@ -325,7 +327,7 @@ int main(int argc, char* argv[]) {
     ImGui_ImplOpenGL3_Init("#version 410");
     ImGui::StyleColorsDark();
 
-    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE, STRESS, WATER, GROWTH };
+    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE, STRESS, WATER, GROWTH, VASCULAR };
     Overlay active_overlay = Overlay::NONE;
     bool playing = false;
     int steps_remaining = 0;
@@ -634,6 +636,12 @@ int main(int argc, char* argv[]) {
                     return 0.0f;  // non-meristems: dark
                 });
                 active_overlay = Overlay::GROWTH;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Vascular")) {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode([](const Node& n) { return n.get_parent_structural_bias(); });
+                active_overlay = Overlay::VASCULAR;
             }
 
             if (active_overlay == Overlay::NODE_TYPE) {

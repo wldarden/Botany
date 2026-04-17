@@ -1,6 +1,7 @@
 // tests/test_vascularization.cpp — Integration tests for vascular-driven thickening,
 // canalization ratchet, and bias-weighted vascular distribution.
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "engine/plant.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
@@ -9,6 +10,7 @@
 #include "engine/chemical/chemical.h"
 
 using namespace botany;
+using Catch::Approx;
 
 // Genome with all autonomous growth disabled so tests control the topology and
 // chemicals directly.  cambium_responsiveness is kept at default so thickening
@@ -213,4 +215,40 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     REQUIRE(got_high > 0.0f);
     REQUIRE(got_low  > 0.0f);
     REQUIRE(got_high > got_low);
+}
+
+// -----------------------------------------------------------------------
+// Test 5: get_parent_structural_bias() accessor used by the Vascular overlay
+//
+// The Vascular color overlay uses `node.get_parent_structural_bias()` as its
+// ChemicalAccessor.  This test verifies the three cases that accessor will hit:
+//   (a) a regular node returns its parent's recorded bias for it
+//   (b) a node with no parent entry yet returns 0
+//   (c) the seed (no parent) returns the max of all its children's biases,
+//       giving it a color proportional to the busiest branch through it.
+// -----------------------------------------------------------------------
+TEST_CASE("Vascularization overlay: get_parent_structural_bias returns correct values", "[vascularization]") {
+    Genome g = frozen_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    Node* seed   = plant.seed_mut();
+    Node* stem_a = plant.create_node(NodeType::STEM, glm::vec3( 0.1f, 0.1f, 0.0f), 0.05f);
+    Node* stem_b = plant.create_node(NodeType::STEM, glm::vec3(-0.1f, 0.1f, 0.0f), 0.05f);
+    Node* stem_c = plant.create_node(NodeType::STEM, glm::vec3( 0.0f, 0.2f, 0.0f), 0.05f);
+    seed->add_child(stem_a);
+    seed->add_child(stem_b);
+    seed->add_child(stem_c);
+
+    seed->structural_flow_bias[stem_a] = 0.4f;
+    seed->structural_flow_bias[stem_b] = 1.8f;
+    // stem_c has no entry — should return 0
+
+    // (a) node with a recorded entry returns that value
+    REQUIRE(stem_a->get_parent_structural_bias() == Approx(0.4f));
+    REQUIRE(stem_b->get_parent_structural_bias() == Approx(1.8f));
+
+    // (b) node with no entry in parent's map returns 0
+    REQUIRE(stem_c->get_parent_structural_bias() == Approx(0.0f));
+
+    // (c) seed (no parent) returns max of its children's biases
+    REQUIRE(seed->get_parent_structural_bias() == Approx(1.8f));
 }
