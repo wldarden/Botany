@@ -155,6 +155,7 @@ add_executable(botany_tests
     tests/test_vascularization.cpp
     tests/test_pin_transport.cpp
     tests/test_stem_photosynthesis.cpp
+    tests/test_cytokinin_transport.cpp
 )
 target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization botany_evolution Catch2::Catch2WithMain)
 include(CTest)
