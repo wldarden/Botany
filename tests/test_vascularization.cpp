@@ -1,10 +1,12 @@
 // tests/test_vascularization.cpp — Integration tests for vascular-driven thickening,
-// canalization ratchet, and bias-weighted local distribution.
+// canalization ratchet, and bias-weighted vascular distribution.
 #include <catch2/catch_test_macros.hpp>
 #include "engine/plant.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
+#include "engine/vascular.h"
 #include "engine/node/tissues/leaf.h"
+#include "engine/chemical/chemical.h"
 
 using namespace botany;
 
@@ -145,46 +147,70 @@ TEST_CASE("Vascularization: canalization ratchet builds from auxin flow", "[vasc
 }
 
 // -----------------------------------------------------------------------
-// Test 4: Bias-weighted distribution favors the high-bias branch's leaf
+// Test 4: Conductance-first vascular distribution favors the high-bias branch
 //
-// Two seed→stem→leaf branches with 2:1 structural_flow_bias.  Setting
-// vascular_conductance_threshold above the bias values forces all sugar
-// transport through bias-weighted local diffusion rather than the vascular
-// bulk pass.  After 20 ticks the high-bias branch's leaf must hold more
-// sugar than the low-bias one.
+// Topology: seed → leaf_src (phloem source) + stem_high→apical_high (sink) +
+//                                               stem_low→apical_low  (sink).
+// stem_high has 2× the structural_flow_bias of stem_low (both above
+// vascular_conductance_threshold so both are vascular conduits).
+// Both apicals start empty, so they have equal demand.  leaf_src provides
+// limited sugar (surplus < combined demand), forcing the water-filling loop
+// to ration by conductance weight: weight = pipe_cap × (1 + bias).
+// The high-bias branch (weight 3×) receives more than the low-bias (weight 2×).
 // -----------------------------------------------------------------------
-TEST_CASE("Vascularization: conductance-weighted distribution favors high-bias branch", "[vascularization]") {
+TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias branch", "[vascularization]") {
     Genome g = frozen_genome();
-    g.cambium_responsiveness        = 0.0f;
-    // Raise the vascular admission threshold so our manually-set biases (≤ 2.0)
-    // keep the stems out of the vascular bulk pass.  All sugar then moves via
-    // local diffusion, which weights each child's share by bias_mult =
-    // 1 + canalization_weight * structural_flow_bias.
-    g.vascular_conductance_threshold = 100.0f;
+    g.cambium_responsiveness = 0.0f;  // no thickening during this pass
 
     Plant plant(g, glm::vec3(0.0f));
-    Node* seed   = plant.seed_mut();
-    Node* stem_a = plant.create_node(NodeType::STEM, glm::vec3( 0.1f, 0.1f, 0.0f), 0.05f);
-    Node* stem_b = plant.create_node(NodeType::STEM, glm::vec3(-0.1f, 0.1f, 0.0f), 0.05f);
-    Node* leaf_a = plant.create_node(NodeType::LEAF, glm::vec3( 0.1f, 0.2f, 0.0f), 0.05f);
-    Node* leaf_b = plant.create_node(NodeType::LEAF, glm::vec3(-0.1f, 0.2f, 0.0f), 0.05f);
-    seed->add_child(stem_a);
-    seed->add_child(stem_b);
-    stem_a->add_child(leaf_a);
-    stem_b->add_child(leaf_b);
+    Node* seed = plant.seed_mut();
 
-    // 2:1 bias ratio → bias_mult_a = 3.0, bias_mult_b = 2.0.
-    // stem_a wins a disproportionate share of seed's sugar every tick.
-    seed->structural_flow_bias[stem_a] = 2.0f;
-    seed->structural_flow_bias[stem_b] = 1.0f;
+    // Leaf source: leaf_size = 1.0 → sugar_cap = 2.0, reserve = 0.6.
+    // Setting sugar = 0.7 → surplus = 0.1, which is less than the combined
+    // pipe-capped demand of the two stems (~0.063 each), so rationing applies.
+    Node* leaf_src = plant.create_node(NodeType::LEAF,
+                                       glm::vec3(0.1f, 0.0f, 0.0f), 0.01f);
+    leaf_src->as_leaf()->leaf_size = 1.0f;
+    seed->add_child(leaf_src);
 
-    // Sugar source: seed.  Both leaves start empty and act as distal sinks.
-    seed->chemical(ChemicalID::Sugar) = 10.0f;
-    leaf_a->as_leaf()->leaf_size      = 0.3f;
-    leaf_b->as_leaf()->leaf_size      = 0.3f;
+    // Two branches with same stem radius but different structural bias.
+    float stem_r = 0.05f;
+    Node* stem_high   = plant.create_node(NodeType::STEM,
+                                          glm::vec3(-0.3f, 0.5f, 0.0f), stem_r);
+    Node* apical_high = plant.create_node(NodeType::APICAL,
+                                          glm::vec3(0.0f,  0.1f, 0.0f), 0.02f);
+    seed->add_child(stem_high);
+    stem_high->add_child(apical_high);
+    seed->structural_flow_bias[stem_high] = 2.0f;  // above vascular_conductance_threshold
 
-    WorldParams world = static_world();
-    for (int i = 0; i < 20; i++) plant.tick(world);
+    Node* stem_low   = plant.create_node(NodeType::STEM,
+                                         glm::vec3( 0.3f, 0.5f, 0.0f), stem_r);
+    Node* apical_low = plant.create_node(NodeType::APICAL,
+                                         glm::vec3(0.0f,  0.1f, 0.0f), 0.02f);
+    seed->add_child(stem_low);
+    stem_low->add_child(apical_low);
+    seed->structural_flow_bias[stem_low] = 1.0f;   // above vascular_conductance_threshold
 
-    REQUIRE(leaf_a->chemical(ChemicalID::Sugar) > leaf_b->chemical(ChemicalID::Sugar));
+    // Pre-fill every default node to its cap so their sugar demand = 0.
+    // This isolates our two test apicals as the only active phloem sinks.
+    plant.for_each_node_mut([&](Node& n) {
+        if (&n != leaf_src && &n != apical_high && &n != apical_low)
+            n.chemical(ChemicalID::Sugar) = sugar_cap(n, g);
+    });
+    // Set the leaf source and empty sinks after the fill.
+    leaf_src->chemical(ChemicalID::Sugar)   = 0.7f;
+    apical_high->chemical(ChemicalID::Sugar) = 0.0f;
+    apical_low->chemical(ChemicalID::Sugar)  = 0.0f;
+
+    // Single vascular transport pass — tests the distribution algorithm directly.
+    vascular_transport(plant, g);
+
+    float got_high = apical_high->chemical(ChemicalID::Sugar);
+    float got_low  = apical_low->chemical(ChemicalID::Sugar);
+
+    // Both branches received sugar (budget was non-zero), but the high-bias
+    // branch (weight 3×) received proportionally more than the low-bias (2×).
+    REQUIRE(got_high > 0.0f);
+    REQUIRE(got_low  > 0.0f);
+    REQUIRE(got_high > got_low);
 }
