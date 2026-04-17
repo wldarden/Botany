@@ -26,17 +26,17 @@ The most important architectural implication of the vascularization model is one
 
 **The current model gets this backwards.** `StemNode::thicken()` is an independent growth step that spends sugar on radial growth, controlled by a `thickening_rate` genome parameter. Any stem with adequate sugar and auxin above `auxin_thickening_threshold` can thicken. The auxin threshold is a gate, not a driver — once the gate is open, the `thickening_rate` parameter determines how fast the stem widens, independent of how much auxin is actually flowing. A lateral branch with barely-threshold auxin and a main trunk with heavy auxin flux thicken at the same rate if they have the same sugar supply. This is structurally wrong and erases the hierarchy that canalization should be building.
 
-**The new model:** thickening rate is driven by `structural_flow_bias`. The formula becomes:
+**The new model:** thickening rate is driven by `auxin_flow_bias` (the transient PIN flux record). The formula becomes:
 
 ```
-delta_radius = cambium_responsiveness × structural_flow_bias × sugar_available_fraction
+delta_radius = cambium_responsiveness × auxin_flow_bias × sugar_available_fraction
 ```
 
-Where `cambium_responsiveness` is the new genome parameter (replacing `thickening_rate`), `structural_flow_bias` is the slow-ratchet canalization history on the parent-to-this-node connection (already maintained, never decays), and `sugar_available_fraction` is the fraction of sugar capacity currently filled — thickening still costs sugar, but the rate is set by canalization history, not by a fixed parameter.
+Where `cambium_responsiveness` is the genome parameter (replacing `thickening_rate`), `auxin_flow_bias` is the per-connection transient bias that chases current PIN auxin flux (maintained by `update_canalization`, decays when flux stops), and `sugar_available_fraction` is the fraction of sugar capacity currently filled — thickening still costs sugar, but the rate is set by current auxin flow, not a fixed parameter.
 
-The old `auxin_thickening_threshold` gate disappears. It is replaced by the natural minimum: `structural_flow_bias` starts at zero and only accumulates above `structural_threshold`. Zero vascular history = zero cambium activity = no thickening, even with abundant sugar. There is no separate gate to tune.
+The old `auxin_thickening_threshold` gate disappears. The natural minimum is `auxin_flow_bias = 0`: no auxin flowing → no PIN flux recorded → no cambium activation → no thickening, even with abundant sugar. No separate gate to tune.
 
-**This creates the self-reinforcing loop that builds main trunks.** A dominant branch carries heavy auxin flux → `structural_flow_bias` grows rapidly → cambium is highly active → stem widens → wider stem has larger pipe cross-section (π × r²) → carries even more auxin per tick → further bias accumulation → more thickening. A shaded side branch with weak auxin flux barely accumulates bias → cambium is barely active → stays thin → thin pipes → lower auxin throughput → low bias. The feedback separates the main axis from lateral branches without any explicit "this is the main axis" logic. It emerges from auxin flux history.
+**This creates the self-reinforcing loop that builds main trunks.** A dominant branch carries heavy PIN auxin flux → `auxin_flow_bias` builds → cambium is highly active → stem widens → wider stem has larger pipe cross-section (π × r²) → pipe carries more auxin per tick → `auxin_flow_bias` stays high → thickening continues. When PIN flux stops → `auxin_flow_bias` decays → cambium halts → thickening stops. But the radius already gained is permanent — wood does not un-grow. **The structural memory of past auxin flow is stored in the physical wood, not in a software variable.** A shaded branch with weak auxin flux barely builds `auxin_flow_bias` → cambium barely active → stays thin → thin pipes → less auxin throughput. The feedback separates the main axis from lateral branches without any explicit "this is the main axis" logic. It emerges from auxin flux history, encoded permanently in radius.
 
 **Biological variation falls out of `cambium_responsiveness` naturally:**
 
@@ -46,17 +46,9 @@ The old `auxin_thickening_threshold` gate disappears. It is replaced by the natu
 
 The same genome parameter that controls how fast a plant builds wood also determines whether it builds wood at all.
 
-**The maturation gate should also move.** Currently `has_vasculature()` uses an age-based gate (`cambium_maturation_ticks`) to decide whether a node participates in the vascular bulk transport pass. This is wrong for the same reason thickening-by-rate is wrong: a young internode on the main axis of an active meristem has been carrying auxin since day one and should be building vascular tissue fast. A young internode on a dormant lateral that activated two ticks ago should have weak vasculature regardless of age. The data we already track — `structural_flow_bias` — IS the vascular development state. Replace the age gate with a bias threshold: a node participates in the vascular pass when its `structural_flow_bias` (on the connection from its parent) exceeds a minimum conductance threshold. Until then it relies on local diffusion for everything, same as a leaf or meristem. Once it crosses the threshold, it is admitted to the vascular network, and its pipe capacity scales with its bias rather than just with radius. This makes vascular development path-dependent rather than time-dependent, which is biologically accurate.
+**The maturation gate should also move.** Currently `has_vasculature()` uses an age-based gate (`cambium_maturation_ticks`) to decide whether a node participates in the vascular bulk transport pass. This is wrong: a young internode on the main axis of an active meristem has been carrying auxin since day one and should participate in bulk flow immediately. Replace the age gate with a radius threshold — a node is vascular when `node.radius >= vascular_radius_threshold`. Stems and roots have primary vascular tissue from creation; they become full bulk-flow participants as soon as their radius is large enough to carry meaningful flow.
 
-**Initial vascular bias at internode creation.** New internodes do not start at zero `structural_flow_bias`. Zero would disconnect the branch above the new internode from the vascular network until auxin has slowly rebuilt the bias from scratch — a bootstrapping gap that doesn't reflect how real procambium works (it is pre-specified by the meristem before the internode even elongates). But the starting value should not be a fixed genome constant either, because that would make all internodes identical regardless of conditions. Instead, the meristem stamps initial vasculature based on its state at creation time:
-
-```
-initial_structural_flow_bias = base_minimum + internode_length_at_creation × vascular_scaling
-```
-
-`base_minimum` is a small floor ensuring every new internode has at least some vasculature — enough to stay connected to the network and begin accumulating auxin-driven bias normally. The length scaling captures the meristem's health at the moment of deposit: a well-fed, actively growing meristem produces long internodes with more procambium pre-specified; a starved meristem barely pushing out a stub creates minimal initial vasculature. Both values (`base_minimum` and `vascular_scaling`) are genome parameters.
-
-This information is already available in `spawn_internode()` — the meristem knows the growth rate and the internode length it just deposited, so the stamp requires no new data. The result is a natural early-life gradient: seedling internodes (short, resource-poor) start with thin vasculature; internodes laid down by a mature, well-supplied meristem start thicker. This matches real plant development, where trunk base wood is denser than recent apical extension, and where the procambium density in a new internode reflects the meristem's recent activity level rather than being uniform across all growth stages.
+Pipe capacity is simply `π × r² × conductance` — no additional bias multiplier. Radius alone determines how much flow a connection can carry. The canalization history is already expressed in radius: the stem thickened because auxin was flowing through it, and that thickness is permanent. Vascular conductance is the physical consequence of past growth, readable directly from geometry.
 
 ---
 
@@ -66,12 +58,12 @@ The vascular distribution model should be physics-driven, not allocation-driven.
 
 **The wrong framing: demand-proportional allocation.** The naive model — and one step of improvement over it — is to split available flow among children in proportion to their demand, perhaps weighted by canalization history. But this is still a central-allocation model: a scheduler tallies up who wants what and distributes accordingly. Real vascular flow doesn't work this way. There is no scheduler. There is only physics.
 
-**The right framing: flow resistance determines distribution.** At each junction, resources flow toward children based on pipe conductance and resistance. Wider pipes (higher `structural_flow_bias`, larger radius) have lower resistance and receive more flow. A distant thin branch with high demand still gets less than a nearby thick branch with moderate demand, because the pipe geometry limits what can physically reach it. Demand is the pull; resistance is the bottleneck. Flow follows Hagen-Poiseuille: proportional to the pressure gradient and inversely proportional to resistance.
+**The right framing: flow resistance determines distribution.** At each junction, resources flow toward children based on pipe conductance and resistance. Wider pipes (larger radius) have lower resistance and receive more flow. A distant thin branch with high demand still gets less than a nearby thick branch with moderate demand, because the pipe geometry limits what can physically reach it. Demand is the pull; resistance is the bottleneck. Flow follows Hagen-Poiseuille: proportional to the pressure gradient and inversely proportional to resistance.
 
 The practical formula for Phase 2 distribution at each junction:
 
 ```
-child_conductance = pipe_capacity(child)   // π × r² × conductance × (1 + bias_scale × structural_flow_bias)
+child_conductance = pipe_capacity(child)   // π × r² × conductance
 child_share = available × child_conductance / sum(conductance of all children)
 child_share = min(child_share, child_demand)   // don't deliver more than demanded
 // redistribute unclaimed capacity to remaining children
@@ -79,7 +71,7 @@ child_share = min(child_share, child_demand)   // don't deliver more than demand
 
 The weight is pipe conductance, not demand. Demand acts as a ceiling — a child that needs less than its conductance-weighted share takes only what it needs, and the remainder flows to the next most conductive connection. This is the physics of parallel resistors sharing a common pressure source.
 
-The critical difference from the current plan's `demand × (1 + canalization_weight × structural_flow_bias)` formulation: demand is no longer the primary weight. A large-demand branch with thin pipes still gets less than a moderate-demand branch with thick pipes. Canalization history is already encoded in `pipe_capacity` via the `structural_flow_bias` augmentation — it doesn't need to be layered on top of a demand weight separately.
+The critical difference from the earlier plan of multiplying demand by canalization bias weights: demand is no longer the primary weight. A large-demand branch with thin pipes still gets less than a moderate-demand branch with thick pipes. Canalization history is expressed directly in radius — thick stems earned their width from sustained auxin-driven cambium activity, and radius determines pipe capacity (`π × r²`) without any separate multiplier.
 
 **Self-limiting root absorption under surplus.** The Phase 1 supply calculation should reflect hydraulic reality. Root water absorption is driven by the gradient between soil water potential and root cell water potential. When root cells are near capacity, the gradient collapses and absorption slows. This isn't a design choice — it's how osmotic uptake works. The supply calculation should be:
 
@@ -113,9 +105,9 @@ Five specific changes bring the sim into alignment with this architecture. Chang
 
 **1. Vascular Phase 2 uses resistance-based (conductance-first) distribution.**
 
-The current pass distributes flow proportional to subtree demand, which is a central-allocation model. Replace with conductance-first distribution: each child's share is weighted by its `pipe_capacity` (already augmented by `structural_flow_bias` per change 4), with child demand as a ceiling rather than a weight. After each child takes up to its demand, unclaimed capacity is redistributed to remaining children by the same conductance weighting. This mirrors Hagen-Poiseuille flow at a junction: more goes through lower-resistance pipes, regardless of who "needs" it more.
+The current pass distributes flow proportional to subtree demand, which is a central-allocation model. Replace with conductance-first distribution: each child's share is weighted by its `pipe_capacity` (`π × r² × conductance`, no bias augmentation), with child demand as a ceiling rather than a weight. After each child takes up to its demand, unclaimed capacity is redistributed to remaining children by the same conductance weighting. This mirrors Hagen-Poiseuille flow at a junction: more goes through lower-resistance pipes, regardless of who "needs" it more.
 
-This replaces the earlier plan of multiplying demand by `(1 + canalization_weight * structural_flow_bias)`. That was still demand-first. The new model is conductance-first: pipe geometry drives distribution, and demand only caps how much a node actually absorbs.
+This replaces the earlier plan of multiplying demand by canalization bias weights. That was still demand-first. The new model is conductance-first: pipe geometry (radius) drives distribution, and demand only caps how much a node actually absorbs.
 
 **2. Phase 1 supply (root absorption) uses gradient-based self-limiting.**
 
@@ -125,23 +117,36 @@ Root supply in the vascular Phase 1 pass should not be a fixed fraction of curre
 
 These chemicals should be genuinely local. The target behavior: a signal produced at the shoot apex should take on the order of 50+ ticks to traverse even a modest plant, and it should decay substantially along the way. A leaf's GA signal should affect only its own internode and the one above it — not travel to the canopy top or the seed.
 
-Concrete target rates: auxin diffusion rate reduced toward 0.1–0.15; GA diffusion rate reduced toward 0.05 (GA is almost entirely local); stress diffusion rate reduced toward 0.1–0.15. Slowing diffusion makes `structural_flow_bias` more selective — only genuine auxin highways accumulate significant bias, which makes the canalization data a cleaner signal for changes 4 and 5.
+Concrete target rates: auxin diffusion rate reduced toward 0.1–0.15; GA diffusion rate reduced toward 0.05 (GA is almost entirely local); stress diffusion rate reduced toward 0.1–0.15. Slowing diffusion keeps auxin a cell-to-cell signal and makes PIN flux the dominant long-range mechanism — the one that drives `auxin_flow_bias` and cambium activation.
 
-**4. Refactor thicken() to read structural_flow_bias.**
+Note: with the PIN transport pass implemented, this step may need less aggressive tuning. PIN already provides long-range directionality. Diffusion tuning is secondary and should be evaluated after PIN is live.
 
-Remove the `thickening_rate` genome parameter and the `auxin_thickening_threshold` gate. Replace with `cambium_responsiveness`. Change `StemNode::thicken()` (and the equivalent in `RootNode`) to compute:
+**4. Refactor thicken() to use auxin_flow_bias; delete structural_flow_bias entirely.**
+
+Remove `thickening_rate`, `auxin_thickening_threshold`, `structural_growth_rate`, `structural_threshold`, `structural_max`, `vascular_conductance_threshold`, `cambium_maturation_ticks`, and `root_cambium_maturation_ticks` from the genome. Add `cambium_responsiveness` and `vascular_radius_threshold`.
+
+Delete `structural_flow_bias` from `Node`: remove the `unordered_map<Node*, float> structural_flow_bias` member, the ratchet update in `update_canalization()`, and all reads (including `get_parent_structural_bias()`). The `auxin_flow_bias` map stays — it is the transient signal that drives the cambium.
+
+Change `StemNode::thicken()` (and `RootNode::thicken()`) to compute:
 
 ```
-delta_radius = cambium_responsiveness × structural_flow_bias × sugar_available_fraction
+delta_radius = cambium_responsiveness × auxin_flow_bias × sugar_available_fraction
 ```
 
-The `structural_flow_bias` for a node is stored on its parent, keyed by the node's pointer. If the node has no parent (seed) or no bias entry yet, `structural_flow_bias` is zero and thickening is zero. The sugar cost of thickening remains proportional to `delta_radius` as before.
+`auxin_flow_bias` for the parent→child edge is read from the parent's existing map. When auxin stops flowing, the bias decays toward zero, the cambium halts, and thickening stops — but the radius gained is permanent.
 
-**5. Replace age-based vascular maturation gate with bias-based conductance.**
+**5. Replace age-based vascular maturation gate with radius-based conductance.**
 
-In `has_vasculature()` (currently `node.age >= cambium_maturation_ticks`), replace the age check with a bias threshold: the node participates in the vascular network when the `structural_flow_bias` on its parent-to-node connection exceeds `vascular_conductance_threshold`. Remove `cambium_maturation_ticks` and `root_cambium_maturation_ticks` from the genome.
+In `has_vasculature()`, replace the age check with: `node.radius >= g.vascular_radius_threshold`. Seed node remains always vascular.
 
-Augment `pipe_capacity()` to scale with vascular development history: `capacity = π × r² × conductance × (1 + bias_conductance_scale × structural_flow_bias)`. Well-developed connections have more open lumen and more functional xylem vessels — the bias history should increase conductance beyond what radius alone predicts. This augmented capacity is what the resistance-based Phase 2 distribution (change 1) uses as its primary weight, completing the loop: canalization history → pipe capacity → distribution weighting → resource delivery → growth → more auxin → more canalization.
+`pipe_capacity` is pure radius: `π × r² × conductance` — no `structural_flow_bias` augmentation. The canalization feedback loop closes through radius:
+
+```
+PIN flux → auxin_flow_bias builds → cambium activates → radius grows →
+radius increases pipe_capacity → more flow delivered → more auxin → more PIN flux
+```
+
+The memory of past canalization is encoded in the physical geometry of the stem, readable from `radius` alone. No separate tracking variable is needed.
 
 **6. Make the architectural separation explicit in code comments.**
 
@@ -155,15 +160,15 @@ Augment `pipe_capacity()` to scale with vascular development history: `capacity 
 
 **Vascular cambium and secondary thickening.** The vascular cambium is a thin cylinder of meristematic cells that sits between the primary xylem and primary phloem of every dicot stem. It divides periclinally (parallel to the stem surface) to produce new xylem cells inward and new phloem cells outward. Each division round widens the stem slightly. The signal that drives cambium division is auxin: auxin produced at the shoot apex moves basipetally, passes through the cambium, and activates it. More auxin flux = faster cambium division = faster wood production. This is why a dominant main stem thickens much faster than a lateral branch, even if both are the same age — the main stem has been carrying the full weight of apical auxin production, and the lateral branch carries only a fraction. The cambium doesn't know which branch is "main" — it only responds to how much auxin has been flowing through it.
 
-**Transpiration pull and xylem hydraulics.** Xylem water movement is driven by negative pressure at the top. Leaves transpire water vapor through stomata; this creates a tension that propagates down the continuous water column from leaf mesophyll through xylem vessels to root hairs. The whole column is under tension — xylem water is in a metastable state. Water moves upward not because roots push it but because leaves pull it. Flow rate through a xylem vessel follows Hagen-Poiseuille: proportional to the fourth power of vessel radius and inversely proportional to length. This is why small increases in vessel radius produce large increases in conductance — doubling radius gives 16× the flow capacity. In the sim, `pipe_capacity = π × r² × conductance` approximates this (dropping the r⁴ sensitivity for stability), and `structural_flow_bias` augments conductance to capture the developmental component.
+**Transpiration pull and xylem hydraulics.** Xylem water movement is driven by negative pressure at the top. Leaves transpire water vapor through stomata; this creates a tension that propagates down the continuous water column from leaf mesophyll through xylem vessels to root hairs. The whole column is under tension — xylem water is in a metastable state. Water moves upward not because roots push it but because leaves pull it. Flow rate through a xylem vessel follows Hagen-Poiseuille: proportional to the fourth power of vessel radius and inversely proportional to length. This is why small increases in vessel radius produce large increases in conductance — doubling radius gives 16× the flow capacity. In the sim, `pipe_capacity = π × r² × conductance` approximates this (dropping the r⁴ sensitivity for stability). The developmental component is captured by radius itself: a thicker stem earned its width from sustained auxin-driven cambium activity, making radius the complete record of vascular development history.
 
 **Phloem osmotic pressure.** Phloem flow is driven by osmotic pressure gradients (Münch pressure flow). Sugar is actively loaded into phloem at source tissues (leaves), raising osmotic pressure there and drawing water in. Unloading at sinks lowers pressure. The gradient drives bulk flow from source to sink. Phloem can flow bidirectionally depending on where sources and sinks are — there is no fixed up/down to phloem flow, unlike xylem.
 
-**Sachs 1969 canalization hypothesis.** T. Sachs proposed that vascular strands form by positive feedback: auxin moving through a cell induces that cell to become better at conducting auxin, which directs more auxin through it, which further increases conductance. Over time, flux concentrates into discrete channels — the future vascular strands. Undirected cells become parenchyma; cells in the early flux path develop into xylem and phloem. The sim's `structural_flow_bias` (slow, never-decaying ratchet that grows with sustained auxin flux) is a direct implementation of the Sachs mechanism.
+**Sachs 1969 canalization hypothesis.** T. Sachs proposed that vascular strands form by positive feedback: auxin moving through a cell induces that cell to become better at conducting auxin, which directs more auxin through it, which further increases conductance. Over time, flux concentrates into discrete channels — the future vascular strands. Undirected cells become parenchyma; cells in the early flux path develop into xylem and phloem. The sim implements the Sachs mechanism through `auxin_flow_bias` (transient PIN flux record that drives cambium activation) and the permanent radius increase that results. The "self-reinforcement" of a vascular strand is encoded in the wood it produced — thick stems carry more flow, driving more cambium activity, producing more wood. The software variable for ongoing flux is transient; the structural consequence is permanent radius.
 
 **Stomatal regulation and demand-side feedback.** Stomata open to admit CO₂ for photosynthesis and simultaneously lose water vapor. Guard cells control aperture based on turgor: when water is scarce, guard cell turgor drops and stomata close. This reduces transpiration (protecting water reserves) at the cost of reduced photosynthesis. It also reduces the transpiration pull that drives xylem flow, which reduces cytokinin delivery to shoot tips, which can suppress growth. The stomatal response is local — each leaf responds to its own water status independently. There is no signal from a central "plant" deciding how much water each leaf gets. This is the model the sim should implement: conductance-weighted distribution determines how much water each leaf actually receives; stomatal aperture (and thus photosynthesis rate) is a local response to that delivery.
 
-**The positive feedback loop in full:** auxin flows cell-to-cell through a tissue → flux above threshold at a connection → `structural_flow_bias` accumulates → cambium is activated proportionally → stem widens → wider stem has larger pipe cross-section → augmented pipe capacity → conductance-weighted distribution routes more resources to this connection → well-supplied tissue grows faster → produces more auxin → more flux through the same connection → further bias accumulation → further thickening. The loop makes early flux advantages self-amplifying. This is why main trunks become main trunks, why vascular patterns are reproducible despite developmental noise, and why shading a branch collapses its competitive position quickly — the feedback runs in reverse just as readily.
+**The positive feedback loop in full:** auxin flows via PIN through a stem → `auxin_flow_bias` builds on that connection → cambium activates proportionally → stem widens → wider stem has larger pipe cross-section (π × r²) → higher vascular conductance → conductance-weighted distribution routes more sugar and water to this connection → well-supplied tissue grows faster → produces more auxin → more PIN flux → `auxin_flow_bias` stays high → cambium stays active → further thickening. The loop makes early flux advantages self-amplifying. The "memory" of this loop is encoded in radius — wood does not un-grow when auxin temporarily dips. This is why main trunks remain main trunks even during dormancy. Shading collapses the competitive position because `auxin_flow_bias` decays, cambium halts, and the thick-pipe advantage stops growing while the competitor's continues.
 
 ---
 
@@ -173,7 +178,7 @@ These are ordered by dependency. Each step has a clear verification criterion so
 
 **Step 1: Conductance-first Phase 2 distribution.**
 
-In `vascular.cpp`, replace the demand-proportional distribution in Phase 2. At each junction, compute each child's conductance weight (the augmented `pipe_capacity` from change 5, even if that augmentation hasn't been implemented yet — use the plain `pipe_capacity` as a first pass). Distribute available flow proportionally to conductance weight. After allocating to each child, cap at that child's demand; redistribute unclaimed capacity to remaining children by the same conductance proportions. Iterate until all excess is absorbed or conductance-weighted capacity is exhausted.
+In `vascular.cpp`, replace the demand-proportional distribution in Phase 2. At each junction, compute each child's conductance weight from `pipe_capacity` (`π × r² × conductance`, no bias augmentation). Distribute available flow proportionally to conductance weight. After allocating to each child, cap at that child's demand; redistribute unclaimed capacity to remaining children by the same conductance proportions. Iterate until all excess is absorbed or conductance-weighted capacity is exhausted.
 
 Verification: run the realtime viewer with `--color sugar` and grow a plant for several hundred ticks. The primary axis should carry visibly more sugar than lateral branches of the same size and demand. Grow a plant where one branch is physically shorter and thus has lower path resistance to the seed junction — it should receive a larger share than an equally-demanding but more distant branch.
 
@@ -196,26 +201,38 @@ In `chemical_registry.h`, reduce diffusion rates for Auxin (~0.1–0.15), GA (~0
 
 Verification: branching pattern remains qualitatively similar (same genome). GA effects on elongation are internode-local — the elongating zone near a young leaf does not spread to internodes elsewhere in the canopy.
 
-**Step 4: Refactor thicken() and add cambium_responsiveness.**
+**Step 4: Refactor thicken() to use auxin_flow_bias; delete structural_flow_bias.**
 
-In `genome.h`, add `cambium_responsiveness` and `vascular_conductance_threshold`. Remove `thickening_rate`, `auxin_thickening_threshold`, `cambium_maturation_ticks`, and `root_cambium_maturation_ticks`.
+In `genome.h`:
+- Add `cambium_responsiveness`, `vascular_radius_threshold`
+- Remove `thickening_rate`, `auxin_thickening_threshold`, `cambium_maturation_ticks`,
+  `root_cambium_maturation_ticks`, `vascular_conductance_threshold`,
+  `structural_growth_rate`, `structural_threshold`, `structural_max`
+
+In `Node` (`node.h` / `node.cpp`):
+- Delete `unordered_map<Node*, float> structural_flow_bias`
+- Delete the structural ratchet update from `update_canalization()` (keep `auxin_flow_bias` update)
+- Remove `get_parent_structural_bias()` or redirect to read `auxin_flow_bias` from parent
 
 In `StemNode::thicken()` (and `RootNode::thicken()`):
 ```cpp
-float bias = parent ? parent->structural_flow_bias[this] : 0.0f;
+auto it = parent ? parent->auxin_flow_bias.find(this) : parent->auxin_flow_bias.end();
+float flow_bias = (parent && it != parent->auxin_flow_bias.end()) ? it->second : 0.0f;
 float sugar_fraction = chemical(ChemicalID::Sugar) / sugar_cap(*this, g);
-float delta = g.cambium_responsiveness * bias * sugar_fraction;
+float delta = g.cambium_responsiveness * flow_bias * sugar_fraction;
 radius += delta;
 chemical(ChemicalID::Sugar) -= delta * construction_cost_per_radius;
 ```
 
-In `has_vasculature()`, replace the age check with: a node is vascular when its parent's `structural_flow_bias` entry exceeds `vascular_conductance_threshold`. Seed node remains always vascular.
+In `has_vasculature()`, replace age/bias check with: `node.radius >= g.vascular_radius_threshold`. Seed node remains always vascular.
 
-Verification: grow for 500+ ticks. Main stem visibly thicker than equally-old lateral branches. Setting `cambium_responsiveness = 0.0` produces a plant that never thickens (monocot case).
+In `pipe_capacity()`, remove any bias augmentation. Pure radius: `π × r² × conductance`.
+
+Verification: grow for 500+ ticks. Main stem visibly thicker than equally-old lateral branches. Setting `cambium_responsiveness = 0.0` produces a plant that never thickens (monocot case). Confirm `structural_flow_bias` is gone from the Node struct — if any remaining reference compiles, it is a regression.
 
 **Step 5: Verify the competitive loop with a shading experiment.**
 
-Grow a two-branch plant to similar thickness on both sides. Shade one branch (zero `light_exposure` on its leaves). Observe over 100+ ticks: shaded branch produces less auxin → flux drops → `structural_flow_bias` stagnation → cambium activity near zero → thickening halts → thinner pipe → less competitive in conductance-weighted distribution → less sugar and water → tip may go dormant. Lit branch continues all positive-feedback loops. The competitive divergence should be visible without any explicit "branch death" mechanism.
+Grow a two-branch plant to similar thickness on both sides. Shade one branch (zero `light_exposure` on its leaves). Observe over 100+ ticks: shaded branch produces less auxin → PIN flux drops → `auxin_flow_bias` decays → cambium activity halts → thickening stops (existing radius preserved, no new wood) → lit branch's radius continues growing → lit branch becomes more conductive (`π × r²` advantage) → lit branch gets more sugar and water → grows more vigorously. Competitive divergence without any explicit "branch death" mechanism.
 
 This test also validates that the stomatal feedback is wired correctly: shaded leaves should reduce photosynthesis and water demand (`water / water_cap` scalar), which frees resources for the lit branch. The reallocation is automatic — the conductance-weighted distribution redirects freed capacity to whoever has the conductance to use it.
 
@@ -223,9 +240,9 @@ Verification: after shading period, shaded branch radius unchanged; lit branch r
 
 **Step 6: Integration test — canalization drives observable vascular hierarchy.**
 
-Write a test that: (1) grows a plant for enough ticks that `structural_flow_bias` has accumulated on the main axis, (2) reads bias values on the seed node for its shoot-side and root-side children, (3) verifies that values are non-zero and correlate with the corresponding stem radius. This is a regression test ensuring that structural bias accumulates over time, correlates with thickening, and isn't inadvertently zeroed by a future change.
+Write a test that: (1) grows a plant for enough ticks that the main axis has visibly thickened, (2) reads `auxin_flow_bias` values on the seed node for its shoot-side children (confirming PIN is active), (3) verifies main-axis radius is greater than lateral branch radius at comparable age. Also add a compile-time regression: a static assert or comment confirming `Node` has no `structural_flow_bias` member.
 
-Verification: test passes. The stronger the bias → the thicker the stem. Both should grow together since they are driven by the same flux history.
+Verification: test passes. Higher current `auxin_flow_bias` → faster current thickening rate. Radius of main axis > radius of lateral branch of equal age. No `structural_flow_bias` anywhere in the codebase (grep clean).
 
 **Step 7: Code annotation.**
 
@@ -237,10 +254,10 @@ Block comment at the top of `vascular.cpp`: vascular/diffusion split, which chem
 
 **Water and the full hydraulic loop.** The conductance-first distribution model applies to water transport in the vascular pass, just as to sugar — the same `run_vascular` function handles all three chemicals. The gradient-based root absorption (Step 2) ties into the soil water model in [world-physics.md](../world-physics.md): `soil_water_potential` maps directly to the soil grid's local moisture level at the root's position. Once the soil model exists, root uptake becomes spatially heterogeneous: shallow roots in a dry zone take up less than deep roots reaching the water table, automatically, from the same gradient formula.
 
-**Turgor and thickening.** Once water is a tracked resource, `cambium_responsiveness × structural_flow_bias × sugar_available_fraction` should gain a fourth term: `× water_available_fraction`. Well-hydrated tissue has active cambium; drought-stressed tissue slows. Leave this for after the base water model is stable.
+**Turgor and thickening.** Once water is a tracked resource, `cambium_responsiveness × auxin_flow_bias × sugar_available_fraction` should gain a fourth term: `× water_available_fraction`. Well-hydrated tissue has active cambium; drought-stressed tissue slows. Leave this for after the base water model is stable.
 
 **The surplus/storage/production throttle.** When storage nodes (parenchyma, future tissue type) are near capacity, their demand signal drops to zero. Phloem sugar concentration rises. High phloem sugar should downregulate photosynthesis — the production throttle that closes the surplus loop. Add this when the storage tissue type exists. Until then, surplus sugar accumulates in existing nodes, which is bounded by the capacity model already in place.
 
-**Tissue library.** New tissue types that extend `StemNode` or `RootNode` automatically participate in bias-driven thickening and conductance-weighted vascular transport once they accumulate `structural_flow_bias` on their parent connections. Types that don't extend those classes (leaf-like, meristem-like) use local diffusion only. The intercalary meristem can be added independently — it inherits the same thickening logic and produces zero secondary growth if `cambium_responsiveness = 0.0` in the genome.
+**Tissue library.** New tissue types that extend `StemNode` or `RootNode` automatically participate in `auxin_flow_bias`-driven thickening and radius-weighted vascular transport. Types that don't extend those classes (leaf-like, meristem-like) use local diffusion only. The intercalary meristem can be added independently — it inherits the same thickening logic and produces zero secondary growth if `cambium_responsiveness = 0.0` in the genome.
 
 **The monocot case.** `cambium_responsiveness = 0.0` produces a plant with fixed-width stems from creation. Grasses and palms don't need a separate body plan — they're the same engine with this one parameter at zero. Combine with an intercalary meristem tissue type for grasses; with a fat initial radius for palms. The same distribution model and the same transport physics, just no wood formation.

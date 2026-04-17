@@ -119,9 +119,11 @@ not reverse direction at the root tip and flow back up.
 Walk shoot nodes from leaves toward seed. For each shoot node (STEM, APICAL, LEAF):
 
 ```cpp
-float bias = parent ? parent->structural_flow_bias[this] : 0.0f;
+// PIN capacity scales with radius — thicker stems have more developed PIN machinery.
+// radius_factor = 1.0 at initial_radius, grows with thickening.
+float radius_factor = radius / std::max(g.initial_radius, 1e-6f);
 float rate = std::clamp(
-    g.pin_base_rate * (1.0f + g.canalization_weight * bias),
+    g.pin_base_rate + radius_factor * (g.pin_max_rate - g.pin_base_rate),
     0.0f, g.pin_max_rate
 );
 
@@ -144,10 +146,12 @@ The seed is always at full PIN conductance (oldest, most-canalized node). After 
 `transport_received` buffer from shoot-side children:
 
 ```cpp
-float total_root_bias = sum of structural_flow_bias[root_child] for all root children;
+// Weight distribution to root children by radius — thicker roots have more PIN capacity.
+float total_root_radius = 0.0f;
+for (Node* rc : root_children) total_root_radius += rc->radius;
 for (Node* root_child : root_children) {
-    float share = (total_root_bias > 1e-8f)
-        ? parent->structural_flow_bias[root_child] / total_root_bias
+    float share = (total_root_radius > 1e-8f)
+        ? root_child->radius / total_root_radius
         : 1.0f / root_children.size();
     float to_send = chemical(ChemicalID::Auxin) * share * g.pin_base_rate;
     root_child->transport_received[ChemicalID::Auxin] += to_send;
@@ -155,8 +159,9 @@ for (Node* root_child : root_children) {
 }
 ```
 
-Root children with higher canalization history receive a larger share of the auxin transiting
-through the seed — the most-developed root branch gets the strongest shoot-derived auxin signal.
+Root children with larger radius receive a larger share of the auxin transiting through the
+seed — the most-developed root branch gets the strongest shoot-derived auxin signal. Radius is
+the record of past canalization, so this naturally favors established root paths.
 
 **Pre-order distribution (root side):**
 
@@ -165,17 +170,15 @@ buffer (already filled by its parent's pass) and then distributes to its own roo
 the same conductance-weighted split. This mirrors how the xylem vascular pass distributes water
 pre-order, but with PIN-rate conductance instead of pipe cross-section.
 
-### Canalization Coupling and Flux Recording
+### Canalization Coupling, Flux Recording, and the Structural Memory
 
-PIN is now the **primary driver of `auxin_flow_bias`** (the transient canalization memory).
+PIN is the **primary driver of `auxin_flow_bias`** (the transient canalization memory).
 Since PIN moves the bulk of long-range auxin, its per-connection flux is the meaningful signal
 for canalization decisions. Diffusion contributes only small lateral movements that don't
-reflect the main-axis transport history and should not be the primary input to `update_canalization`.
+reflect main-axis transport history and are not the primary input to `update_canalization`.
 
-In practice: `pin_transport()` records per-connection auxin flux into the parent node's
-`last_auxin_flux` map (same map `update_canalization` already reads). The diffusion pass may
-also record small amounts to `last_auxin_flux`, but those contributions are small relative to
-PIN flux and do not materially affect canalization on well-established connections.
+`pin_transport()` records per-connection flux into the parent node's `last_auxin_flux` map —
+the same map `update_canalization` already reads each tick to update `auxin_flow_bias`.
 
 **The full feedback chain:**
 
@@ -183,29 +186,38 @@ PIN flux and do not materially affect canalization on well-established connectio
 PIN moves auxin through a connection
   → PIN records flux in parent.last_auxin_flux[child]
   → update_canalization() reads flux → auxin_flow_bias grows (transient, decays when flux stops)
-  → sustained auxin_flow_bias above structural_threshold → structural_flow_bias ratchets up
-  → structural_flow_bias drives cambium (thicken()):
-      delta_radius = cambium_responsiveness × structural_flow_bias × sugar_gf
-  → larger radius → larger pipe cross-section (π × r²) → higher vascular conductance
+  → auxin_flow_bias drives cambium (thicken()):
+      delta_radius = cambium_responsiveness × auxin_flow_bias × sugar_gf
+  → radius grows → larger pipe cross-section (π × r²) → higher vascular conductance
   → more sugar and water delivered → tissue grows faster → more auxin produced
-  → more auxin flows through the same connection → more flux recorded → more bias
+  → more PIN flux → auxin_flow_bias stays high → cambium stays active
 ```
 
-Two notes on the bias variables:
+**The structural memory is radius, not a software variable.**
 
-- `auxin_flow_bias` (transient): fast-responding, decays when flux stops. Represents PIN
-  protein polarization state. Reacts to recent flow history.
-- `structural_flow_bias` (permanent ratchet): slow accumulation, never decays. Represents
-  committed vascular tissue. This is effectively the vascular development state of the
-  connection. Long-term it may merge conceptually with radius (both measure how much
-  conducting tissue exists on this path), but for now it stays as a separately tracked value
-  that captures vascular history independently of geometric radius.
+When PIN flux stops, `auxin_flow_bias` decays → cambium halts → no more thickening. But the
+radius gained is permanent — wood does not un-grow. A thick stem retains its pipe capacity
+(`π × r²`) even during dormancy or after the apex is shaded. The "memory" of past canalization
+is the wood itself, readable from `radius` alone.
 
-New internodes start with a small initial bias stamp (already implemented: ~0.01 at creation).
-Until bias accumulates, PIN transport through them is slow — auxin pools near the apex and
-existing canalized paths carry most of the flow. As bias grows, PIN conductance increases,
-and auxin reaches progressively further down the plant. This matches real plant development
-where procambium differentiation precedes mature PAT capacity.
+`structural_flow_bias` is deleted. Its role as "permanent structural memory" is served by
+radius. Its role as "cambium driver" is served by `auxin_flow_bias`. No separate ratchet
+variable is needed.
+
+**PIN capacity scales with radius:**
+
+```cpp
+float radius_factor = radius / std::max(g.initial_radius, 1e-6f);
+float rate = clamp(pin_base_rate + radius_factor * (pin_max_rate - pin_base_rate), 0, pin_max_rate);
+```
+
+Thicker stems have more developed PIN efflux machinery — more cells in the vascular cylinder,
+more PIN1 protein, higher auxin throughput. A newly-spawned thin internode starts near
+`pin_base_rate`; a mature trunk at 5× initial radius approaches `pin_max_rate`. This creates
+the same bootstrapping behavior that `structural_flow_bias` provided: new internodes carry
+little auxin until they thicken, which requires auxin flow, which requires some initial radius.
+The initial radius at creation (set by the meristem) is the bootstrapping value — no separate
+"initial bias stamp" parameter is needed.
 
 ### New Genome Parameters
 
@@ -228,19 +240,19 @@ At node 10:  0.71^10 ≈ 0.035   — meaningful signal
 At node 20:  0.71^20 ≈ 0.001   — very weak but present
 ```
 
-With canalization scaling at `structural_flow_bias = 1.0` (established main axis):
+On an established main axis at 5× initial radius (`radius_factor = 5.0`):
 
 ```
-pin_rate = 0.30 × (1 + 1.0 × 1.0) = 0.60
-ratio_per_hop ≈ 0.60 / 0.72 ≈ 0.83
+pin_rate = 0.30 + 5.0 × (0.80 - 0.30) = 0.30 + 2.5 → clamped to 0.80
+ratio_per_hop ≈ 0.80 / 0.92 ≈ 0.87
 
-At node 10:  0.83^10 ≈ 0.16    — strong signal even 10 nodes down
-At node 20:  0.83^20 ≈ 0.026   — still readable at 20 nodes
+At node 10:  0.87^10 ≈ 0.25    — strong signal even 10 nodes down
+At node 20:  0.87^20 ≈ 0.063   — still meaningful at 20 nodes
 ```
 
-Main axis canalization extends auxin's effective reach from 2–3 nodes (current diffusion alone)
-to 15–20 nodes, while lateral branches with low bias stay at the shorter range. This creates
-the gradient needed for correct apical dominance.
+Main axis thickening extends auxin's effective reach from 2–3 nodes (current diffusion alone)
+to 15–20+ nodes, while thin lateral branches near `pin_base_rate` stay at shorter range. This
+creates the gradient needed for correct apical dominance.
 
 ### No Changes to Existing Diffusion Parameters
 
@@ -297,10 +309,11 @@ implemented and the whole-plant auxin loop is confirmed working, the right lever
   xylem carries it to shoot. The full feedback loop is now connected across the whole plant.
 
 **Canalization divergence:**
-- Main shoot axis: continuous auxin flux since germination → high bias → fast PIN conductance →
-  more auxin → more bias. Self-reinforcing dominant pathway.
-- Lateral branches that activated late: start with low bias → slow PIN → less auxin → bias
-  builds slowly. Competitive disadvantage that matches biological reality.
+- Main shoot axis: continuous auxin flux since germination → `auxin_flow_bias` sustained →
+  cambium active → radius grows → larger radius → higher PIN rate → more auxin. Self-reinforcing.
+- Lateral branches that activated late: start thin → low PIN rate → less auxin → slow thickening.
+  Competitive disadvantage that matches biological reality. Their radius is the permanent record
+  of that disadvantage — even if they later receive more auxin, they start from a smaller pipe.
 
 ---
 
@@ -316,9 +329,12 @@ void pin_transport(Plant& plant, const Genome& g);
 **Step 2: Genome parameters**
 
 In `genome.h`: add `pin_base_rate`, `pin_max_rate`.
-In `default_genome()`: set to table values above.
-In `genome_bridge.cpp`: add both to `build_genome_template()` with mutation config.
-In `CLAUDE.md`: add to Tuning Parameters section.
+Remove `structural_growth_rate`, `structural_threshold`, `structural_max`,
+`vascular_conductance_threshold` (all `structural_flow_bias`-related).
+Add `vascular_radius_threshold` (replaces the bias-based admission gate).
+In `default_genome()`: set new params to table values above.
+In `genome_bridge.cpp`: update `build_genome_template()` accordingly.
+In `CLAUDE.md`: update Tuning Parameters section.
 
 **Step 3: Wire into plant.cpp**
 
@@ -332,8 +348,9 @@ Add `tests/test_pin_transport.cpp`:
 - Assert auxin at seed junction is non-zero (crossed the junction)
 - Assert auxin at the root apical is non-zero (reached the root tip)
 - Assert auxin gradient direction: shoot apex > seed > root apical
-- Assert `structural_flow_bias` has accumulated on main axis connections (canalization is driven
-  by the auxin flux that PIN is now delivering)
+- Assert `auxin_flow_bias` on the main axis connections is non-zero (PIN is recording flux)
+- Assert main axis radius > lateral branch radius at comparable age (thickening is happening)
+- Confirm `Node` has no `structural_flow_bias` member (grep or static assert)
 
 **Step 5: Update CLAUDE.md**
 
@@ -345,7 +362,8 @@ Add PIN transport to the Chemical Transport Model table:
 
 Add to Tick Control Flow section. Add genome parameter entries for the two new params.
 Note that PIN records auxin flux into `last_auxin_flux` and that `update_canalization`
-runs after diffusion (same tick), reading that map to update both bias values.
+runs after diffusion (same tick), reading that map to update `auxin_flow_bias`.
+Note that `structural_flow_bias` is deleted; radius is the structural memory.
 
 ---
 
