@@ -502,7 +502,11 @@ void Renderer::draw_highlight(const Node& node) {
     if (auto* leaf = node.as_leaf()) {
         if (leaf->leaf_size > 0.0f) {
             glm::vec3 outward = glm::normalize(node.position - node.parent->position);
+            // Use GL_LEQUAL so the highlight passes the depth test when drawn at the same
+            // depth as the leaf already in the buffer (GL_LESS would silently discard it).
+            glDepthFunc(GL_LEQUAL);
             draw_leaf(node.position, outward, leaf->facing, leaf->leaf_size, highlight_color);
+            glDepthFunc(GL_LESS);
             return;
         }
     }
