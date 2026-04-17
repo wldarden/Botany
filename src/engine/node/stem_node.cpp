@@ -1,5 +1,6 @@
 #include "engine/node/stem_node.h"
 #include "engine/node/meristems/helpers.h"
+#include "engine/node/tissues/leaf.h"
 #include "engine/plant.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
@@ -14,8 +15,39 @@ StemNode::StemNode(uint32_t id, glm::vec3 position, float radius)
 
 void StemNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
+    photosynthesize(plant, g, world);
     thicken(g, world);
     elongate(g, world);
+}
+
+void StemNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams& world) {
+    // Corticular photosynthesis: chlorenchyma in young stems under the epidermis.
+    // Bark development shuts it off once the stem thickens past the threshold.
+    if (radius >= g.stem_green_radius_threshold) return;
+    if (g.stem_photosynthesis_rate < 1e-10f) return;
+
+    // Estimate local light from leaf children on this stem (defaults to 1.0 for bare stems).
+    float total_light = 0.0f;
+    int leaf_count = 0;
+    for (const Node* child : children) {
+        if (child->type == NodeType::LEAF) {
+            total_light += child->as_leaf()->light_exposure;
+            leaf_count++;
+        }
+    }
+    float local_light = (leaf_count > 0) ? total_light / static_cast<float>(leaf_count) : 1.0f;
+    float light = local_light * world.light_level;
+    if (light < 1e-8f) return;
+
+    float length = glm::length(offset);
+    if (length < 1e-4f) return;
+
+    float surface_area = 2.0f * 3.14159f * radius * length;
+    float production = surface_area * light * g.stem_photosynthesis_rate;
+    if (production < 1e-10f) return;
+
+    chemical(ChemicalID::Sugar) += production;
+    plant.add_sugar_produced(production);
 }
 
 void StemNode::thicken(const Genome& g, const WorldParams& world) {

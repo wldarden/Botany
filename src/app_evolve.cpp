@@ -67,6 +67,8 @@ static void save_genome(const Genome& g, const std::string& path) {
     out << "sugar_storage_density_leaf=" << g.sugar_storage_density_leaf << "\n";
     out << "sugar_cap_minimum=" << g.sugar_cap_minimum << "\n";
     out << "sugar_cap_meristem=" << g.sugar_cap_meristem << "\n";
+    out << "stem_photosynthesis_rate=" << g.stem_photosynthesis_rate << "\n";
+    out << "stem_green_radius_threshold=" << g.stem_green_radius_threshold << "\n";
     out << "ga_production_rate=" << g.ga_production_rate << "\n";
     out << "ga_leaf_age_max=" << g.ga_leaf_age_max << "\n";
     out << "ga_elongation_sensitivity=" << g.ga_elongation_sensitivity << "\n";

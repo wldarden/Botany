@@ -52,6 +52,10 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "sugar_base_transport",      g.sugar_base_transport,      r, 0.001f, 0.5f, p);
     reg(sg, "sugar_transport_scale",     g.sugar_transport_scale,     r, 0.5f, 20.0f, p);
 
+    // --- Corticular photosynthesis ---
+    reg(sg, "stem_photosynthesis_rate",    g.stem_photosynthesis_rate,    r, 0.0f, 0.02f,  p);
+    reg(sg, "stem_green_radius_threshold", g.stem_green_radius_threshold, r, 0.01f, 0.2f,  p);
+
     // --- Shoot growth group ---
     reg(sg, "growth_rate",                g.growth_rate,                r, 0.001f, 0.05f, p);
     reg(sg, "shoot_plastochron",          static_cast<float>(g.shoot_plastochron), r, 6.0f, 168.0f, p);
@@ -185,7 +189,8 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     sg.add_linkage_group({"shoot_growth", {
         "growth_rate", "shoot_plastochron", "max_internode_length", "branch_angle",
         "cambium_responsiveness",
-        "internode_elongation_rate", "internode_maturation_ticks"
+        "internode_elongation_rate", "internode_maturation_ticks",
+        "stem_photosynthesis_rate", "stem_green_radius_threshold"
     }});
 
     sg.add_linkage_group({"root_growth", {
@@ -288,6 +293,12 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.hormone_transport_scale     = sg.get("hormone_transport_scale");
     g.sugar_base_transport        = sg.get("sugar_base_transport");
     g.sugar_transport_scale       = sg.get("sugar_transport_scale");
+
+    // Corticular photosynthesis
+    g.stem_photosynthesis_rate    = sg.has_gene("stem_photosynthesis_rate")
+                                        ? sg.get("stem_photosynthesis_rate") : 0.005f;
+    g.stem_green_radius_threshold = sg.has_gene("stem_green_radius_threshold")
+                                        ? sg.get("stem_green_radius_threshold") : 0.04f;
 
     // Shoot growth
     g.growth_rate                = sg.get("growth_rate");

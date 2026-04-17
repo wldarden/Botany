@@ -49,6 +49,10 @@ struct Genome {
     float sugar_base_transport;        // throughput floor for sugar
     float sugar_transport_scale;       // radius amplification for sugar throughput
 
+    // Corticular photosynthesis (green stem / bark development)
+    float stem_photosynthesis_rate;       // g glucose / (dm² stem surface · hr) at full light
+    float stem_green_radius_threshold;    // dm — stems thicker than this have bark, no photosynthesis
+
     // Shoot growth
     float growth_rate;                // dm/hr — shoot tip extension speed
     uint32_t shoot_plastochron;       // ticks between node creation (time-based, like real meristems)
@@ -204,6 +208,10 @@ inline Genome default_genome() {
         .hormone_transport_scale = 1.0f,     // moderate radius scaling for hormones
         .sugar_base_transport = 0.1f,        // higher floor — reduces diffusion wave artifacts
         .sugar_transport_scale = 5.0f,       // strong radius dependence for sugar
+
+        // Corticular photosynthesis
+        .stem_photosynthesis_rate = 0.005f,       // ~1/4 of leaf rate — stems are less efficient
+        .stem_green_radius_threshold = 0.04f,     // 4mm radius — thicker than initial (1.5mm) but thin
 
         .growth_rate = 0.002f,              // ~5 mm/day = 0.2 mm/hr
         .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)

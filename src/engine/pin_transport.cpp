@@ -101,6 +101,9 @@ void pin_transport(Plant& plant, const Genome& g) {
         float total_r = 0.0f;
         for (Node* rc : root_children_of_seed) total_r += rc->radius;
 
+        // Compute all shares first, then deduct once — avoids short-changing later
+        // root children due to cumulative subtraction inside the loop.
+        float total_sent = 0.0f;
         for (Node* rc : root_children_of_seed) {
             float share = (total_r > 1e-8f)
                 ? rc->radius / total_r
@@ -109,8 +112,9 @@ void pin_transport(Plant& plant, const Genome& g) {
             float to_send = std::min(seed_collected * share, max_cap);
             root_forwarded[rc] = to_send;
             seed->last_auxin_flux[rc] += to_send;
-            seed_collected -= to_send;
+            total_sent += to_send;
         }
+        seed_collected -= total_sent;
     }
     seed->chemical(ChemicalID::Auxin) += seed_collected;  // remainder stays at seed
 

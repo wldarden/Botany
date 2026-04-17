@@ -12,6 +12,9 @@ public:
     void update_tissue(Plant& plant, const WorldParams& world) override;
 
 private:
+    // --- Corticular photosynthesis ---
+    void photosynthesize(Plant& plant, const Genome& g, const WorldParams& world);
+
     // --- Stem growth ---
     void thicken(const Genome& g, const WorldParams& world);
     void elongate(const Genome& g, const WorldParams& world);

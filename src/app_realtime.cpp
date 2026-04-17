@@ -90,6 +90,8 @@ static Genome load_genome_file(const std::string& path) {
     get_f("sugar_storage_density_leaf", g.sugar_storage_density_leaf);
     get_f("sugar_cap_minimum", g.sugar_cap_minimum);
     get_f("sugar_cap_meristem", g.sugar_cap_meristem);
+    get_f("stem_photosynthesis_rate", g.stem_photosynthesis_rate);
+    get_f("stem_green_radius_threshold", g.stem_green_radius_threshold);
     get_f("ga_production_rate", g.ga_production_rate);
     get_u("ga_leaf_age_max", g.ga_leaf_age_max);
     get_f("ga_elongation_sensitivity", g.ga_elongation_sensitivity);

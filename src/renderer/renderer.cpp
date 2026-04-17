@@ -210,9 +210,8 @@ void Renderer::draw_plant(const Plant& plant) {
             } else if (node.type == NodeType::STEM) {
                 glm::vec3 green(0.2f, 0.8f, 0.2f);
                 glm::vec3 brown(0.5f, 0.35f, 0.15f);
-                float radius_mat = (node.radius - 0.05f) / 0.10f;
-                float age_mat = static_cast<float>(node.age) / 360.0f; // 15 days
-                float maturity = glm::clamp(std::max(radius_mat, age_mat), 0.0f, 1.0f);
+                float threshold = plant.genome().stem_green_radius_threshold;
+                float maturity = glm::clamp(node.radius / threshold, 0.0f, 1.0f);
                 color = glm::mix(green, brown, maturity);
             } else if (node.type == NodeType::ROOT) {
                 color = glm::vec3(0.8f, 0.6f, 0.2f);   // yellow-brown
@@ -220,15 +219,19 @@ void Renderer::draw_plant(const Plant& plant) {
                 color = glm::vec3(0.2f, 0.8f, 0.2f);   // green (leaf drawn separately, but fallback)
             }
         } else if (node.type == NodeType::STEM) {
-            // Young stems are green, maturing to brown as they thicken or age
-            glm::vec3 green(0.25f, 0.55f, 0.15f);
-            glm::vec3 brown(0.45f, 0.3f, 0.15f);
-            float radius_mat = (node.radius - 0.05f) / 0.10f;
-            float age_mat = static_cast<float>(node.age) / 360.0f; // 15 days
-            float maturity = glm::clamp(std::max(radius_mat, age_mat), 0.0f, 1.0f);
+            // Young stems: green (chlorenchyma visible), mature: brown (bark covered).
+            // Transition driven by genome threshold — same value that gates photosynthesis.
+            glm::vec3 green(0.2f, 0.5f, 0.15f);
+            glm::vec3 brown(0.35f, 0.2f, 0.1f);
+            float threshold = plant.genome().stem_green_radius_threshold;
+            float maturity = glm::clamp(node.radius / threshold, 0.0f, 1.0f);
             color = glm::mix(green, brown, maturity);
         } else if (node.type == NodeType::ROOT || node.type == NodeType::ROOT_APICAL) {
-            color = glm::vec3(0.76f, 0.60f, 0.42f);  // tan — earthy, distinct from stem brown
+            // Young roots: white/tan (meristematic zone), mature: darker earth-brown.
+            glm::vec3 young(0.90f, 0.82f, 0.68f);   // pale tan — fresh root tip
+            glm::vec3 mature(0.55f, 0.38f, 0.22f);  // darker brown — suberized root
+            float maturity = glm::clamp(node.radius / 0.05f, 0.0f, 1.0f);
+            color = glm::mix(young, mature, maturity);
         } else {
             color = glm::vec3(0.35f, 0.2f, 0.1f);
         }
@@ -277,10 +280,15 @@ void Renderer::draw_snapshot(const TickSnapshot& snapshot) {
 
         glm::vec3 color;
         if (ns.type == NodeType::STEM) {
-            glm::vec3 green(0.25f, 0.55f, 0.15f);
-            glm::vec3 brown(0.45f, 0.3f, 0.15f);
-            float maturity = glm::clamp((ns.radius - 0.05f) / 0.10f, 0.0f, 1.0f);
+            glm::vec3 green(0.2f, 0.5f, 0.15f);
+            glm::vec3 brown(0.35f, 0.2f, 0.1f);
+            float maturity = glm::clamp(ns.radius / 0.04f, 0.0f, 1.0f);  // default threshold
             color = glm::mix(green, brown, maturity);
+        } else if (ns.type == NodeType::ROOT || ns.type == NodeType::ROOT_APICAL) {
+            glm::vec3 young(0.90f, 0.82f, 0.68f);
+            glm::vec3 mature(0.55f, 0.38f, 0.22f);
+            float maturity = glm::clamp(ns.radius / 0.05f, 0.0f, 1.0f);
+            color = glm::mix(young, mature, maturity);
         } else {
             color = glm::vec3(0.35f, 0.2f, 0.1f);
         }
