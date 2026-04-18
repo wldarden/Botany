@@ -91,11 +91,29 @@ Unloading permeabilities differ by tissue type. Meristems have high permeability
    — auxin/GA/stress local diffusion still happens here (transport_with_children
      skips Sugar and Water; those are handled by resolve passes)
 
-3. phloem_resolve()
-   — reads the post-production/consumption sugar landscape
-   — pressure = (sugar/volume) × osmotic_coeff × water_fraction
-   — distance-limited BFS from high-pressure nodes outward
-   — unloading at each traversed node
+3. phloem_resolve()   [three sub-steps]
+
+   3a. Leaf loading pass  (pre-BFS, endpoint sources)
+       — For each leaf: load = max(0, leaf_conc − parent_ring_conc) × perm_leaf × pipe_cap
+       — Capped at parent ring room (ring_vol × max_conc − parent.sugar)
+       — leaf.sugar reduced; parent stem.sugar increased
+       — Leaves are NOT in the BFS graph
+
+   3b. BFS on stem/root/seed network
+       — pressure = (sugar/phloem_vol) × osmotic_coeff × water_fraction
+       — phloem_vol: ring for stems/roots; TOTAL cylinder volume for seed (storage organ)
+       — distance-limited BFS from high-pressure conduits outward
+       — source capacity guard: flow_vol ≤ available[source] + running_delta[source]
+       — destination cap guard: flow_vol ≤ room in destination ring
+       — transit dead-end credit: when stream cannot continue, credit transit back to conduit
+       — multi-source: shared running delta so later BFS walks see earlier fills
+       — unloading at each traversed conduit via permeability formula
+
+   3c. Meristem unloading pass  (post-BFS, terminal sinks)
+       — For each meristem: unload = max(0, parent_conc − mer_conc) × perm_mer × pipe_cap(bottleneck)
+       — Capped at min(parent.sugar, meristem_room)  ← meristem room cap essential
+       — parent.sugar reduced; meristem.sugar increased
+       — Meristems are NOT in the BFS graph
 
 4. xylem_resolve()
    — Phase 1/Phase 2 for Water and Cytokinin (unchanged)
@@ -124,11 +142,12 @@ for each vascular node n:
 
 **Phloem volume formulas by node type:**
 
-| Node type | Formula | Notes |
-|-----------|---------|-------|
-| STEM, ROOT | `π × (2r×t - t²) × \|offset\|` | Phloem ring cross-section × length. `t = phloem_ring_thickness ≈ 0.002 dm`. The ring is the living cambium + sieve tube layer; the heartwood core is excluded. |
-| LEAF | `leaf_size² × world.leaf_thickness` | All living tissue — no heartwood. Formula unchanged from total volume. `leaf_thickness ≈ 0.003 dm`. |
-| APICAL, ROOT_APICAL | `(4/3)π × radius³` | Entirely living meristematic tissue. Formula unchanged from total volume. |
+| Node type | Formula | Role in phloem_resolve | Notes |
+|-----------|---------|------------------------|-------|
+| STEM, ROOT | `π × (2r×t - t²) × \|offset\|` | **BFS conduit** — pressure computed here; BFS routes through these nodes | Phloem ring × length. `t = phloem_ring_thickness = 0.002 dm`. Heartwood core excluded. |
+| SEED | `π × r² × \|offset\|` | **BFS source** — total cylinder volume (storage organ, no heartwood exclusion) | Seed is a storage organ, not a thin-walled conduit. Using ring volume gives ~7×10⁻⁶ dm³ for a typical seed node — far too small to represent mobilisable reserves. Total volume used instead. In the real plant, this represents the seed endosperm / hypocotyl tissue that mobilises starch to sugar. |
+| LEAF | `leaf_size² × world.leaf_thickness` | **Endpoint source** — not in BFS graph; loads into parent stem pre-BFS via permeability formula. `leaf_thickness ≈ 0.003 dm`. | Leaf phloem concentration drives the loading gradient; the loading itself uses the parent ring's pipe_cap (not the leaf's volume) to prevent overflowing the ring. |
+| APICAL, ROOT_APICAL | `(4/3)π × radius³` | **Terminal sinks** — not in BFS graph; unload from parent stem post-BFS. | Meristem unloading is capped at meristem room = `sphere_vol × max_conc − meristem.sugar`. Without this cap, a parent at 300 g/dm³ would fill the tiny sphere many times over in one tick. |
 
 **Ring area helper:**  `phloem_ring_area(r, t) = π × (2r×t - t²)`. For r >> t, this ≈ 2π×r×t.
 
@@ -226,6 +245,29 @@ function apply_flow(edge, source, dest, stream_conc, fraction):
     // Stream gets diluted by what was unloaded — reduce conc for continuation
     stream_conc_after = (flow_vol > 1e-6f) ? stream_conc × (1.0 - unload / flow_vol) : 0.0f
     return stream_conc_after
+}
+```
+
+**Transit dead-end credit (conservation fix):** When BFS cannot continue from `dest`
+(no downhill neighbours or budget exhausted), the transit fraction `flow_vol − unload`
+has nowhere to go and disappears from the sugar balance. Credit it back to `dest`:
+
+```
+bool will_continue = remaining > 1e-4f && stream_after > 1e-8f && has_downhill_neighbours(dest);
+if (!will_continue) {
+    delta[dest] += (flow_vol - unload);   // transit stays in dest's sieve tube
+}
+```
+
+This ensures `delta[source] + delta[dest] = 0` for every hop, giving exact conservation.
+
+**Destination ring cap guard:** In addition to the source capacity guard, `flow_vol` must
+also be capped at the available room in the destination ring to prevent over-saturation when
+multiple sources target the same conduit:
+
+```
+float dest_room = sugar_cap(dest) - (dest.sugar + accumulated_delta[dest]);
+flow_vol = std::min(flow_vol, std::max(0.0f, dest_room));
 ```
 
 The stream starts at source concentration. At each sink it passes through, some sugar is unloaded. The first hungry sink (meristem, young leaf) gets the richest stream. A distant sink receives what's left. Priority emerges from physics — no explicit priority list needed.
@@ -243,7 +285,19 @@ Inactive (dormant) meristems use `phloem_unloading_stem` — they are not consum
 
 ### 4.4 Multi-source interaction
 
-Multiple source nodes each run independent BFS walks. Their deltas accumulate in the same per-node buffer. A conduit stem may receive contributions from both the canopy leaf above and a mobilizing starch reservoir below; both contribute to that stem's delta. The atomic apply at the end ensures no source sees another's mid-walk changes. The model correctly handles multiple simultaneous sources.
+Multiple source nodes each run sequential BFS walks sharing a single accumulated delta array.
+A conduit stem may receive contributions from both a leaf-loaded stem above it and the seed
+below; both contribute to the stem's running delta. **Important:** each BFS walk must use the
+running delta to compute destination room:
+
+```
+nxt_room = sugar_cap(nxt) - (nxt.sugar + accumulated_delta[nxt])
+```
+
+Without this, a second source walk would not know the first already filled a destination and
+could add sugar beyond the ring cap. The atomic design (all flows computed from start-of-tick
+state, applied together at end) fails for multiple sources competing for the same ring —
+a shared running delta is required.
 
 ### 4.5 Last-mile delivery to non-vascular nodes
 
@@ -279,7 +333,7 @@ Xylem Phase 1/Phase 2 (Water and Cytokinin) is **kept unchanged**.
 |---|---|---|---|
 | `base_phloem_speed` | 5.0 | dm/tick (= 0.5 m/hr) | Phloem velocity at `phloem_reference_radius`. Real phloem: 0.3–1.5 m/hr. |
 | `phloem_reference_radius` | 0.05 | dm | Radius at which phloem speed equals `base_phloem_speed`. Young stems (r=0.015) are proportionally slower; thick trunks (r=0.1) proportionally faster. |
-| `phloem_ring_thickness` | 0.002 | dm (= 0.2 mm) | Thickness of the living phloem + cambium ring. Approximately constant regardless of stem diameter — in real dicots the active phloem is 0.1–0.5 mm wide. Used in `phloem_ring_area(r, t) = π × (2r×t − t²)`. |
+| `phloem_ring_thickness` | 0.002 | dm (= 0.2 mm) | Thickness of the **full active sugar-handling zone**: sieve tubes + companion cells + phloem parenchyma. Real dicots: 0.1–0.5 mm wide, constant regardless of stem diameter. The trial calculation confirmed this value: every ring thickness from 0.2–5 mm satisfies the throughput constraint (a young stem carries 0.035 g/tick at just 6.6% of max concentration via the conductance multiplier). The ring does **not** need to hold the full leaf surplus per tick — it carries it as a flowing stream. t=0.002 dm is kept because it matches the real anatomy of the active phloem layer and gives the correct pressure numerics. Thicker values would lower pressure per gram of stored sugar, underdriving flow. Used in `phloem_ring_area(r, t) = π × (2r×t − t²)`. |
 | `max_sugar_concentration` | 300.0 | g/dm³ | Upper limit of phloem sap sucrose — roughly a 30% solution, matching real phloem sap. Used to cap the atomic delta apply: `sugar_cap = phloem_volume × max_sugar_concentration`. Replaces the per-tissue density params (`sugar_storage_density_wood`, `sugar_storage_density_leaf`, `sugar_cap_meristem`) with a single universal physical constant. |
 | `leaf_thickness` | 0.003 | dm | Leaf mesophyll thickness used in `phloem_volume` for LEAF nodes. `volume = leaf_size² × leaf_thickness`. |
 

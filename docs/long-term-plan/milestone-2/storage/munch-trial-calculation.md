@@ -1,14 +1,133 @@
-# Münch Pressure Flow — Trial Calculation
+# Münch Pressure Flow — Trial Calculation v2
 
-**Purpose:** Verify that the parameters and formulas in `munch-pressure-flow-design.md` produce
-physically coherent flows before implementation begins. Identifies any design issues early.
-
-**Script:** run `python3 docs/long-term-plan/milestone-2/storage/munch_trial.py` (embedded at the
-bottom of this document) to reproduce.
+**Purpose:** Verify that the Münch parameters and three-step algorithm produce physically coherent
+flows before any C++ is written. This document supersedes the v1 trial (which exposed critical
+issues that were fixed here).
 
 ---
 
-## Test Plant Topology
+## 1. Ring Thickness Verdict
+
+The original question: "what ring thickness lets a young stem carry ~0.035 g/tick without exceeding
+300 g/dm³?"
+
+### The key insight: throughput ≠ storage
+
+The ring does **not** need to hold the full leaf surplus each tick. Sugar flows **through** the ring
+as a pressurised stream; the ring holds only the in-transit fraction. The throughput formula is:
+
+```
+throughput = stream_conc × ring_area × conductance
+```
+
+For the young stem (r=0.015 dm, t=0.002 dm, conductance=10):
+
+| t (mm) | ring_area (dm²) | stream_conc needed for 35 mg/tick | % of max_conc |
+|--------|-----------------|-----------------------------------|---------------|
+| 0.2    | 1.76×10⁻⁴       | **19.9 g/dm³**                    | **6.6%** ✓    |
+| 0.5    | 3.93×10⁻⁴       | 8.9 g/dm³                         | 3.0% ✓        |
+| 1.0    | 6.28×10⁻⁴       | 5.6 g/dm³                         | 1.9% ✓        |
+
+**All thicknesses satisfy the ≤80% constraint.** The constraint is met at only 6.6% of max concentration
+with the original t=0.002 dm (0.2 mm). No need to change ring thickness.
+
+### Why t=0.002 dm is kept
+
+`ring_volume` determines **pressure** (via concentration = sugar/ring_vol), not throughput capacity.
+A thinner ring gives higher pressure per gram of sugar stored — matching the real phloem anatomy
+where a thin active phloem layer (~0.1–0.5 mm, containing sieve tubes + companion cells + phloem
+parenchyma) surrounds the dead heartwood. The conductance multiplier (10) scales throughput
+independently. **t=0.002 dm (0.2 mm) retained.**
+
+---
+
+## 2. Revised Architecture: Endpoint Nodes
+
+The v1 trial exposed a fundamental mismatch: leaves and meristems are not conduit pipe sections.
+They need to be treated as **boundary conditions** on the phloem network, not internal nodes.
+
+### Three architecture changes
+
+**A. Seed uses total cylinder volume (not ring)**
+
+The seed is a storage organ, not a thin-walled conduit. Using ring volume gives a
+phloem_vol of ~7×10⁻⁶ dm³ for a 0.03 dm radius seed, which creates astronomical concentrations
+for any biologically plausible sugar reserve (1.5 g → 200,000 g/dm³). Using total volume:
+
+```
+phloem_vol_seed = π × r² × L    (full cylinder, not just the outer ring)
+```
+
+With r=0.3 dm (enlarged to represent a storage organ), L=0.02 dm:
+`phloem_vol = 5.65×10⁻³ dm³` → at 1.5 g sugar and full water: concentration = 265 g/dm³ ✓
+
+**B. Leaves are endpoint sources — pre-BFS loading**
+
+Leaves are not in the phloem BFS graph. They load sugar into their parent stem's phloem ring
+**before** the BFS runs:
+
+```
+gradient  = max(0, leaf_conc − parent_ring_conc)    [g/dm³]
+load_raw  = gradient × phloem_unloading_leaf × ring_area(parent) × phloem_conductance
+load      = min(load_raw, room_in_parent_ring, leaf.sugar)
+parent.sugar += load;  leaf.sugar -= load
+```
+
+The `room_in_parent_ring = phloem_vol(parent) × max_conc − parent.sugar` cap is essential:
+a leaf at 160 g/dm³ trying to load into a stem at 15 g/dm³ would otherwise overflow the ring
+(gradient=145, raw_load=0.026 g >> ring cap=0.003 g). The cap limits loading to one ring-full
+per tick, which is physically correct — the stem pipe is already full before the BFS drains it.
+
+**C. Meristems are terminal sinks — post-BFS unloading**
+
+Meristems are not in the BFS graph. After BFS completes, each meristem unloads from its parent
+stem's phloem. The **bottleneck radius** (min of parent and meristem) governs the pipe capacity,
+and the unload is capped at the meristem's available room:
+
+```
+gradient   = max(0, parent_ring_conc − meristem_conc)
+r_eff      = min(parent.radius, meristem.radius)
+unload_raw = gradient × phloem_unloading_meristem × ring_area(r_eff) × phloem_conductance
+unload     = min(unload_raw, parent.sugar, meristem_room)     ← meristem room cap required
+```
+
+Without the meristem room cap, a parent at 300 g/dm³ would transfer its entire sugar into the
+meristem's tiny sphere (e.g. 0.003 g into a 0.00016 g cap = 1686% over-cap).
+
+---
+
+## 3. Algorithm Fixes Required
+
+Two fixes to the BFS algorithm in the design doc (§4.3):
+
+### Fix 1: Shared BFS delta for multi-source destination tracking
+
+When multiple sources each run independent BFS walks (design doc §4.4), the second walk uses
+the **pre-BFS sugar state** to compute destination room. If source A already filled stem1's ring,
+source B doesn't know and tries to fill it again → double over-cap.
+
+**Fix:** Pass a shared running `delta` array into each BFS walk. The destination room calculation
+uses `current_sugar + shared_delta[dest]` so later BFS walks see what earlier ones already filled.
+
+### Fix 2: Transit dead-end credit for conservation
+
+The original formula `delta[source] -= flow_vol; delta[dest] += unload` is non-conserving when
+BFS dead-ends (no downhill neighbours from dest). The transit fraction `flow_vol − unload` passes
+through dest's conduit but has nowhere to go, disappearing from the sugar balance.
+
+**Fix:** When BFS cannot continue from a node (no downhill neighbours or budget exhausted),
+credit the transit back to that node's conduit:
+
+```
+if not will_continue:
+    delta[dest] += (flow_vol − unload)   # transit stays in dest's sieve tube
+```
+
+This ensures `delta[source] + delta[dest] = 0` for each hop, giving exact conservation.
+
+---
+
+## 4. Test Plant and Parameters
 
 ```
 leaf1 ──┐
@@ -17,251 +136,119 @@ shoot_apical ──┘  stem2 ──┐
          leaf2 ──┘         stem1 ── seed ── root1 ── root_apical
 ```
 
+### Parameters
+
+| Parameter | Value |
+|---|---|
+| `phloem_ring_thickness` | 0.002 dm (0.2 mm) — confirmed correct |
+| `phloem_osmotic_coefficient` | 1.0 |
+| `max_sugar_concentration` | 300 g/dm³ |
+| `leaf_thickness` | 0.003 dm |
+| `phloem_conductance` | 10.0 |
+| `base_phloem_speed` | 5.0 dm/tick |
+| `phloem_reference_radius` | 0.05 dm |
+| Unloading permeabilities | leaf=0.10, stem=0.002, root=0.008, sa/ra=0.08 |
+
+### Initial conditions (Münch-compatible)
+
+Stem ring sugar is set to represent **in-transit concentration** (15–35 g/dm³), not whole-node
+sugar as calibrated for the old model:
+
+| Node | Type | sugar (g) | conc (g/dm³) | pressure | Notes |
+|---|---|---|---|---|---|
+| leaf1 | endpoint | 0.1200 | 160 | — | post-photosynthesis surplus |
+| stem3 | conduit | 0.000132 | 15 | 15 | thin distal conduit |
+| stem2 | conduit | 0.000220 | 25 | 25 | mid conduit |
+| stem1 | conduit | 0.000418 | 35 | 35 | proximal conduit |
+| seed | storage | 1.5000 | 265 | 265 | total vol, full water |
+| root1 | conduit | 0.000088 | 5 | 5 | low-pressure sink |
+| root_apical | endpoint | 0.000010 | ~0 | — | post-DFS, nearly empty |
+| leaf2 | endpoint | 0.0600 | 222 | — | post-photosynthesis |
+| shoot_apical | endpoint | 0.000010 | ~0 | — | post-DFS, nearly empty |
+
+Pressure gradient (BFS network): **seed (265) > stem1 (35) > stem2 (25) > stem3 (15) > root1 (5)**
+
+After leaf loading (Step 1): stem3 and stem2 both fill to 300 g/dm³ (at ring cap).
+
 ---
 
-## Parameters Used
+## 5. Results
 
-| Parameter | Value | Source |
+### Final sugar state
+
+| Name | Type | before (g) | after (g) | Δ (g) | conc after | % cap | Status |
+|---|---|---|---|---|---|---|---|
+| leaf1 | leaf | 0.120000 | 0.117493 | −0.002507 | 156.7 | 52% | ok |
+| stem3 | stem | 0.000132 | 0.002492 | +0.002360 | 283 | 94% | ok |
+| stem2 | stem | 0.000220 | 0.000000 | −0.000220 | 0 | 0% | ok |
+| stem1 | stem | 0.000418 | 0.003581 | +0.003163 | 300 | 100% | ok |
+| seed | seed_store | 1.500000 | 1.494286 | −0.005714 | 264 | 88% | ok |
+| root1 | root | 0.000088 | 0.004644 | +0.004556 | 264 | 88% | ok |
+| root_apical | ra | 0.000010 | 0.000643 | +0.000633 | 300 | 100% | ok |
+| leaf2 | leaf | 0.060000 | 0.057581 | −0.002419 | 213 | 71% | ok |
+| shoot_apical | sa | 0.000010 | 0.000157 | +0.000147 | 300 | 100% | ok |
+
+**Conservation: Σ(Δ) = 0.00e+00 ✓  |  No negatives, no over-cap ✓**
+
+---
+
+## 6. Key Questions Answered
+
+**Does sugar flow from leaf/seed toward hungry meristems?**
+Yes. Both meristems received sugar and filled to 100% of their sphere cap:
+- shoot_apical: +0.147 mg (filled to 0.157 mg cap)
+- root_apical: +0.633 mg (filled to 0.643 mg cap)
+
+The actual maintenance need at these volumes is nanograms/tick (maintenance = ~0.01 g/dm³/tick × 5×10⁻⁷ dm³ ≈ 5×10⁻⁹ g/tick). Inflow exceeds maintenance by ~30,000×. Meristems are abundantly supplied.
+
+**How much sugar reaches each meristem per tick?**
+- shoot_apical: 0.147 mg/tick (100% of cap per tick — refills completely each tick)
+- root_apical: 0.633 mg/tick (100% of cap per tick — refills completely each tick)
+
+**Is the seed's 1.5 g draining toward sinks?**
+Yes. Seed Δ = −0.006 g/tick. Reserve lifetime: ~262 ticks (~11 days at 1 hr/tick). Without
+the starch mobilisation model (future milestone), the seed provides steady supply for early
+seedling establishment.
+
+**Are any flows unreasonable?**
+No. Conservation is exact. No node goes negative. No node exceeds its Münch cap. Flow
+directions match the pressure gradient (seed → conduits → sinks).
+
+**Would this plant survive?**
+Yes. Both meristems fill completely each tick at 100% capacity. Leaves export 2–2.5 mg/tick
+to parent conduits. Seed provides a trickle of ~5.7 mg/tick distributed across the whole
+stem network. At these rates, the plant is stable.
+
+**Stem2 drains to zero — is that a problem?**
+No. Stem2 loaded from leaf2, then immediately drained all of it into stem1 via the BFS
+(stem2 pressure=300 >> stem1 pressure=35). It acts as a pure pass-through conduit in this
+tick. Next tick, leaf2 will refill it again. This is normal flowing-pipe behaviour.
+
+---
+
+## 7. Remaining Open Issues for Implementation
+
+| # | Issue | Action |
 |---|---|---|
-| `phloem_ring_thickness` t | 0.002 dm | design doc §6 |
-| `phloem_osmotic_coefficient` | 1.0 | design doc §6 |
-| `max_sugar_concentration` | 300 g/dm³ | design doc §6 |
-| `leaf_thickness` | 0.003 dm | design doc §6 |
-| `phloem_conductance` | 10.0 | trial script |
-| `base_phloem_speed` | 5.0 dm/tick | design doc §6 |
-| `phloem_reference_radius` | 0.05 dm | design doc §6 |
-| Permeabilities | leaf=0.10, stem=0.002, root=0.008, sa/ra=0.08 | design doc §4.3 |
+| 1 | Seed total-volume vs ring: requires special-casing seed node type | Add `'seed_store'` branch to `phloem_volume()` |
+| 2 | Leaf loading pre-BFS pass not in current design doc | Add to §3 tick order and §4 algorithm |
+| 3 | Meristem post-BFS unloading not in current design doc | Add to §4 algorithm |
+| 4 | Shared BFS delta required for multi-source correctness | Add note to §4.4 multi-source interaction |
+| 5 | Transit dead-end credit required for conservation | Add to §4.3 apply_flow formula |
+| 6 | Young stem speed (0.045 m/hr) below biological range | Task 7 calibration: lower `phloem_reference_radius` |
+
+All issues are implementation details — the core Münch architecture (pressure-driven BFS, unloading
+permeability table, ring-volume concentration model) is validated and working.
 
 ---
 
-## Node State (pre-flow)
+## 8. Reproducible Python Script
 
-| Name | r (dm) | offset | phloem_vol (dm³) | sugar (g) | conc (g/dm³) | w_frac | pressure | Münch cap (g) | Over cap? |
-|---|---|---|---|---|---|---|---|---|---|
-| leaf1 | 0.000 | 0.00 | 7.50×10⁻⁴ | 0.0300 | 40.0 | 1.000 | **40.0** | 0.225 | no |
-| stem3 | 0.015 | 0.05 | 8.80×10⁻⁶ | 0.0010 | 113.7 | 1.000 | **113.7** | 0.00264 | no |
-| stem2 | 0.015 | 0.05 | 8.80×10⁻⁶ | 0.0010 | 113.7 | 1.000 | **113.7** | 0.00264 | no |
-| stem1 | 0.020 | 0.05 | 1.19×10⁻⁵ | 0.500 | 41,883 | 1.000 | **41,883** | 0.00358 | **140×** |
-| seed | 0.030 | 0.02 | 7.29×10⁻⁶ | 2.000 | 274,405 | 1.000 | **274,405** | 0.00219 | **915×** |
-| root1 | 0.015 | 0.10 | 1.76×10⁻⁵ | 0.0010 | 56.8 | 1.000 | **56.8** | 0.00528 | no |
-| root_apical | 0.008 | 0.01 | 2.14×10⁻⁶ | 0.0050 | 2,331 | 0.500 | **1,166** | 0.00064 | 8× |
-| leaf2 | 0.000 | 0.00 | 2.70×10⁻⁴ | 0.0100 | 37.0 | 1.000 | **37.0** | 0.081 | no |
-| shoot_apical | 0.005 | 0.005 | 5.24×10⁻⁷ | 0.0020 | 3,820 | 0.200 | **764** | 0.00016 | 13× |
+The calculation can be reproduced with:
 
----
-
-## Results: What Broke
-
-### 1. Seed and stem1 have supraphysical concentrations
-
-The seed has 2 g of sugar in a phloem ring of 7.29×10⁻⁶ dm³, giving
-274,405 g/dm³ — nearly **1000× the 300 g/dm³ cap**. stem1 (0.5 g in a thin
-conduit) is 140× over cap. These numbers come from the current plant model
-calibrating sugar to whole-node volume; the Münch model computes concentration
-against the phloem ring only (5–18× smaller volume for young stems, ~1% of
-full cross-section for thick ones).
-
-**Root cause:** The test-plant initial conditions were designed for the old
-whole-cross-section sugar model. They are inconsistent with Münch phloem ring
-volumes. Under the new model, `seed.sugar` should be at most
-`phloem_ring_area(0.03, 0.002) × 0.02 × 300 ≈ 0.0022 g` in the phloem ring.
-The seed's bulk starch reserve will be in a separate starch field (milestone-2
-starch work), not in `node.sugar`.
-
-### 2. BFS source capacity not enforced → conservation failure
-
-The BFS computes `flow_vol = stream_conc × pipe_cap × time_fraction` from the
-seed's pressure (274,405 × pipe_cap) and deducts it from `delta[seed]` without
-checking whether the source actually has that much sugar. Result: the seed
-"sends" −1,137 g in one tick from a 2 g reserve — physically impossible, and
-conservation fails by −186 mg (non-zero sum of all deltas).
-
-**Fix required in the implementation:** Before deducting from `delta[cur]`,
-clamp `flow_vol` to at most `sugar_0[cur] + delta[cur]` (the running available
-balance). This is a missing guard in the algorithm in §4.3.
-
-### 3. Meristems and tiny nodes are sources, not sinks
-
-The shoot_apical has 0.002 g in a 5.24×10⁻⁷ dm³ sphere → 3,820 g/dm³ → pressure 764.
-The root_apical has 0.005 g in a 2.14×10⁻⁶ dm³ sphere → 1,166 pressure.
-Both have higher pressure than their parent stems (113), so the BFS treats them
-as *sources*. They push sugar into the stem instead of receiving it.
-
-**Root cause:** The design spec says "fast-growing nodes have depleted their
-sugar during the DFS tick → steep gradient → fast unloading." For the algorithm
-to produce the intended sink behavior, meristems must arrive at the phloem
-resolve pass with sugar **near zero** — specifically below
-`phloem_volume × stream_concentration` of their parent. In a real post-DFS
-tick, the meristem would have consumed almost all its sugar for growth. The
-test setup using 0.002 g in a volume of 5×10⁻⁷ dm³ is still 13× over the
-Münch cap.
-
-**Implication for initial conditions and calibration:**
-- Meristem sugar after DFS should be < ~0.0001 g for correct sink behavior.
-- The `phloem_unloading_meristem` permeability (0.08) is appropriate once the
-  meristem is actually empty; with high sugar it becomes a source instead.
-
-### 4. Leaf radius = 0 produces negative ring area
-
-`phloem_ring_area(0, t) = π × (0 − t²) = −π × t²`, yielding a negative pipe
-capacity (−0.000126). Leaves have zero radius in the sim and will always
-trigger this path. This is not a problem in the production code because
-§4.5 specifies that **leaves are not in the vascular BFS** — they connect to
-the nearest vascular stem via local diffusion. The BFS must skip leaf nodes
-(and any other node with `has_vasculature == false`).
-
----
-
-## Results: What Works
-
-### Pressure directions are correct when initial conditions are valid
-
-For nodes whose sugar is within the Münch cap range (leaf1, leaf2, stem3,
-stem2, root1), the pressure landscape is coherent:
-
-- leaf1 (40.0) > stem3 (113.7)? Actually stem3 > leaf1 here, which is because
-  even 0.001 g in the tiny ring gives high concentration. Once stem conduits
-  hold realistic Münch-scale sugar (< 0.003 g), their pressure drops below
-  leaf level, and leaves correctly become sources.
-
-- root1 (56.8) is a conduit — lower pressure than any accumulating node above.
-  Flow from seed toward root1 direction is physically correct.
-
-### Pipe capacity and speed are in the right ballpark
-
-| Node | Speed (dm/tick) | Speed (m/hr) | Biological range |
-|---|---|---|---|
-| Young stem r=0.015 | 0.45 | 0.045 | **below** 0.3–1.5 m/hr |
-| Reference r=0.05 | 5.00 | 0.50 | middle of range ✓ |
-| Seed r=0.03 | 1.80 | 0.18 | slightly low |
-
-Young stems run at ~9% of reference speed (0.045 m/hr vs. 0.3 m/hr minimum).
-The design doc anticipates this: "Early seedling transport may require multiple
-ticks." If this becomes a problem during calibration (Task 7), lower
-`phloem_reference_radius` from 0.05 to 0.015 to make young-stem speed match
-reference, or increase `base_phloem_speed`. This is a calibration concern, not
-a design defect.
-
-### Unloading permeabilities are well-scaled
-
-With a 3 g/dm³ gradient, a mature stem leaks 0.006 g/tick and a meristem
-(when empty) receives 0.24 g/tick — a 40× ratio. The design target is 20–100×
-stem leakage. This falls squarely in range and should preserve most flow for
-distant sinks rather than being absorbed by conduit walls.
-
-### Leaf → conduit flow works correctly
-
-leaf1 has conc = 40 g/dm³, pressure = 40. Its parent stem3 would have pressure
-< 40 once conduit sugar is within Münch range (< 0.003 g → conc < 341). At
-equilibrium sugar loads (stem3 ≈ 0.001 g or less), flow correctly runs
-leaf→stem and onward.
-
----
-
-## Summary of Findings
-
-| # | Finding | Severity | Fix |
-|---|---|---|---|
-| 1 | Stem/seed sugar amounts massively exceed Münch phloem-ring cap | **Critical** | Rethink initial conditions: phloem sugar ≪ old whole-volume sugar; starch goes in separate starch field |
-| 2 | BFS does not enforce source capacity → conservation failure | **Critical** | Clamp `flow_vol` to `available[src]` before deducting delta; add test |
-| 3 | Meristems with any sugar become sources, not sinks | **Critical** | Post-DFS meristem sugar must be near zero; calibrate DFS tick consumption to fully empty them |
-| 4 | Leaf nodes (radius=0) produce negative ring area in BFS | Moderate | Already handled by `has_vasculature` filter in production code; exclude non-vascular nodes from BFS |
-| 5 | Young stem phloem velocity below biological range | Minor | Calibration knob: reduce `phloem_reference_radius` from 0.05→0.015 or increase `base_phloem_speed`; addressed in Task 7 |
-
-### The core design is sound
-
-The Münch model's conceptual architecture is correct: local concentrations drive
-pressure, BFS propagates flow outward, unloading permeability filters the
-stream, and distance-cost limits per-tick reach. The failures are all in
-**initial conditions and one missing guard** (source capacity), not in the
-algorithm itself.
-
-The key insight surfaced by this calculation:
-
-> **The Münch model requires node.sugar to represent only the phloem sieve-tube
-> compartment.** The current model stores sugar as a whole-node resource calibrated
-> to total tissue volume. These are different quantities. Implementation must either:
-> (a) migrate sugar to represent only the phloem compartment (consistent with
->     `phloem_volume × max_conc` caps), OR
-> (b) keep sugar as whole-node storage and derive phloem concentration as
->     `sugar × (phloem_vol / total_vol)` — a partitioning fraction.
->
-> Option (a) is what the design doc describes and is the cleaner path. It means
-> that at the start of implementation, all existing sugar values on nodes will
-> be much smaller than current levels, and any "bulk storage" (seed reserves,
-> starch) moves to separate fields introduced in the storage milestone.
-
----
-
-## Corrected Trial: What the Numbers Look Like With Valid Initial Conditions
-
-To validate the algorithm free of the initialization problem, here is a
-manually corrected scenario where conduit sugar is within Münch caps:
-
-| Node | sugar (g) | phloem_vol (dm³) | conc (g/dm³) | pressure |
-|---|---|---|---|---|
-| leaf1 | 0.030 | 7.5×10⁻⁴ | 40 | 40 (source) |
-| stem3 | 0.0003 | 8.8×10⁻⁶ | 34 | 34 (conduit, just below leaf) |
-| stem2 | 0.0002 | 8.8×10⁻⁶ | 23 | 23 (conduit) |
-| stem1 | 0.001 | 1.2×10⁻⁵ | 84 | 84 (**needs reduction**) |
-| seed | 0.002 | 7.3×10⁻⁶ | 274 | 274 (source — near-saturated) |
-| root1 | 0.00010 | 1.8×10⁻⁵ | 5.7 | 5.7 (sink) |
-| root_apical | 0.00001 | 2.1×10⁻⁶ | 4.7 | 4.7 (sink — nearly empty after DFS) |
-| shoot_apical | 0.00001 | 5.2×10⁻⁷ | 19 | **19 (still a source!** → see below) |
-
-Even in the corrected scenario, the shoot apical has a problem: it is a
-**sphere of 0.005 dm radius** (vol = 5.24×10⁻⁷ dm³). If it has *any* sugar
-above ~0.00001 g, its phloem concentration rapidly exceeds adjacent stems. The
-meristem must be truly empty (< 5×10⁻⁵ g) after DFS to behave as a sink.
-
-For root_apical (r=0.008, vol=2.14×10⁻⁶ dm³) the same applies, but there is
-more volume so the threshold is higher (~0.0001 g).
-
-**Conclusion:** The DFS tick must completely deplete active meristems. If the
-meristem's maintenance + growth costs per tick exceed phloem delivery, it starves
-and stops growing. If the DFS tick doesn't fully consume the meristem's sugar,
-the Münch system will see it as a source and push sugar back toward the stem.
-This means meristem growth and maintenance costs should be calibrated so that
-the meristem genuinely empties each tick and relies on phloem_resolve to refill
-it.
-
----
-
-## Reproducible Script
-
-```python
-import math
-from collections import defaultdict, deque
-
-t            = 0.002   # phloem_ring_thickness (dm)
-osmotic      = 1.0
-max_conc     = 300.0
-leaf_thick   = 0.003
-conductance  = 10.0
-base_speed   = 5.0
-r_ref        = 0.05
-perm = {'leaf': 0.10, 'stem': 0.002, 'root': 0.008, 'sa': 0.08, 'ra': 0.08}
-W_DENS_STEM  = 800.0
-W_DENS_LEAF  = 3.0
-W_CAP_MERIS  = 1.0
-
-nodes_raw = [
-    ('leaf1',        'leaf', 0.0,   0.0,   0.5,  0.03,  3.0),
-    ('stem3',        'stem', 0.015, 0.05,  0.0,  0.001, 0.5),
-    ('stem2',        'stem', 0.015, 0.05,  0.0,  0.001, 0.5),
-    ('stem1',        'stem', 0.02,  0.05,  0.0,  0.5,   1.0),
-    ('seed',         'stem', 0.03,  0.02,  0.0,  2.0,   1.0),
-    ('root1',        'root', 0.015, 0.1,   0.0,  0.001, 2.0),
-    ('root_apical',  'ra',   0.008, 0.01,  0.0,  0.005, 0.5),
-    ('leaf2',        'leaf', 0.0,   0.0,   0.3,  0.01,  1.0),
-    ('shoot_apical', 'sa',   0.005, 0.005, 0.0,  0.002, 0.2),
-]
-
-edges = [
-    ('stem3', 'leaf1'), ('stem3', 'shoot_apical'), ('stem2', 'stem3'),
-    ('stem2', 'leaf2'), ('stem1', 'stem2'),
-    ('seed',  'stem1'), ('seed',  'root1'), ('root1', 'root_apical'),
-]
+```bash
+python3 docs/long-term-plan/milestone-2/storage/munch_trial_v2.py
 ```
 
-Run `python3 /path/to/munch_trial.py` to reproduce the full output with tables.
+Key parameters are at the top of the file. The three steps are clearly labelled: leaf loading,
+BFS, meristem unloading.
