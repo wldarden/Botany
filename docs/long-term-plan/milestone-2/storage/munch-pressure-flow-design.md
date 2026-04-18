@@ -224,42 +224,61 @@ for each node:
     n.sugar = clamp(n.sugar + delta[n], 0.0, sugar_cap(n, g))
 ```
 
-### 4.3 Unloading during resolution
+### 4.3 Flow formula: two limits, one transfer
 
-`apply_flow` at each traversed edge:
+Per-edge sugar transfer is governed by two independent limits. **The lesser applies.**
 
 ```
 function apply_flow(edge, source, dest, pressure_diff, stream_conc, fraction):
-    // Velocity is bounded by sieve plate resistance (physical ceiling)
+
+    // ── Limit 1: Velocity (pipe physical capacity) ─────────────────────────────────────────
     r_eff     = min(source.radius, dest.radius)
-    velocity  = pressure_diff × g.conductance_per_pressure
-    velocity  = min(velocity, world.max_phloem_velocity)
+    velocity  = min(pressure_diff × g.conductance_per_pressure, world.max_phloem_velocity)
+    ring_area = phloem_ring_area(r_eff, t)       // pipe cross-section (ring only, not π×r²)
+    flow_vol  = velocity × ring_area × fraction  // dm³ — sap volume moving this partial tick
+    max_by_velocity = flow_vol × stream_conc     // g — sugar dissolved in that sap
 
-    // Volume of phloem sap moving through the pipe this partial tick
-    ring_area = phloem_ring_area(r_eff, t)           // pipe cross-section (ring only, not π×r²)
-    flow_vol  = velocity × ring_area × fraction      // dm³/tick
+    // ── Limit 2: Equalization (thermodynamic endpoint) ─────────────────────────────────────
+    // If both nodes pooled their sugar across their combined volume, each would settle to:
+    //     equil_conc = (source.sugar + dest.sugar) / (source.volume + dest.volume)
+    // The sender CANNOT drop below equil_conc — the gradient has vanished, flow stops.
+    // This is the same equalization clamp used in Node::compute_transport_flow() for diffusion.
+    src_vol    = node_volume(source)
+    dest_vol   = node_volume(dest)
+    equil_conc = (source.sugar + dest.sugar) / max(src_vol + dest_vol, 1e-8)
+    max_by_equalization = max(0, source.sugar - equil_conc × src_vol)
 
-    // Sugar dissolved in that sap; can't send more than source has
-    desired_sugar = flow_vol × stream_conc
-    desired_sugar = min(desired_sugar, source.sugar - accumulated_outflow[source])
+    // ── Transfer: lesser of pipe capacity and thermodynamic limit ──────────────────────────
+    // Velocity limits HOW FAST per tick. Equalization limits HOW MUCH in total.
+    // Adjacent nodes at similar concentrations: equalization is binding.
+    // Long-distance flow through many hops: velocity is binding.
+    desired_sugar = min(max_by_velocity, max_by_equalization)
+    desired_sugar = min(desired_sugar, source.sugar)  // floating-point safety: should rarely fire
 
-    // Passive unloading: gradient between stream and dest node (both in g/dm³)
-    dest_vol   = node_volume(dest)     // full node volume for concentration
-    local_conc = (dest_vol > 0) ? dest.sugar / dest_vol : 0.0   // g/dm³
-    gradient   = max(0, stream_conc - local_conc)
-    unload     = gradient × unloading_permeability(dest.type) × flow_vol
-    unload     = min(unload, flow_vol)    // can't unload more than is flowing
+    // ── Unloading: fraction of sugar that leaves sieve tube into dest tissue ───────────────
+    // gradient × perm is the unloaded fraction (perm has implicit units 1/(g/dm³)).
+    dest_local_conc = (dest_vol > 0) ? dest.sugar / dest_vol : 0.0
+    gradient = max(0, stream_conc - dest_local_conc)
+    unload   = min(gradient × unloading_permeability(dest.type) × desired_sugar, desired_sugar)
 
     delta[dest]   += unload
-    delta[source] -= flow_vol             // source pays for what it sent (net: flow_vol - unload stays in pipe,
-                                          //   but the pipe itself is a vascular conduit — those amounts
-                                          //   just equilibrate in the conduit, not credited to any node)
+    delta[source] -= desired_sugar   // source pays the full transfer;
+                                     // transit remainder credited back via dead-end credit below
 
-    // Stream gets diluted by what was unloaded — reduce conc for continuation
-    stream_conc_after = (flow_vol > 1e-6f) ? stream_conc × (1.0 - unload / flow_vol) : 0.0f
+    // Stream dilutes by what unloaded — less sugar per volume for next hop
+    stream_conc_after = (desired_sugar > 1e-6f) ? stream_conc × (1.0 - unload / desired_sugar) : 0.0f
     return stream_conc_after
 }
 ```
+
+**Why equalization is the key concept:**
+
+- A tiny meristem with high concentration next to a large stem: equalization allows the meristem to push a small amount of sugar (small volume × small gradient = small max_equil). The stem's concentration barely changes.
+- A large stem with stored sugar next to a small empty leaf: equalization allows substantial flow — but the leaf fills quickly (small volume → conc rises fast) and max_equil shrinks toward zero as concentrations converge. Flow stops naturally without any explicit cap.
+- Two stems of equal volume, one with 1g and the other 0g: max_equil = 0.5g. They settle to equal concentration.
+- Flow stops when concentrations equalize — the gradient disappears, `max_by_equalization` hits zero, `desired_sugar` = 0. This is the self-regulating property: no node gets over-drained or over-filled, even without explicit per-node caps.
+
+This is the same equalization clamp in `Node::compute_transport_flow()` — the principle is proven in the existing diffusion code. Here it's applied to bulk phloem flow.
 
 **Transit dead-end credit (conservation fix):** When BFS cannot continue from `dest`
 (no downhill neighbours or budget exhausted), the transit fraction `desired_sugar − unload`
@@ -272,11 +291,9 @@ if (!will_continue) {
 }
 ```
 
-This ensures `delta[source] + delta[dest] = 0` for every hop, giving exact conservation.
+This ensures `delta[source] + delta[dest] = 0` for every hop, giving exact conservation. The `min(desired_sugar, source.sugar)` safety clamp should almost never fire — equalization naturally prevents over-draft before the clamp is needed.
 
-**Destination cap guard:** In addition to the source capacity guard, `desired_sugar` must
-also be capped at the available room in the destination node to prevent over-saturation when
-multiple sources target the same conduit:
+**Destination cap guard:** Cap `desired_sugar` at destination room before recording the delta, to prevent over-saturation when multiple BFS walks target the same conduit:
 
 ```
 float dest_cap  = node_volume(dest) * world.max_sugar_concentration;
@@ -359,19 +376,29 @@ for (int iter = 0; iter < world.phloem_iterations; ++iter) {
                                         world.max_phloem_velocity);
             float flow_vol   = velocity * ring_area;  // dm³/tick — velocity × cross-section
 
-            float cur_vol     = node_volume(cur, world);    // full volume for concentration
-            float cur_conc    = (cur_vol > 0)
-                                ? cur.chemical(ChemicalID::Sugar) / cur_vol : 0.0f;
-            float desired_sugar = flow_vol * cur_conc;
+            float cur_vol    = node_volume(cur, world);
+            float cur_conc   = (cur_vol > 0)
+                               ? cur.chemical(ChemicalID::Sugar) / cur_vol : 0.0f;
+            float max_velocity = flow_vol * cur_conc;  // g — velocity-limited sugar
+
+            // Equalization: cur cannot drop below the equilibrium concentration.
+            // Same principle as Node::compute_transport_flow() diffusion equalization clamp.
+            float next_vol   = node_volume(next, world);
+            float equil_conc = (cur.chemical(ChemicalID::Sugar) + next.chemical(ChemicalID::Sugar))
+                               / std::max(cur_vol + next_vol, 1e-8f);
+            float max_equil  = std::max(0.0f, cur.chemical(ChemicalID::Sugar) - equil_conc * cur_vol);
+
+            // Lesser of pipe capacity and thermodynamic limit
+            float desired_sugar = std::min(max_velocity, max_equil);
+            desired_sugar = std::min(desired_sugar, cur.chemical(ChemicalID::Sugar));  // safety net
 
             // Apply unloading: split desired_sugar into conduit transit + tissue delivery.
             // Same permeability formula as Section 4.3.
-            float next_vol       = node_volume(next, world);   // full volume for concentration
             float next_local_conc = (next_vol > 0)
                                    ? next.chemical(ChemicalID::Sugar) / next_vol : 0.0f;
             float gradient = std::max(0.0f, cur_conc - next_local_conc);
             float perm     = unloading_permeability(next.type, g);
-            float unload   = std::min(gradient * perm * flow_vol, desired_sugar);
+            float unload   = std::min(gradient * perm * desired_sugar, desired_sugar);
 
             iter_delta[i] -= desired_sugar;   // cur pays for full flow
             iter_delta[j] += unload;          // next receives unloaded fraction
@@ -413,7 +440,7 @@ for (int iter = 0; iter < world.phloem_iterations; ++iter) {
 }
 ```
 
-**`phloem_iterations` — WorldParam, default 3–5.** Each iteration propagates sugar one pipe section. 3 iterations = sugar moves up to 3 edges per tick. The iteration count replaces the BFS time budget as the distance control. Unlike the BFS budget (which had edge-length and r²-speed dependence), iterations are discrete hops — simpler to reason about, though less physically precise about long vs. short edges. The r²-scaled pipe capacity already encodes the fast/slow distinction, so this tradeoff is acceptable.
+**`phloem_iterations` — WorldParam, default 3–5.** Each iteration propagates sugar one pipe section and runs one round of equalization on every edge. 4 iterations = sugar moves up to 4 edges per tick and the concentration landscape converges toward equilibrium over 4 steps per tick. The iteration count replaces the BFS time budget as the distance control. Unlike the BFS budget, iterations are discrete hops — simpler to reason about, though less physically precise about long vs. short edges. Equalization per iteration means the system self-corrects: nodes that overshoot in one iteration get corrected in the next.
 
 #### Why this is better than BFS-per-source
 
@@ -865,19 +892,28 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
                   float time_fraction = std::min(1.0f, budget / time_cost);
                   float remaining = budget - time_cost * time_fraction;
 
-                  // Volume of phloem sap moving through this edge this partial tick
-                  // Pipe cross-section = phloem ring area (NOT full π×r²)
+                  // Velocity-limited sugar: pipe physically moves at most this much per tick
                   float r_eff = std::min(cur.radius, next.radius);
                   float ring_area = phloem_ring_area(r_eff, world.phloem_ring_thickness);
-                  float flow_vol = velocity * ring_area * time_fraction;  // dm³/tick
+                  float flow_vol = velocity * ring_area * time_fraction;  // dm³
+                  float max_velocity = flow_vol * stream_conc;            // g (sugar in sap)
 
-                  // Sugar dissolved in that sap; can't drain more than source has
-                  float desired_sugar = flow_vol * stream_conc;
+                  // Equalization limit: cur cannot drop below the equilibrium concentration.
+                  // Same principle as the diffusion equalization clamp in compute_transport_flow().
+                  float next_vol = node_volume(next, world);
+                  float cur_vol  = node_volume(cur, world);
+                  float equil_conc = (cur.chemical(ChemicalID::Sugar) + next.chemical(ChemicalID::Sugar))
+                                     / std::max(cur_vol + next_vol, 1e-8f);
+                  float max_equil = std::max(0.0f,
+                      cur.chemical(ChemicalID::Sugar) - equil_conc * cur_vol);
+
+                  // Actual transfer: lesser of pipe capacity and thermodynamic limit
+                  float desired_sugar = std::min(max_velocity, max_equil);
+                  // Running-delta guard: don't drain past what's accumulated so far
                   float src_available = cur.chemical(ChemicalID::Sugar) + delta[cur_i];
                   desired_sugar = std::min(desired_sugar, std::max(0.0f, src_available));
 
-                  // Passive unloading: gradient in g/dm³ between stream and destination (full node volume)
-                  float next_vol = node_volume(next, world);
+                  // Passive unloading: gradient in g/dm³ between stream and destination
                   float next_local_conc = (next_vol > 0)
                       ? next.chemical(ChemicalID::Sugar) / next_vol : 0.0f;
                   float gradient = std::max(0.0f, stream_conc - next_local_conc);
