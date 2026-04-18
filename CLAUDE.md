@@ -36,11 +36,11 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
   - `meristems/helpers.h` — shared growth helpers (`turgor_fraction`, `auxin_growth_factor`, `sugar_growth_fraction`, etc.)
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
-- **vascular.h/cpp** - `vascular_transport()` — global xylem/phloem bulk-flow pass. Moves sugar (phloem) and water+cytokinin (xylem) with conductance-first distribution weighted by `structural_flow_bias`. Runs before the DFS tree walk. `has_vasculature()` checks `structural_flow_bias >= vascular_conductance_threshold`.
+- **vascular.h/cpp** - `phloem_resolve()` + `xylem_resolve()` — two separate bulk-flow passes that run AFTER the DFS tick. `phloem_resolve()`: Münch pressure-driven sugar transport — (3a) leaves load sugar above phloem reserve into parent stem, (3b) BFS on conduit network with time budget and pressure-flow, (3c) meristems unload from parent stem via permeability. `xylem_resolve()`: Phase 1/Phase 2 water+cytokinin bulk flow. `has_vasculature()`: returns true for STEM/ROOT with radius >= `vascular_radius_threshold` (0.01 dm); seed always true.
 - **sugar.h/cpp** - `sugar_cap()`, `transport_sugar()` helpers. Diffusion itself lives in `Node::transport_chemicals()`.
 - **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
 - **world_params.h** - `WorldParams` struct (light level, construction costs, sugar_production_rate, maintenance rates, soil_moisture 0-1) — non-genetic physical constants
-- **plant.h/cpp** - `Plant` class owns all nodes, hard-caps root meristems at 10 000. `Plant::tick()` orchestrates: `vascular_transport()`, then `tick_tree()` (recursive DFS walk from seed, snapshots children for safe reparenting, flushes removals). `queue_removal()` / `flush_removals()` for deferred node cleanup.
+- **plant.h/cpp** - `Plant` class owns all nodes, hard-caps root meristems at 10 000. `Plant::tick()` orchestrates: `pin_transport()` → `tick_tree()` (DFS from seed) → `phloem_resolve()` → `xylem_resolve()` → `flush_removals()`. `queue_removal()` / `flush_removals()` for deferred node cleanup.
 - **engine.h/cpp** - `Engine` iterates plants and calls `plant.tick(world_params)`
 
 ### Node Class Hierarchy
@@ -74,8 +74,8 @@ All 5 node types extend `Node` directly — flat hierarchy, no intermediate clas
 - **app_sugar_test.cpp** - Headless sugar economy tester. Builds 3 hardcoded static trees (seedling/medium/large), freezes growth, runs N ticks of production/maintenance/transport. Reports production/maintenance ratios. Usage: `./build/botany_sugar_test [--ticks N] [--csv] [--tree seedling|medium|large]`
 
 ### Tests (`tests/`)
-149 tests / 9 594 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, and vascularization.  
-Key file: `tests/test_vascularization.cpp` — 4 integration tests: no-bias no-thicken, bias-proportional growth rate, canalization ratchet, conductance-weighted phloem distribution.
+168 tests / 1285 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, cytokinin transport, and vascularization.  
+Key file: `tests/test_vascularization.cpp` — 5 integration tests: no-bias no-thicken, bias-proportional growth rate, canalization ratchet, Münch phloem distribution, overlay accessor.
 
 ### Planning docs (`docs/long-term-plan/`)
 Milestone folders with design + review documents. Current vascularization plan and code-review docs live at `docs/long-term-plan/milestone-2/vascularization/`.
@@ -84,25 +84,33 @@ Milestone folders with design + review documents. Current vascularization plan a
 
 The plant uses a **dual transport system** matching real plant biology:
 
-1. **Vascular bulk flow** (`vascular.h/cpp`) — global pass before the DFS walk. Moves sugar (phloem), water, and cytokinin (xylem) via conductance-first bulk flow. Conduit weights = `π × r² × conductance × (1 + canalization_weight × structural_flow_bias)` — high-canalization paths carry proportionally more flow. Two O(N) walks: post-order aggregates supply/demand, pre-order distributes via iterative water-filling. Runs before the DFS tree walk.
+1. **Vascular bulk flow** (`vascular.h/cpp`) — two passes that run AFTER the DFS tick:
+   - `phloem_resolve()` — Münch pressure-driven sugar. (3a) leaves load surplus above phloem reserve into parent stem; (3b) BFS propagates pressure-driven flow through conduit network with time budget; (3c) meristems unload from nearest stem via permeability constant. Sugar does NOT diffuse locally.
+   - `xylem_resolve()` — Phase 1/Phase 2 bulk water + cytokinin from roots to shoot. Water does NOT diffuse locally.
 
-2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk. Handles auxin, gibberellin, and stress (cell-to-cell signaling) and last-mile delivery of vascular chemicals to/from leaves, meristems, and non-vascular nodes. Diffusion rates are kept low (auxin 0.05, gibberellin 0.05, stress 0.10) to keep these signals genuinely local.
+2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk. Handles **auxin, gibberellin, cytokinin, and stress** only (sugar and water are skipped). On vascular-to-vascular edges, cytokinin is also skipped (xylem handles it). Leaves, meristems, and non-vascular nodes still get cytokinin via last-mile local diffusion from the nearest vascular stem.
 
 | Chemical | Transport | Notes |
 |----------|-----------|-------|
-| Auxin | Local diffusion | Polar cell-to-cell, basipetal bias (-0.1) |
-| Gibberellin | Local diffusion | Short-range, local to producing leaf |
-| Stress | Local diffusion | Local mechanical alarm signal |
+| Auxin | Local diffusion only | Polar cell-to-cell, basipetal bias (-0.1) |
+| Gibberellin | Local diffusion only | Short-range, local to producing leaf |
+| Stress | Local diffusion only | Local mechanical alarm signal |
 | Ethylene | Spatial gas diffusion | Global 3D pass (reset each tick) |
-| Sugar | **Vascular (phloem)** + last-mile local | Source (leaves) → sink (growing tips) |
-| Water | **Vascular (xylem)** + last-mile local | Root → shoot bulk flow |
-| Cytokinin | **Vascular (xylem)** + last-mile local | Carried in xylem stream; root tips → shoot |
+| Sugar | **Phloem (phloem_resolve)** only | Münch pressure-flow; no local diffusion |
+| Water | **Xylem (xylem_resolve)** only | Root → shoot bulk flow; no local diffusion |
+| Cytokinin | **Xylem** + local (last-mile) | Skipped on vascular-to-vascular edges; local diffusion handles tips/leaves |
 
-**Vasculature admission:** `has_vasculature(node, genome)` returns true when the parent's `structural_flow_bias[node] >= vascular_conductance_threshold` (0.005). The seed is always vascular (junction). Leaves, meristems, and nodes with no accumulated flux stay on local diffusion. Newly created internodes are stamped with an initial bias (~0.01) at birth so they enter the network immediately — only truly uncanalized nodes (bias = 0, never carried any auxin) stay excluded.
+**Vasculature admission:** `has_vasculature(node, genome)` — STEM or ROOT with `radius >= vascular_radius_threshold` (0.01 dm). Seed always true. Leaves, meristems, and tiny nodes stay on local diffusion only.
+
+### Phloem (Münch pressure-flow)
+
+`pressure = (sugar / phloem_vol) × osmotic_coeff × water_frac`
+
+where `phloem_vol` = ring area × length for stems, sphere volume for meristems, leaf area × thickness for leaves. Pressure flows from high (sources = sugar-loaded leaves/stems) to low (sinks = empty tips). BFS uses a time budget (1.0 tick) with `time_cost = length / speed`; speed scales with `r² / r_ref²` (Hagen-Poiseuille).
 
 ### Vascular Sources and Sinks
 
-**Phloem (sugar):** Leaves with sugar above `phloem_reserve_fraction × sugar_cap` are sources. Apical meristems, root apical meristems, and starving nodes are sinks. Pipe capacity = `π × radius² × phloem_conductance`.
+**Phloem (sugar):** Leaves with sugar above `phloem_reserve_fraction × sugar_cap` load sugar into parent stem pre-BFS. After BFS propagates pressure gradients, meristems (APICAL, ROOT_APICAL) unload from their parent stem via `phloem_unloading_meristem` permeability. Pipe capacity = `π × radius² × phloem_conductance`.
 
 **Xylem (water + cytokinin):** Root nodes and root apicals are sources. Leaves (transpiration demand) and shoot apicals (turgor + cytokinin for growth) are sinks. Pipe capacity = `π × radius² × xylem_conductance`.
 
@@ -191,7 +199,7 @@ Water is a **persistent** capacity-based resource (like sugar):
 - **Absorbed** by `RootNode` and `RootApicalNode` proportional to surface area and `soil_moisture`. Absorption is gradient-based: `desired = (soil_moisture - water_conc) × absorption_rate × surface_area` — self-limiting when the root is full (concentration approaches soil moisture).
 - **Lost** by leaves via transpiration (proportional to leaf area and light exposure) and photosynthesis water cost
 - **Stomatal conductance** — `stomatal = clamp(water / water_cap, 0.2, 1.0)` scales photosynthesis output. Water deficit partially closes stomata, reducing sugar production. (Minimum 20% conductance — stressed leaves still photosynthesize slowly.)
-- **Transported** via vascular xylem bulk flow + local diffusion with upward bias (`water_bias = 0.05`)
+- **Transported** via `xylem_resolve()` bulk flow only — no local diffusion (skipped in `transport_with_children`)
 
 Surface area: `2π r L` for root segments, `2π r²` (hemisphere) for root apical tips.
 
@@ -220,9 +228,11 @@ Ethylene is **reset to zero every tick** (signal model). Four production trigger
 
 ## Tick Control Flow
 
-`Plant::tick()` runs two phases:
-1. `vascular_transport(plant, genome)` — global bulk-flow pass (phloem + xylem)
-2. `tick_recursive(seed)` — DFS walk: parent ticks before children
+`Plant::tick()` runs four phases in order:
+1. `pin_transport(plant, genome)` — polar auxin transport (global pre-pass)
+2. `tick_recursive(seed)` — DFS walk: parent ticks before children (grow, consume, produce)
+3. `phloem_resolve(plant, genome, world)` — Münch pressure-driven sugar transport
+4. `xylem_resolve(plant, genome, world)` — Phase 1/Phase 2 water + cytokinin
 
 Each `Node::tick()` (non-virtual, same for all types):
 1. `age++`
@@ -241,9 +251,9 @@ Children are ticked recursively after step 8 using a snapshot of the children li
 ## Key Design Decisions
 - **Meristems are nodes** — 2 meristem types (`ApicalNode`, `RootApicalNode`) extend `Node` directly. Real children in the tree graph, participate in chemical transport naturally. No axillary node types.
 - **Local diffusion rates are low by design** — auxin/GA/stress use low diffusion rates (0.05–0.10) so they remain cell-to-cell signals, not whole-plant gradients. Radius bottleneck handles the rest.
-- **Vascular admission is bias-gated** — `has_vasculature()` checks `structural_flow_bias >= vascular_conductance_threshold`. No age gate. New internodes stamped with initial bias at creation so they join the network immediately.
-- **Thickening is bias-driven** — `cambium_responsiveness × structural_flow_bias` replaces old fixed `thickening_rate`. Zero-flux branches never thicken.
-- **Conductance-first vascular distribution** — water-filling allocation weights by `pipe_capacity × (1 + bias)`. High-canalization branches receive proportionally more flow at every tick.
+- **Vascular admission is radius-gated** — `has_vasculature()` returns true for STEM/ROOT with `radius >= vascular_radius_threshold` (0.01 dm). No bias-map needed; new internodes qualify immediately at default radius (0.015 dm).
+- **Thickening is bias-driven** — `cambium_responsiveness × auxin_flow_bias` drives radial growth. Zero-flux branches never thicken.
+- **Phloem is Münch pressure-flow** — sugar flows from high osmotic pressure (sugar-loaded sources) to low pressure (empty sinks) via BFS on conduit network. Flow is NOT conductance-weighted by auxin_flow_bias.
 - **Flat node hierarchy** — `Node` base class with 5 direct subclasses. Each owns type-specific fields and behavior via `virtual update_tissue()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_apical()`/`as_root_apical()` — fast `static_cast` gated on `NodeType` enum, no RTTI.
 - **Root elongation is sugar-gated only** — root apical `elongate()` uses `sugar_growth_fraction()` with no auxin gate. Shoot-derived auxin affects root *activation*, not elongation.
 - **Dormant meristems cost zero maintenance** — only active meristems pay `sugar_maintenance_meristem`
