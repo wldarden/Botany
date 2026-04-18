@@ -47,7 +47,7 @@ Every node is classified as source, sink, or conduit at the start of each tick. 
 
 ### 1.6 Water doesn't affect phloem flow
 
-Phloem requires water to build osmotic pressure in sieve tubes. The current model moves sugar regardless of water status. Münch coupling is free: `phloem_pressure = (sugar/cap) × osmotic_coeff × (water/water_cap)`. No extra code — drought automatically suppresses phloem flow.
+Phloem requires water to build osmotic pressure in sieve tubes. The current model moves sugar regardless of water status. Münch coupling is free: `phloem_pressure = (sugar/volume) × osmotic_coeff × water_fraction`. No extra code — drought automatically suppresses phloem flow.
 
 ---
 
@@ -93,7 +93,7 @@ Unloading permeabilities differ by tissue type. Meristems have high permeability
 
 3. phloem_resolve()
    — reads the post-production/consumption sugar landscape
-   — pressure = (sugar/cap) × osmotic_coeff × (water/water_cap)
+   — pressure = (sugar/volume) × osmotic_coeff × water_fraction
    — distance-limited BFS from high-pressure nodes outward
    — unloading at each traversed node
 
@@ -112,21 +112,32 @@ Unloading permeabilities differ by tissue type. Meristems have high permeability
 
 ### 4.1 Pressure computation
 
-After the DFS tick, compute phloem osmotic pressure at every vascular node:
+After the DFS tick, compute phloem osmotic pressure at every vascular node using **physical concentration** (g/dm³) — not a normalized fraction:
 
 ```
 for each vascular node n:
-    sugar_conc  = n.sugar / sugar_cap(n, g)
+    volume      = node_volume(n)           // dm³ — geometry derived; see formulas below
+    sugar_conc  = n.sugar / volume         // g/dm³ — physical sugar concentration
     water_frac  = clamp(n.water / water_cap(n, g), 0.0, 1.0)
     phloem_pressure[n] = sugar_conc × g.phloem_osmotic_coefficient × water_frac
 ```
 
-- Leaves with high post-photosynthesis sugar → high pressure → they are sources
-- Meristems after consuming for growth → low sugar → low pressure → they are sinks
+**Volume formulas by node type:**
+
+| Node type | Formula | Notes |
+|-----------|---------|-------|
+| STEM, ROOT | `π × radius² × \|offset\|` | `offset` is the displacement vector from parent — its magnitude is the internode length |
+| LEAF | `leaf_size² × world.leaf_thickness` | `leaf_thickness ≈ 0.003 dm` (WorldParam); `leaf_size` is the current expansion scalar |
+| APICAL, ROOT_APICAL | `(4/3)π × radius³` | Meristem tips are approximately spherical; radius is small (≈ 0.005–0.02 dm) |
+
+`node_volume` returns a geometric volume from live fields — no stored parameter, no per-tissue density lookup. If volume is zero or degenerate (new node with zero offset), return 0 pressure.
+
+- Leaves with high post-photosynthesis sugar → high g/dm³ concentration → high pressure → they are sources
+- Meristems after consuming for growth → low g/dm³ → low pressure → they are sinks
 - Stems equilibrate between their upstream source and downstream sink
 - Drought (low water_frac) suppresses pressure even with abundant sugar — phloem stalls
 
-No loading boost. No classification. No reserve floor. Pressure is computed from the actual state of the node after all local work is done.
+No loading boost. No classification. No reserve floor. No per-tissue cap lookup. Pressure is computed purely from geometry and the actual post-consumption chemical state of the node.
 
 ### 4.2 Distance-limited BFS from sources
 
@@ -187,11 +198,13 @@ for each node:
 ```
 function apply_flow(edge, source, dest, stream_conc, fraction):
     // How much sugar flows toward dest in this partial tick
+    // stream_conc is in g/dm³ (physical concentration)
     pipe_cap = π × r_eff² × g.phloem_conductance
     flow_vol = stream_conc × pipe_cap × fraction
 
-    // Passive unloading: gradient between stream and dest cytoplasm
-    local_conc = dest.sugar / sugar_cap(dest, g)
+    // Passive unloading: gradient between stream and dest cytoplasm (both in g/dm³)
+    dest_vol   = node_volume(dest)
+    local_conc = (dest_vol > 0) ? dest.sugar / dest_vol : 0.0   // g/dm³
     gradient   = max(0, stream_conc - local_conc)
     unload     = gradient × unloading_permeability(dest.type) × flow_vol
     unload     = min(unload, flow_vol)    // can't unload more than is flowing
@@ -208,14 +221,14 @@ function apply_flow(edge, source, dest, stream_conc, fraction):
 
 The stream starts at source concentration. At each sink it passes through, some sugar is unloaded. The first hungry sink (meristem, young leaf) gets the richest stream. A distant sink receives what's left. Priority emerges from physics — no explicit priority list needed.
 
-**Unloading permeabilities by node type** (these are genome params):
+**Unloading permeabilities by node type** (these are genome params — see Section 6b for calibration):
 
 | Node type | Permeability | Biological basis |
 |---|---|---|
-| APICAL, ROOT_APICAL (active) | HIGH — `g.phloem_unloading_meristem` ≈ 0.5 | Actively growing, fast metabolic consumption |
-| LEAF (young, still expanding) | MODERATE — `g.phloem_unloading_leaf` ≈ 0.2 | Transitioning sink→source; still net consumer |
-| ROOT (mature conduit root) | LOW — `g.phloem_unloading_root` ≈ 0.05 | Mainly conduit; some maintenance leakage |
-| STEM (mature conduit) | VERY LOW — `g.phloem_unloading_stem` ≈ 0.01 | Sealed phloem passing through; minimal loss |
+| APICAL, ROOT_APICAL (active) | HIGH — `g.phloem_unloading_meristem` = 0.08 | Actively growing, fast metabolic consumption |
+| LEAF (young, still expanding) | MODERATE — `g.phloem_unloading_leaf` = 0.10 | Transitioning sink→source; still net consumer |
+| ROOT (mature conduit root) | LOW — `g.phloem_unloading_root` = 0.008 | Mainly conduit; some maintenance leakage |
+| STEM (mature conduit) | VERY LOW — `g.phloem_unloading_stem` = 0.002 | Sealed phloem passing through; minimal loss |
 
 Inactive (dormant) meristems use `phloem_unloading_stem` — they are not consuming and have equilibrated with surrounding sugar, so the gradient is shallow and almost nothing unloads. They don't need to be explicitly excluded.
 
@@ -257,14 +270,16 @@ Xylem Phase 1/Phase 2 (Water and Cytokinin) is **kept unchanged**.
 |---|---|---|---|
 | `base_phloem_speed` | 5.0 | dm/tick (= 0.5 m/hr) | Phloem velocity at `phloem_reference_radius`. Real phloem: 0.3–1.5 m/hr. |
 | `phloem_reference_radius` | 0.05 | dm | Radius at which phloem speed equals `base_phloem_speed`. Young stems (r=0.015) are proportionally slower; thick trunks (r=0.1) proportionally faster. |
+| `max_sugar_concentration` | 300.0 | g/dm³ | Upper limit of plant cell sucrose — roughly a 30% solution, matching real phloem sap. Used to cap the atomic delta apply: `sugar_cap = node_volume × max_sugar_concentration`. Replaces the per-tissue density params (`sugar_storage_density_wood`, `sugar_storage_density_leaf`, `sugar_cap_meristem`) with a single universal physical constant. |
+| `leaf_thickness` | 0.003 | dm | Leaf mesophyll thickness used in `node_volume` for LEAF nodes. `volume = leaf_size² × leaf_thickness`. |
 
-These are WorldParams (physical constants), not genome params — they represent phloem sieve tube biology, not plant strategy.
+These are WorldParams (physical constants), not genome params — they represent phloem sieve tube biology and plant cell physics, not plant strategy.
 
 ### Genome additions
 
 | Parameter | Default | Notes |
 |---|---|---|
-| `phloem_osmotic_coefficient` | 1.0 | Maps sugar concentration [g/g-cap] to osmotic pressure. At concentration 1.0 with full water: pressure = 1.0. The primary flow-rate calibration knob. |
+| `phloem_osmotic_coefficient` | 1.0 | Maps absolute sugar concentration [g/dm³] to osmotic pressure. At 300 g/dm³ (max saturation) with full water: pressure = 300. The primary flow-rate calibration knob — evolution tunes how strongly concentration gradients drive flow. |
 | `phloem_unloading_meristem` | 0.08 | Permeability for APICAL and ROOT_APICAL nodes. Active sink — growing tissue consumes continuously, keeping local sugar low. See calibration table below. |
 | `phloem_unloading_leaf` | 0.10 | Permeability for LEAF nodes. Used for both loading (mature leaf → phloem) and unloading (young leaf ← phloem). Direction determined by gradient. See calibration table below. |
 | `phloem_unloading_root` | 0.008 | Permeability for mature ROOT conduit nodes. Low — mainly sealed pipe with some maintenance leakage. See calibration table below. |
@@ -276,13 +291,17 @@ These are WorldParams (physical constants), not genome params — they represent
 
 `meristem_sink_fraction`, `phloem_reserve_fraction` — see Section 5.
 
+`sugar_storage_density_wood`, `sugar_storage_density_leaf`, `sugar_cap_meristem`, `sugar_cap_minimum` — replaced by `node_volume × world.max_sugar_concentration`. Sugar capacity is now derived from geometry and a single universal concentration cap, not from per-tissue density lookups.
+
+**Broader cleanup note:** The existing `sugar_cap()` helper and per-tissue density params exist throughout the sim outside the Münch code. The Münch implementation is the first adopter of volume-based caps. The rest of the sim (maintenance costs, local diffusion headroom checks, etc.) still uses `sugar_cap()`. These should eventually be unified — replace `sugar_cap()` everywhere with `node_volume × max_sugar_concentration`. This is out of scope for the Münch implementation but the design here is intentionally forward-compatible: `max_sugar_concentration` as a WorldParam is the consolidation point.
+
 ---
 
 ## 6b. Permeability Calibration
 
 ### Anchor point
 
-Leaf photosynthesis rate: `0.02 g/(dm²·hr)` at full sun (WorldParams). A full-size leaf (1.5 dm²) produces `0.03 g/tick` gross. After ~`0.01 g` maintenance + growth consumption during the DFS tick, it has roughly `0.02 g` surplus available to load into phloem. Permeability values are set so this surplus clears in approximately one tick under a typical concentration gradient.
+Leaf photosynthesis rate: `0.02 g/(dm²·hr)` at full sun (WorldParams). A full-size leaf (1.5 dm²) produces `0.03 g/tick` gross. After ~`0.01 g` maintenance + growth consumption during the DFS tick, it has roughly `0.02 g` surplus available to load into phloem. Leaf volume ≈ `1.5² × 0.003 ≈ 0.007 dm³`, so surplus concentration ≈ `0.02 / 0.007 ≈ 3 g/dm³` above phloem stream. Permeability values are set so this surplus clears in approximately one tick.
 
 ### The formula
 
@@ -290,18 +309,18 @@ Leaf photosynthesis rate: `0.02 g/(dm²·hr)` at full sun (WorldParams). A full-
 exchange = (phloem_concentration - local_concentration) × permeability
 ```
 
-The formula is **bidirectional**: when `local > phloem`, sugar enters the pipe (loading). When `phloem > local`, sugar exits (unloading). The same permeability param handles both directions. Direction is determined entirely by the concentration gradient — no separate loading vs. unloading classification.
+Both concentrations are in **g/dm³** (physical). The formula is **bidirectional**: when `local > phloem`, sugar enters the pipe (loading). When `phloem > local`, sugar exits (unloading). The same permeability param handles both directions. Direction is determined entirely by the concentration gradient — no separate loading vs. unloading classification.
 
 ### Calibration table
 
-| Tissue | Permeability | At typical gradient | Exchange rate | Rationale |
+| Tissue | Permeability | At typical gradient (g/dm³) | Exchange rate | Rationale |
 |--------|-------------|-------------------|---------------|-----------|
-| Mature leaf | 0.10 | ~0.5 (leaf full, phloem empty) | ~0.05 g/tick | Efficient loader with companion cells; clears full surplus in ~1 tick |
-| Young leaf | ~0.06 | ~0.4 (growing, depleted) | ~0.024 g/tick | Developing companion cells; still transitioning from sink to source |
-| Meristem | 0.08 | ~0.25 (consumed, phloem moderate) | ~0.02 g/tick | Active sink; covers growth cost (~0.015g/tick) plus maintenance comfortably |
-| Root tip | 0.08 | ~0.25 | ~0.02 g/tick | Same growth demand as shoot meristem |
-| Mature stem | 0.002 | ~0.3 (conduit near equilibrium) | ~0.0006 g/tick | Sealed pipe; covers surface-area maintenance, passes most flow through |
-| Mature root | 0.008 | ~0.3 | ~0.0024 g/tick | More living tissue than stem (ray parenchyma, root hairs); slightly more permeable |
+| Mature leaf | 0.10 | ~3 g/dm³ (leaf ~5 g/dm³, phloem ~2 g/dm³) | ~0.03 g/tick per dm³ flow | Efficient loader with companion cells; clears full surplus in ~1 tick |
+| Young leaf | ~0.06 | ~2 g/dm³ (growing, depleted local) | ~0.012 g/tick | Developing companion cells; still transitioning from sink to source |
+| Meristem | 0.08 | ~2 g/dm³ (consumed, phloem moderate) | ~0.016 g/tick | Active sink; covers growth cost (~0.015g/tick) plus maintenance comfortably |
+| Root tip | 0.08 | ~2 g/dm³ | ~0.016 g/tick | Same growth demand as shoot meristem |
+| Mature stem | 0.002 | ~1 g/dm³ (conduit near equilibrium) | ~0.002 g/tick | Sealed pipe; covers surface-area maintenance, passes most flow through |
+| Mature root | 0.008 | ~1 g/dm³ | ~0.008 g/tick | More living tissue than stem (ray parenchyma, root hairs); slightly more permeable |
 
 **Key ratio:** Leaf loading should be ~20–100× stem leakage. At these values the ratio is 50× (0.10 / 0.002). This ensures most sugar flows *through* stem conduits to distant sinks rather than being absorbed locally by the pipe itself.
 
@@ -320,7 +339,7 @@ The bidirectional formula is how starch mobilization in stems creates local sour
 Real leaf loading uses membrane transporters (SUC/SUT family) with Michaelis-Menten kinetics. When phloem sucrose concentration is high (saturated phloem), the effective permeability decreases — less sugar loads even if the leaf has surplus. The constant-permeability model is a valid first pass. Add saturation if leaves over-load when phloem is full:
 
 ```
-effective_permeability = phloem_unloading_leaf × (1.0 - phloem_conc / phloem_saturation_conc)
+effective_permeability = phloem_unloading_leaf × (1.0 - phloem_conc / world.max_sugar_concentration)
 ```
 
 Leave this for after initial calibration confirms the behavior is actually a problem.
@@ -436,25 +455,34 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
 
 - [ ] Add to `WorldParams` struct and `default_world_params()`:
   ```cpp
-  float base_phloem_speed    = 5.0f;    // dm/tick — phloem velocity at phloem_reference_radius
-                                         //   (≈ 0.5 m/hr — mid-range real phloem velocity)
-  float phloem_reference_radius = 0.05f; // dm — radius at which base_phloem_speed applies.
-                                          //   Young stems (r=0.015dm) run at ~9% of base speed.
-                                          //   Wide trunk (r=0.1dm) runs at 4× base speed.
+  float base_phloem_speed       = 5.0f;    // dm/tick — phloem velocity at phloem_reference_radius
+                                            //   (≈ 0.5 m/hr — mid-range real phloem velocity)
+  float phloem_reference_radius = 0.05f;   // dm — radius at which base_phloem_speed applies.
+                                            //   Young stems (r=0.015dm) run at ~9% of base speed.
+                                            //   Wide trunk (r=0.1dm) runs at 4× base speed.
+  float max_sugar_concentration = 300.0f;  // g/dm³ — upper limit of plant cell sucrose (~30% solution)
+                                            //   Sugar cap = node_volume × max_sugar_concentration.
+                                            //   Replaces per-tissue density params.
+  float leaf_thickness          = 0.003f;  // dm — leaf mesophyll depth for node_volume calculation
+                                            //   volume = leaf_size² × leaf_thickness
   ```
 - [ ] Add to `Genome` struct and `default_genome()`:
   ```cpp
-  float phloem_osmotic_coefficient = 1.0f;  // maps sugar_conc to osmotic pressure
-  float phloem_unloading_meristem  = 0.5f;  // APICAL, ROOT_APICAL — high sink strength
-  float phloem_unloading_leaf      = 0.2f;  // young LEAF — moderate
-  float phloem_unloading_root      = 0.05f; // mature ROOT — low
-  float phloem_unloading_stem      = 0.01f; // STEM conduit — very low
+  float phloem_osmotic_coefficient = 1.0f;  // maps sugar concentration [g/dm³] to osmotic pressure
+  float phloem_unloading_meristem  = 0.08f; // APICAL, ROOT_APICAL — calibrated active sink
+  float phloem_unloading_leaf      = 0.10f; // LEAF — bidirectional; loading & unloading
+  float phloem_unloading_root      = 0.008f;// mature ROOT conduit — low leakage
+  float phloem_unloading_stem      = 0.002f;// STEM conduit — very low, mostly sealed pipe
   ```
 - [ ] Remove from `Genome` and `default_genome()`:
   - `meristem_sink_fraction`
   - `phloem_reserve_fraction`
-  - Grep to find every use site: `grep -r "meristem_sink_fraction\|phloem_reserve_fraction" src/ tests/`
-  - Fix all compilation errors
+  - `sugar_storage_density_wood`
+  - `sugar_storage_density_leaf`
+  - `sugar_cap_meristem`
+  - `sugar_cap_minimum`
+  - Grep to find every use site: `grep -r "meristem_sink_fraction\|phloem_reserve_fraction\|sugar_storage_density\|sugar_cap_meristem\|sugar_cap_minimum" src/ tests/`
+  - Fix all compilation errors (existing `sugar_cap()` calls outside Münch still compile — they get updated separately per the broader cleanup note in Section 6)
 - [ ] Add four unloading params to `genome_bridge.cpp` under `sugar_economy` linkage group. Remove the two deleted params from the bridge.
 - [ ] Run build: `/usr/local/bin/cmake --build build`
 - [ ] Run tests: `./build/botany_tests`
@@ -467,12 +495,37 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
 - Modify: `src/engine/vascular.h`
 - Create: `tests/test_munch_phloem.cpp` (or add to `test_vascularization.cpp`)
 
+- [ ] Add static helper `node_volume` to `vascular.cpp`. This derives volume from live geometry — no stored params, no per-tissue density lookup:
+  ```cpp
+  static float node_volume(const Node& n, const WorldParams& world) {
+      constexpr float pi = 3.14159265f;
+      switch (n.type) {
+          case NodeType::STEM:
+          case NodeType::ROOT: {
+              float length = glm::length(n.offset);  // dm
+              return pi * n.radius * n.radius * length;
+          }
+          case NodeType::LEAF: {
+              // leaf_size is the expansion scalar (dm); leaf is approximately square
+              float ls = n.as_leaf()->leaf_size;
+              return ls * ls * world.leaf_thickness;
+          }
+          case NodeType::APICAL:
+          case NodeType::ROOT_APICAL: {
+              // Meristem tip approximated as sphere
+              return (4.0f / 3.0f) * pi * n.radius * n.radius * n.radius;
+          }
+          default:
+              return 0.0f;
+      }
+  }
+  ```
 - [ ] Add static helper `compute_phloem_pressure` to `vascular.cpp`:
   ```cpp
-  static float compute_phloem_pressure(const Node& n, const Genome& g) {
-      float cap = sugar_cap(n, g);
-      if (cap <= 0.0f) return 0.0f;
-      float sugar_conc = n.chemical(ChemicalID::Sugar) / cap;
+  static float compute_phloem_pressure(const Node& n, const Genome& g, const WorldParams& world) {
+      float vol = node_volume(n, world);
+      if (vol <= 0.0f) return 0.0f;
+      float sugar_conc = n.chemical(ChemicalID::Sugar) / vol;  // g/dm³ — physical concentration
       float water_cap_val = water_cap(n, g);
       float water_frac = (water_cap_val > 0)
           ? std::clamp(n.chemical(ChemicalID::Water) / water_cap_val, 0.0f, 1.0f)
@@ -480,9 +533,9 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
       return sugar_conc * g.phloem_osmotic_coefficient * water_frac;
   }
   ```
-- [ ] Write test `test_phloem_pressure_high_sugar_high_pressure`: create a STEM node with sugar = 0.9 × cap and full water. Create another with sugar = 0.1 × cap. Verify the first has ~9× the pressure of the second.
+- [ ] Write test `test_phloem_pressure_high_sugar_high_pressure`: create two STEM nodes with identical geometry (same radius, same offset length). Give one sugar = `0.9 × vol × max_conc`, the other `0.1 × vol × max_conc`. Both with full water. Verify the first has ~9× the pressure of the second.
 - [ ] Write test `test_phloem_pressure_zero_water_zero_pressure`: STEM node with high sugar but zero water. Verify `compute_phloem_pressure` returns 0.0f.
-- [ ] Write test `test_phloem_pressure_meristem_after_consumption`: set up a meristem with very low sugar (simulating post-growth-consumption state). Verify pressure is low relative to a leaf node at the same position with full sugar.
+- [ ] Write test `test_phloem_pressure_meristem_after_consumption`: set up a meristem (APICAL, r=0.01dm) with very low sugar (simulating post-growth-consumption state). Verify pressure is low relative to a leaf node at the same position with full post-photosynthesis sugar.
 - [ ] Run tests: `./build/botany_tests` — new tests pass
 - [ ] Commit: `feat: add compute_phloem_pressure helper`
 
@@ -527,10 +580,11 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
       int N = (int)flat.size();
 
       // Step 1: compute phloem pressure at every vascular node
+      // pressure = (sugar / node_volume) × osmotic_coeff × water_frac   [g/dm³ × coeff]
       std::vector<float> pressure(N, 0.0f);
       for (int i = 0; i < N; ++i) {
           if (has_vasculature(*flat[i].node, g))
-              pressure[i] = compute_phloem_pressure(*flat[i].node, g);
+              pressure[i] = compute_phloem_pressure(*flat[i].node, g, world);
       }
 
       // Step 2: BFS from each vascular source node outward toward lower-pressure neighbors
@@ -538,31 +592,27 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
       std::vector<float> delta(N, 0.0f);
 
       // A node is a source for BFS if it has higher pressure than at least one neighbor.
-      // BFS queue: (node_index, remaining_time_budget, current_stream_concentration)
+      // stream_conc is physical sugar concentration [g/dm³] of the moving phloem sap.
       struct BFSEntry { int idx; float budget; float stream_conc; };
       std::vector<BFSEntry> queue;
       queue.reserve(N);
 
       for (int i = 0; i < N; ++i) {
           if (!has_vasculature(*flat[i].node, g)) continue;
-          // Check if this node has higher pressure than any vascular neighbor
           bool is_source = false;
-          // Check parent
           if (flat[i].parent_idx >= 0 && has_vasculature(*flat[flat[i].parent_idx].node, g))
               if (pressure[i] > pressure[flat[i].parent_idx]) is_source = true;
-          // Check children
           for (int ci : flat[i].child_idxs)
               if (has_vasculature(*flat[ci].node, g) && pressure[i] > pressure[ci])
                   is_source = true;
           if (is_source) {
-              float cap = sugar_cap(*flat[i].node, g);
-              float src_conc = (cap > 0) ? flat[i].node->chemical(ChemicalID::Sugar) / cap : 0.0f;
+              float vol = node_volume(*flat[i].node, world);
+              float src_conc = (vol > 0) ? flat[i].node->chemical(ChemicalID::Sugar) / vol : 0.0f;
               queue.push_back({i, 1.0f, src_conc});
           }
       }
 
       for (auto& entry : queue) {
-          // BFS: walk toward lower-pressure vascular neighbors
           struct WalkState { int from_idx; int to_idx; float budget; float stream_conc; };
           std::vector<WalkState> walk = {{-1, entry.idx, entry.budget, entry.stream_conc}};
 
@@ -572,7 +622,6 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
 
               Node& cur = *flat[cur_i].node;
 
-              // Gather lower-pressure vascular neighbors (excluding where we came from)
               std::vector<int> nexts;
               if (flat[cur_i].parent_idx >= 0 && flat[cur_i].parent_idx != from_i
                   && has_vasculature(*flat[flat[cur_i].parent_idx].node, g)
@@ -586,7 +635,6 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
               for (int next_i : nexts) {
                   Node& next = *flat[next_i].node;
 
-                  // Edge length: distance between nodes
                   float edge_len = glm::length(next.offset);
                   float speed = phloem_local_speed(cur, next, world);
                   float time_cost = (speed > 1e-8f) ? edge_len / speed : 1e30f;
@@ -594,23 +642,22 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
                   float time_fraction = std::min(1.0f, budget / time_cost);
                   float remaining = budget - time_cost * time_fraction;
 
-                  // Sugar flowing through this edge
+                  // Sugar flowing through this edge [g]
                   float pipe_cap = 3.14159f * std::min(cur.radius, next.radius)
                                    * std::min(cur.radius, next.radius) * g.phloem_conductance;
                   float flow_vol = stream_conc * pipe_cap * time_fraction;
 
-                  // Unloading at destination
-                  float next_cap = sugar_cap(next, g);
-                  float next_local_conc = (next_cap > 0)
-                      ? next.chemical(ChemicalID::Sugar) / next_cap : 0.0f;
+                  // Passive unloading: gradient in g/dm³ between stream and destination
+                  float next_vol = node_volume(next, world);
+                  float next_local_conc = (next_vol > 0)
+                      ? next.chemical(ChemicalID::Sugar) / next_vol : 0.0f;
                   float gradient = std::max(0.0f, stream_conc - next_local_conc);
                   float perm = unloading_permeability(next.type, g);
                   float unload = std::min(gradient * perm * flow_vol, flow_vol);
 
                   delta[next_i] += unload;
-                  delta[cur_i]  -= flow_vol;      // source pays for total flow out
+                  delta[cur_i]  -= flow_vol;
 
-                  // Stream concentration after unloading
                   float stream_after = (flow_vol > 1e-6f)
                       ? stream_conc * (1.0f - unload / flow_vol) : 0.0f;
 
@@ -622,10 +669,11 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
       }
 
       // Step 3: apply deltas atomically
+      // Sugar cap = node_volume × max_sugar_concentration (no per-tissue density lookup)
       for (int i = 0; i < N; ++i) {
           if (delta[i] == 0.0f) continue;
           Node& n = *flat[i].node;
-          float cap = sugar_cap(n, g);
+          float cap = node_volume(n, world) * world.max_sugar_concentration;
           float new_val = std::clamp(n.chemical(ChemicalID::Sugar) + delta[i], 0.0f, cap);
           n.chemical(ChemicalID::Sugar) = new_val;
       }
