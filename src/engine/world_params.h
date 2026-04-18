@@ -62,6 +62,24 @@ struct WorldParams {
     float ground_support_height = 0.5f;     // dm — below this Y, stress is zeroed
     float droop_rate = 0.01f;               // radians/tick — max angular droop when overstressed
 
+    // Phloem (Münch pressure flow) parameters
+    float max_phloem_velocity  = 10.0f;    // dm/tick (= 1 m/hr) — physical upper bound on phloem sap velocity.
+                                           //   Caps: velocity = min(dp × conductance_per_pressure, max_phloem_velocity).
+                                           //   Real phloem: 0.3–1.5 m/hr; 10 dm/tick is the high end.
+    uint32_t phloem_iterations = 3;        // inner Jacobi iterations per phloem_resolve call.
+                                           //   Each iteration propagates sugar one pipe section.
+                                           //   3 = conservative; 5 = aggressive (travels further per tick).
+    float phloem_reference_radius = 0.015f;// dm — reference radius (superseded by velocity-capped model,
+                                           //   retained for reference; not used in phloem_resolve).
+    float phloem_ring_thickness   = 0.002f;// dm (= 0.2 mm) — thickness of the living phloem+cambium ring.
+                                           //   Used in phloem_ring_area(r, t) = π × (2r×t − t²).
+                                           //   Used ONLY for pipe capacity (flow_vol = velocity × ring_area).
+                                           //   Real dicots: ~0.1–0.5 mm; constant regardless of stem diameter.
+    float max_sugar_concentration = 300.0f;// g/dm³ — upper bulk-concentration cap (~30% sucrose solution).
+                                           //   Sugar cap per node = node_volume(n) × max_sugar_concentration.
+    float leaf_thickness          = 0.003f;// dm — leaf mesophyll depth for node_volume of LEAF nodes.
+                                           //   node_volume(leaf) = leaf_size² × leaf_thickness.
+
     // Debug / diagnostics
     bool vascular_debug_log = false;        // write per-junction vascular flow to debug/vascular_log.csv
     uint32_t current_tick = 0;              // set by caller each tick; used to label vascular log rows
@@ -93,6 +111,12 @@ inline WorldParams default_world_params() {
         .meristem_mass           = 0.1f,
         .ground_support_height   = 0.5f,
         .droop_rate              = 0.01f,
+        .max_phloem_velocity     = 10.0f,
+        .phloem_iterations       = 3,
+        .phloem_reference_radius = 0.015f,
+        .phloem_ring_thickness   = 0.002f,
+        .max_sugar_concentration = 300.0f,
+        .leaf_thickness          = 0.003f,
     };
 }
 

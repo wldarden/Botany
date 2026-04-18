@@ -159,16 +159,16 @@ TEST_CASE("Vascularization: auxin flux builds auxin_flow_bias from zero", "[vasc
 }
 
 // -----------------------------------------------------------------------
-// Test 4: Conductance-first vascular distribution favors the high-bias branch
+// Test 4: Münch phloem delivers to symmetric sinks equally.
 //
 // Topology: seed → leaf_src (phloem source) + stem_high→apical_high (sink) +
 //                                               stem_low→apical_low  (sink).
-// stem_high has 2× the auxin_flow_bias of stem_low (both above
-// vascular_radius_threshold so both are vascular conduits).
-// Both apicals start empty, so they have equal demand.  leaf_src provides
-// limited sugar (surplus < combined demand), forcing the water-filling loop
-// to ration by conductance weight: weight = pipe_cap × (1 + bias).
-// The high-bias branch (weight 3×) receives more than the low-bias (weight 2×).
+// Both stems/apicals have identical geometry.  stem_high has higher
+// auxin_flow_bias but under the Münch pressure-flow model phloem routing is
+// driven by osmotic pressure gradients and pipe cross-section area, NOT by
+// auxin_flow_bias.  Canalization bias still governs xylem (water/cytokinin)
+// distribution but not phloem.
+// Both apicals start empty with equal geometry → they receive equal sugar.
 // -----------------------------------------------------------------------
 TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias branch", "[vascularization]") {
     Genome g = frozen_genome();
@@ -177,9 +177,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     Plant plant(g, glm::vec3(0.0f));
     Node* seed = plant.seed_mut();
 
-    // Leaf source: leaf_size = 1.0 → sugar_cap = 2.0, reserve = 0.6 (phloem_reserve_fraction=0.3).
-    // Setting sugar = 0.605 → surplus = 0.005, which is less than the combined
-    // demand of the two apicals (0.005g each at cap=0.1, sink_fraction=0.05), so rationing applies.
+    // Leaf source: leaf_size = 1.0 dm.
     Node* leaf_src = plant.create_node(NodeType::LEAF,
                                        glm::vec3(0.1f, 0.0f, 0.0f), 0.01f);
     leaf_src->as_leaf()->leaf_size = 1.0f;
@@ -193,7 +191,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
                                           glm::vec3(0.0f,  0.1f, 0.0f), 0.02f);
     seed->add_child(stem_high);
     stem_high->add_child(apical_high);
-    seed->auxin_flow_bias[stem_high] = 2.0f;  // above vascular_radius_threshold
+    seed->auxin_flow_bias[stem_high] = 2.0f;
 
     Node* stem_low   = plant.create_node(NodeType::STEM,
                                          glm::vec3( 0.3f, 0.5f, 0.0f), stem_r);
@@ -201,36 +199,30 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
                                          glm::vec3(0.0f,  0.1f, 0.0f), 0.02f);
     seed->add_child(stem_low);
     stem_low->add_child(apical_low);
-    seed->auxin_flow_bias[stem_low] = 1.0f;   // above vascular_radius_threshold
+    seed->auxin_flow_bias[stem_low] = 1.0f;
 
-    // Pre-fill every default node to its cap so their sugar demand = 0.
-    // This isolates our two test apicals as the only active phloem sinks.
+    // Pre-fill every node to its cap so only the test apicals are sinks.
     plant.for_each_node_mut([&](Node& n) {
         if (&n != leaf_src && &n != apical_high && &n != apical_low)
             n.chemical(ChemicalID::Sugar) = sugar_cap(n, g);
     });
-    // Set the leaf source and empty sinks after the fill.
     leaf_src->chemical(ChemicalID::Sugar)   = 0.605f;
     apical_high->chemical(ChemicalID::Sugar) = 0.0f;
     apical_low->chemical(ChemicalID::Sugar)  = 0.0f;
-    // Drain the seed to below its phloem reserve so it doesn't act as a
-    // confounding source. The seed was filled to its 48g cap above, giving
-    // it 33.6g surplus — far exceeding the combined 0.01g apical demand and
-    // filling both apicals to cap equally, which defeats the conductance-
-    // weighting assertion (got_high > got_low).
     seed->chemical(ChemicalID::Sugar) = 0.0f;
 
-    // Single vascular transport pass — tests the distribution algorithm directly.
     vascular_transport(plant, g, static_world());
 
     float got_high = apical_high->chemical(ChemicalID::Sugar);
     float got_low  = apical_low->chemical(ChemicalID::Sugar);
 
-    // Both branches received sugar (budget was non-zero), but the high-bias
-    // branch (weight 3×) received proportionally more than the low-bias (2×).
+    // Under Münch flow, both apicals receive sugar from their parent stems
+    // (which are filled to cap, giving a steep concentration gradient).
+    // Geometry is symmetric → both receive equal amounts.
+    // Note: auxin_flow_bias is irrelevant for Münch phloem; it governs xylem only.
     REQUIRE(got_high > 0.0f);
     REQUIRE(got_low  > 0.0f);
-    REQUIRE(got_high > got_low);
+    REQUIRE(got_high == Approx(got_low).margin(1e-5f));
 }
 
 // -----------------------------------------------------------------------

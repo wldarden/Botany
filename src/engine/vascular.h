@@ -18,6 +18,11 @@ class Node;
 // Pass world so the call can gate optional debug logging via world.vascular_debug_log.
 void vascular_transport(Plant& plant, const Genome& g, const WorldParams& world);
 
+// Münch pressure-flow phloem resolve.
+// Three passes: leaf loading (pre-Jacobi), Jacobi pipe-network resolution,
+// meristem unloading (post-Jacobi).  Called from vascular_transport().
+void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world);
+
 // Is this chemical transported via vasculature (bulk flow)?
 inline bool is_vascular_chemical(ChemicalID id) {
     return id == ChemicalID::Sugar || id == ChemicalID::Water || id == ChemicalID::Cytokinin;

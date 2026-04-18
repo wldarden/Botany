@@ -178,6 +178,26 @@ struct Genome {
                                           // Set below initial_radius (0.015 dm) so newly spawned
                                           // internodes qualify from birth. Only pre-initial-radius
                                           // manually-created nodes stay excluded.
+
+    // Münch pressure-flow phloem parameters
+    float phloem_osmotic_coefficient;     // maps sugar concentration [g/dm³] to osmotic pressure.
+                                          // pressure = (sugar/volume) × coefficient × water_frac.
+                                          // Primary calibration knob: evolution tunes how strongly
+                                          // concentration gradients drive phloem flow.
+    float conductance_per_pressure;       // dm/tick per (g/dm³) gradient — converts pressure diff to velocity.
+                                          // velocity = min(dp × conductance_per_pressure, max_phloem_velocity).
+                                          // At gradient=20 g/dm³: vel=10 dm/tick (at cap).
+                                          // Replaces phloem_conductance for the Jacobi resolve pass.
+    float phloem_unloading_meristem;      // permeability for APICAL and ROOT_APICAL sink nodes.
+                                          // Fraction of (gradient × desired_sugar) that crosses the
+                                          // sieve tube membrane into local tissue per tick.
+                                          // High: actively growing tip consuming continuously.
+    float phloem_unloading_leaf;          // permeability for LEAF nodes — bidirectional:
+                                          // loading when local conc > stream, unloading when reversed.
+    float phloem_unloading_root;          // permeability for mature ROOT conduit — mainly sealed pipe,
+                                          // some maintenance leakage.
+    float phloem_unloading_stem;          // permeability for STEM conduit — very low (sealed phloem),
+                                          // minimal leakage for surface-area maintenance only.
 };
 
 inline Genome default_genome() {
@@ -330,6 +350,14 @@ inline Genome default_genome() {
         .meristem_sink_fraction = 0.05f,      // max demand per tick = 5% of cap (0.005g at cap=0.1) — well
                                               // below leaf production; meristem can't starve the plant
         .vascular_radius_threshold = 0.01f,   // dm — below initial_radius (0.015), all new internodes qualify from birth
+
+        // Münch pressure-flow phloem
+        .phloem_osmotic_coefficient = 1.0f,   // 1:1 mapping from concentration to pressure (calibrate via conductance_per_pressure)
+        .conductance_per_pressure   = 0.5f,   // at gradient=20 g/dm³: vel=10 dm/tick (at cap); at 5 g/dm³: 2.5 dm/tick
+        .phloem_unloading_meristem  = 0.08f,  // active sink — covers growth cost (~0.015g/tick) plus maintenance
+        .phloem_unloading_leaf      = 0.10f,  // efficient loader/unloader; mature leaf clears surplus in ~1 tick
+        .phloem_unloading_root      = 0.008f, // 4× more permeable than stem — ray parenchyma and root hairs
+        .phloem_unloading_stem      = 0.002f, // sealed pipe; ~50× less permeable than leaf (key ratio)
     };
 }
 
