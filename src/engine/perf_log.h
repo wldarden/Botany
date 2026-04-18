@@ -22,6 +22,11 @@ struct PerfStats {
     double node_droop_break_ms = 0;
     double node_transport_ms = 0;
 
+    // Per-tick sugar accounting (g glucose, summed across all nodes in all plants)
+    float sugar_spent_maintenance = 0;  // consumed by maintenance this tick
+    float sugar_spent_growth      = 0;  // consumed by growth / phototropism this tick
+    float sugar_spent_transport   = 0;  // moved between nodes this tick (= total exported = total imported)
+
     uint32_t node_count = 0;
     uint32_t apical_count = 0;
 
@@ -34,7 +39,8 @@ public:
         file_.open(path);
         if (file_) {
             file_ << "tick,nodes,SA,total_ms,light_ms,plant_ms,debug_ms,"
-                  << "position_ms,maintenance_ms,grow_ms,mass_stress_ms,droop_break_ms,transport_ms\n";
+                  << "position_ms,maintenance_ms,grow_ms,mass_stress_ms,droop_break_ms,transport_ms,"
+                  << "sugar_spent_maintenance,sugar_spent_growth,sugar_spent_transport\n";
         }
     }
 
@@ -58,7 +64,10 @@ public:
               << stats_.node_grow_ms << ","
               << stats_.node_mass_stress_ms << ","
               << stats_.node_droop_break_ms << ","
-              << stats_.node_transport_ms << "\n";
+              << stats_.node_transport_ms << ","
+              << stats_.sugar_spent_maintenance << ","
+              << stats_.sugar_spent_growth << ","
+              << stats_.sugar_spent_transport << "\n";
         stats_.reset();
     }
 

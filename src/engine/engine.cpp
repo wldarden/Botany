@@ -39,9 +39,15 @@ void Engine::tick() {
     }
 
     if (perf) {
-        // Count nodes for this tick
+        // Count nodes and aggregate per-node sugar accounting for this tick.
+        auto& s = perf_log_.stats();
         for (const auto& plant : plants_) {
-            perf_log_.stats().node_count += plant->node_count();
+            s.node_count += plant->node_count();
+            plant->for_each_node([&](const Node& n) {
+                s.sugar_spent_maintenance += n.tick_sugar_maintenance;
+                if (n.tick_sugar_activity  < 0.0f) s.sugar_spent_growth    += -n.tick_sugar_activity;
+                if (n.tick_sugar_transport < 0.0f) s.sugar_spent_transport += -n.tick_sugar_transport;
+            });
         }
         perf_log_.flush(tick_);
     }
