@@ -265,16 +265,65 @@ These are WorldParams (physical constants), not genome params — they represent
 | Parameter | Default | Notes |
 |---|---|---|
 | `phloem_osmotic_coefficient` | 1.0 | Maps sugar concentration [g/g-cap] to osmotic pressure. At concentration 1.0 with full water: pressure = 1.0. The primary flow-rate calibration knob. |
-| `phloem_unloading_meristem` | 0.5 | Unloading permeability for APICAL and ROOT_APICAL nodes. High — actively growing, fast consumption. |
-| `phloem_unloading_leaf` | 0.2 | Unloading permeability for young LEAF nodes (still expanding). Moderate — transitioning sink. Mature leaves near photosynthetic maximum will have near-equilibrium local sugar and so unload little regardless. |
-| `phloem_unloading_root` | 0.05 | Unloading permeability for mature ROOT nodes. Low — mainly conduit. |
-| `phloem_unloading_stem` | 0.01 | Unloading permeability for STEM nodes. Very low — sealed phloem, minimal leakage. |
+| `phloem_unloading_meristem` | 0.08 | Permeability for APICAL and ROOT_APICAL nodes. Active sink — growing tissue consumes continuously, keeping local sugar low. See calibration table below. |
+| `phloem_unloading_leaf` | 0.10 | Permeability for LEAF nodes. Used for both loading (mature leaf → phloem) and unloading (young leaf ← phloem). Direction determined by gradient. See calibration table below. |
+| `phloem_unloading_root` | 0.008 | Permeability for mature ROOT conduit nodes. Low — mainly sealed pipe with some maintenance leakage. See calibration table below. |
+| `phloem_unloading_stem` | 0.002 | Permeability for STEM conduit nodes. Very low — sealed phloem, minimal leakage for surface maintenance only. See calibration table below. |
 
 **`phloem_conductance`** — already in genome (default 8.0). Retained and repurposed: it scales how much flow volume passes through each edge per unit pressure difference per tick, alongside the r²-based speed limit. Acts as an overall phloem throughput knob for evolution to tune.
 
 ### Parameters removed (were in genome, now deleted)
 
 `meristem_sink_fraction`, `phloem_reserve_fraction` — see Section 5.
+
+---
+
+## 6b. Permeability Calibration
+
+### Anchor point
+
+Leaf photosynthesis rate: `0.02 g/(dm²·hr)` at full sun (WorldParams). A full-size leaf (1.5 dm²) produces `0.03 g/tick` gross. After ~`0.01 g` maintenance + growth consumption during the DFS tick, it has roughly `0.02 g` surplus available to load into phloem. Permeability values are set so this surplus clears in approximately one tick under a typical concentration gradient.
+
+### The formula
+
+```
+exchange = (phloem_concentration - local_concentration) × permeability
+```
+
+The formula is **bidirectional**: when `local > phloem`, sugar enters the pipe (loading). When `phloem > local`, sugar exits (unloading). The same permeability param handles both directions. Direction is determined entirely by the concentration gradient — no separate loading vs. unloading classification.
+
+### Calibration table
+
+| Tissue | Permeability | At typical gradient | Exchange rate | Rationale |
+|--------|-------------|-------------------|---------------|-----------|
+| Mature leaf | 0.10 | ~0.5 (leaf full, phloem empty) | ~0.05 g/tick | Efficient loader with companion cells; clears full surplus in ~1 tick |
+| Young leaf | ~0.06 | ~0.4 (growing, depleted) | ~0.024 g/tick | Developing companion cells; still transitioning from sink to source |
+| Meristem | 0.08 | ~0.25 (consumed, phloem moderate) | ~0.02 g/tick | Active sink; covers growth cost (~0.015g/tick) plus maintenance comfortably |
+| Root tip | 0.08 | ~0.25 | ~0.02 g/tick | Same growth demand as shoot meristem |
+| Mature stem | 0.002 | ~0.3 (conduit near equilibrium) | ~0.0006 g/tick | Sealed pipe; covers surface-area maintenance, passes most flow through |
+| Mature root | 0.008 | ~0.3 | ~0.0024 g/tick | More living tissue than stem (ray parenchyma, root hairs); slightly more permeable |
+
+**Key ratio:** Leaf loading should be ~20–100× stem leakage. At these values the ratio is 50× (0.10 / 0.002). This ensures most sugar flows *through* stem conduits to distant sinks rather than being absorbed locally by the pipe itself.
+
+### Young leaf distinction
+
+The table shows mature leaf (0.10) and young leaf (~0.06) as separate rows. In code, a single `phloem_unloading_leaf = 0.10` is used for all LEAF nodes. Young leaves have depleted local sugar from active expansion — this naturally steepens the gradient in the unloading direction, so they receive more sugar per tick than the permeability alone suggests. Mature leaves have local sugar near photosynthetic saturation, which flattens the gradient in the loading direction, so the effective loading rate is gradient-limited rather than permeability-limited. The single param handles both cases through gradient dynamics.
+
+If this distinction becomes important to tune independently, add `phloem_unloading_leaf_young` and gate by `leaf_size < g.max_leaf_size × 0.9`.
+
+### On directionality and starch mobilization
+
+The bidirectional formula is how starch mobilization in stems creates local sources. When a stem mobilizes starch to sugar, local sugar concentration rises above the phloem stream concentration. The gradient reverses: `local > phloem`. The same permeability formula now loads sugar *into* the pipe from that stem node. This creates a local pressure peak that drives outward flow toward adjacent sinks — without any source classification, without any special case. The Münch model handles it identically to a productive leaf.
+
+### Saturation (future)
+
+Real leaf loading uses membrane transporters (SUC/SUT family) with Michaelis-Menten kinetics. When phloem sucrose concentration is high (saturated phloem), the effective permeability decreases — less sugar loads even if the leaf has surplus. The constant-permeability model is a valid first pass. Add saturation if leaves over-load when phloem is full:
+
+```
+effective_permeability = phloem_unloading_leaf × (1.0 - phloem_conc / phloem_saturation_conc)
+```
+
+Leave this for after initial calibration confirms the behavior is actually a problem.
 
 ---
 
