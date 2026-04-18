@@ -92,15 +92,14 @@ TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
 
 // === Consumption tests ===
 
-TEST_CASE("Stem maintenance_cost is volume-based", "[sugar]") {
+TEST_CASE("Stem maintenance_cost scales with surface area (πrL)", "[sugar]") {
     Genome g = default_genome();
     WorldParams wp = default_world_params();
     Plant plant(g, glm::vec3(0.0f));
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.1f);
     float length = glm::length(stem->offset);
-    float volume = 3.14159f * 0.1f * 0.1f * length;
-    float expected = wp.sugar_maintenance_stem * volume;
+    float expected = wp.sugar_maintenance_stem * 3.14159f * 0.1f * length;
     REQUIRE_THAT(stem->maintenance_cost(wp), WithinAbs(expected, 1e-6));
 }
 

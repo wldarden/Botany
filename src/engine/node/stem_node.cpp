@@ -157,9 +157,12 @@ void StemNode::compute_growth_reserve(const Genome& g, const WorldParams& world)
 }
 
 float StemNode::maintenance_cost(const WorldParams& world) const {
+    // Living tissue in a mature stem is a thin ring at the surface (cambium, inner bark,
+    // ray parenchyma). The interior is dead wood — zero maintenance. Scale with half the
+    // lateral surface area (πrL) rather than volume (πr²L) so that thick trunks don't
+    // pay unrealistically high costs relative to their living fraction.
     float length = std::max(glm::length(offset), 0.01f);
-    float volume = 3.14159f * radius * radius * length;
-    return world.sugar_maintenance_stem * volume;
+    return world.sugar_maintenance_stem * 3.14159f * radius * length;
 }
 
 } // namespace botany

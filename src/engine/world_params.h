@@ -31,12 +31,17 @@ struct WorldParams {
     float sugar_cost_phototropism = 0.001f;      // g glucose / radian of leaf turning
 
     // Maintenance costs — respiration energy per unit tissue per hour.
-    // Leaf: ~10% of gross photosynthesis. Stem: mid-range sapwood (mostly dead cells).
-    // Root: slightly below stem (fine roots are active but less dense).
+    // Leaf: ~10% of gross photosynthesis. Stem/root: living ring (cambium, inner bark,
+    // ray parenchyma) around a dead wood core — scales with surface area, not volume.
     // Meristem: metabolically active growing tissue.
     float sugar_maintenance_leaf     = 0.002f;   // g glucose / (dm² leaf area · hr)
-    float sugar_maintenance_stem     = 0.01f;    // g glucose / (dm³ stem volume · hr)
-    float sugar_maintenance_root     = 0.004f;   // g glucose / (dm³ root volume · hr)
+    float sugar_maintenance_stem     = 0.002f;   // g glucose / (dm² living bark surface · hr)
+                                                 //   formula: π × radius × length × rate
+                                                 //   young stem (r=0.015, L=0.5): 4.7×10⁻⁵ g/tick
+                                                 //   mature trunk (r=0.1, L=1.0): 6.3×10⁻⁴ g/tick
+                                                 //   real range: 0.001–0.005 g/(dm²·hr); 0.002 is midpoint
+    float sugar_maintenance_root     = 0.002f;   // g glucose / (dm² living root surface · hr)
+                                                 //   same formula as stem — living ring around stele
     float sugar_maintenance_meristem = 0.0005f;  // g glucose / hr per active meristem tip
     float sugar_meristem_photosynthesis = 0.0f;  // shoot meristem self-photosynthesis as a multiple of maintenance cost (0 = heterotrophic, real apex meristems depend entirely on leaf sugar)
 
@@ -74,8 +79,8 @@ inline WorldParams default_world_params() {
         .sugar_cost_leaf_growth  = 1.5f,
         .sugar_cost_phototropism = 0.001f,
         .sugar_maintenance_leaf     = 0.002f,
-        .sugar_maintenance_stem     = 0.01f,
-        .sugar_maintenance_root     = 0.004f,
+        .sugar_maintenance_stem     = 0.002f,
+        .sugar_maintenance_root     = 0.002f,
         .sugar_maintenance_meristem = 0.0005f,
         .sugar_meristem_photosynthesis = 0.0f,
         .light_cell_size         = 0.075f,

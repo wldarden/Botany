@@ -114,9 +114,10 @@ void RootNode::compute_growth_reserve(const Genome& g, const WorldParams& world)
 }
 
 float RootNode::maintenance_cost(const WorldParams& world) const {
+    // Same biology as stems: living ring (endodermis, pericycle, ray parenchyma)
+    // around a dead stele core. Scale with half the lateral surface area (πrL).
     float length = std::max(glm::length(offset), 0.01f);
-    float volume = 3.14159f * radius * radius * length;
-    return world.sugar_maintenance_root * volume;
+    return world.sugar_maintenance_root * 3.14159f * radius * length;
 }
 
 } // namespace botany
