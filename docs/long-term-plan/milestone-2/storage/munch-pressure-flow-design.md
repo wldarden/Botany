@@ -130,61 +130,65 @@ Unloading permeabilities differ by tissue type. Meristems have high permeability
 
 ### 4.1 Pressure computation
 
-After the DFS tick, compute phloem osmotic pressure at every vascular node using **phloem concentration** (g/dm³) — sugar divided by the volume of living phloem tissue, not total node volume:
+After the DFS tick, compute phloem osmotic pressure at every vascular node using **bulk sugar concentration** (g/dm³) — sugar divided by total node volume. Using total volume rather than ring-only volume prevents the 85× concentration asymmetry between leaves and stems that inverts flow direction (see trial calculation and worked examples below):
 
 ```
 for each vascular node n:
-    phloem_vol  = phloem_volume(n)         // dm³ — phloem ring for stems/roots; total for leaves/meristems
-    sugar_conc  = n.sugar / phloem_vol     // g/dm³ — sugar concentration in the phloem compartment
+    node_vol    = node_volume(n)           // dm³ — total node volume (full cylinder for stems/roots)
+    sugar_conc  = n.sugar / node_vol       // g/dm³ — bulk sugar concentration
     water_frac  = clamp(n.water / water_cap(n, g), 0.0, 1.0)
     phloem_pressure[n] = sugar_conc × g.phloem_osmotic_coefficient × water_frac
 ```
 
-**Phloem volume formulas by node type:**
+**Two volume concepts — used for different purposes:**
 
-| Node type | Formula | Role in phloem_resolve | Notes |
+- **`node_volume(n)`** — total node volume, used for **concentration** (pressure) and **sugar cap**. Full cylinder for stems/roots (including heartwood — the dilution is intentional; it prevents ring-volume concentrations from making stems appear as higher-pressure than leaves at realistic sugar levels).
+- **`phloem_ring_area(r, t)`** — phloem ring cross-section, used exclusively for **pipe capacity** in the flow formula (`flow_vol = velocity × ring_area`). Heartwood excluded. Scales linearly with r.
+
+| Node type | `node_volume` formula | `phloem_ring_area` | Role in phloem_resolve |
 |-----------|---------|------------------------|-------|
-| STEM, ROOT | `π × (2r×t - t²) × \|offset\|` | **BFS conduit** — pressure computed here; BFS routes through these nodes | Phloem ring × length. `t = phloem_ring_thickness = 0.002 dm`. Heartwood core excluded. |
-| SEED | `π × r² × \|offset\|` | **BFS source** — total cylinder volume (storage organ, no heartwood exclusion) | Seed is a storage organ, not a thin-walled conduit. Using ring volume gives ~7×10⁻⁶ dm³ for a typical seed node — far too small to represent mobilisable reserves. Total volume used instead. In the real plant, this represents the seed endosperm / hypocotyl tissue that mobilises starch to sugar. |
-| LEAF | `leaf_size² × world.leaf_thickness` | **Endpoint source** — not in BFS graph; loads into parent stem pre-BFS via permeability formula. `leaf_thickness ≈ 0.003 dm`. | Leaf phloem concentration drives the loading gradient; the loading itself uses the parent ring's pipe_cap (not the leaf's volume) to prevent overflowing the ring. |
-| APICAL, ROOT_APICAL | `(4/3)π × radius³` | **Terminal sinks** — not in BFS graph; unload from parent stem post-BFS. | Meristem unloading is capped at meristem room = `sphere_vol × max_conc − meristem.sugar`. Without this cap, a parent at 300 g/dm³ would fill the tiny sphere many times over in one tick. |
+| STEM, ROOT | `π × r² × \|offset\|` (full cylinder) | `π × (2r×t - t²)` | **BFS conduit** — pressure from full cylinder volume; pipe flow uses ring area |
+| SEED | `π × r² × \|offset\|` | `π × (2r×t - t²)` | **BFS source** — total cylinder (storage organ; no heartwood to exclude) |
+| LEAF | `leaf_size² × world.leaf_thickness` | N/A — uses parent stem's ring for pipe_cap | **Endpoint source** — not in BFS graph; loads into parent stem pre-BFS |
+| APICAL, ROOT_APICAL | `(4/3)π × radius³` | N/A — uses parent stem's ring for pipe_cap | **Terminal sinks** — not in BFS graph; unload from parent stem post-BFS |
 
 **Ring area helper:**  `phloem_ring_area(r, t) = π × (2r×t - t²)`. For r >> t, this ≈ 2π×r×t.
 
-**Worked examples** (`t = 0.002 dm`):
-- Young stem (r=0.015 dm): ring area = π×(0.06×0.002 − 0.000004) ≈ 0.000176 dm². For L=0.3 dm: phloem_vol ≈ 5.3×10⁻⁵ dm³. Ring ≈ 18% of total cross-section.
-- Mature stem (r=0.1 dm): ring area = π×(0.2×0.002 − 0.000004) ≈ 0.00124 dm². For L=1.0 dm: phloem_vol ≈ 1.24×10⁻³ dm³. Ring ≈ 4% of total cross-section.
-- Thick trunk (r=0.5 dm): ring area ≈ π×0.001996 ≈ 0.00627 dm². Ring < 1% of total cross-section.
+**Worked examples** — showing why full node volume fixes flow direction:
+- Young stem (r=0.015 dm, L=0.3 dm): ring area ≈ 0.000176 dm². node_vol = π × 0.015² × 0.3 ≈ 2.12×10⁻⁴ dm³. With 0.001g sugar: **bulk conc ≈ 4.72 g/dm³** (vs. 19 g/dm³ with ring vol — 4× lower).
+- Mature stem (r=0.1 dm, L=1.0 dm): ring area ≈ 0.00124 dm². node_vol = π × 0.1² × 1.0 ≈ 0.0314 dm³. With 0.1g sugar: **bulk conc ≈ 3.18 g/dm³** (vs. 80 g/dm³ with ring vol — 25× lower).
+- Leaf (leaf_size=0.5 dm): node_vol = 0.25 × 0.003 = 7.5×10⁻⁴ dm³. With 0.03g post-photosynthesis sugar: **conc ≈ 40 g/dm³**. Leaf pressure (~40) is ~9× higher than adjacent young stem (~4.7) — flow goes leaf→stem. ✓
 
-A trunk carrying 0.1 g sugar has a phloem concentration of ~80 g/dm³ (0.1 / 0.00124) — far higher than the whole-cross-section average of ~3 g/dm³. This is correct: real phloem sap IS concentrated sieve tube solution, not diluted across dead wood.
+`node_volume` and `phloem_ring_area` are derived from live geometry fields — no stored parameters, no per-tissue density lookups. If volume is zero or degenerate (new node with zero offset), return 0 pressure.
 
-`phloem_volume` returns a geometric volume from live fields — no stored parameter, no per-tissue density lookup. If volume is zero or degenerate (new node with zero offset), return 0 pressure.
-
-- Leaves with high post-photosynthesis sugar → high phloem g/dm³ concentration → high pressure → they are sources
+- Leaves with high post-photosynthesis sugar → high bulk g/dm³ concentration → high pressure → they are sources
 - Meristems after consuming for growth → low g/dm³ → low pressure → they are sinks
 - Stems equilibrate between their upstream source and downstream sink
 - Drought (low water_frac) suppresses pressure even with abundant sugar — phloem stalls
 
-No loading boost. No classification. No reserve floor. No per-tissue cap lookup. Pressure is computed purely from phloem geometry and the actual post-consumption chemical state of the node.
+No loading boost. No classification. No reserve floor. No per-tissue cap lookup. Pressure is computed purely from node geometry and the actual post-consumption chemical state of the node.
 
 ### 4.2 Distance-limited BFS from sources
 
 Each high-pressure node is a source. From each source, walk outward toward lower-pressure neighbors, spending a time budget of 1.0 tick. Each edge consumes time based on its physical length and the local phloem velocity.
 
-**Phloem velocity at an edge:**
+**Phloem velocity at an edge** (velocity-capped model):
+
+Pressure drives velocity, but sieve plate resistance and sap viscosity impose a physical upper limit:
 
 ```
-r_eff   = min(parent.radius, child.radius)     // bottleneck end
-speed   = world.base_phloem_speed × (r_eff² / world.phloem_reference_radius²)
+pressure_diff = phloem_pressure[node] - phloem_pressure[neighbor]
+velocity = pressure_diff × g.conductance_per_pressure    // dm/tick per (g/dm³) gradient
+velocity = min(velocity, world.max_phloem_velocity)      // physical cap: ~10 dm/tick (= 1 m/hr)
 ```
 
-`base_phloem_speed` is the phloem velocity at `phloem_reference_radius`. The r² scaling follows Hagen-Poiseuille: wider pipes carry flow proportionally faster. A thin bottleneck segment (young internode) slows the wave; a wide trunk carries it quickly. Crucially: 1000 short segments vs. 1 long segment covering the same distance cost the same total time budget.
+`conductance_per_pressure` maps osmotic pressure gradient [g/dm³] to sap velocity [dm/tick]. `max_phloem_velocity` is the hard physical ceiling — prevents astronomical flow rates at high-gradient edges (e.g., a leaf at 40 g/dm³ adjacent to an almost-empty stem at 0.5 g/dm³). Wider pipes carry more sugar per tick at the same velocity via the ring area in the flow formula, not via higher velocity.
 
 **Time cost per edge:**
 
 ```
 edge_length = |child.position - parent.position|     // dm
-time_cost   = edge_length / speed                    // ticks
+time_cost   = edge_length / velocity                 // ticks — same velocity drives BFS traversal and flow volume
 ```
 
 **BFS walk from one source node:**
@@ -199,16 +203,17 @@ while queue not empty:
         edge = edge between node and neighbor
         time_cost = edge_length / speed(edge)
 
+        pressure_diff = phloem_pressure[node] - phloem_pressure[neighbor]
         if time_cost >= budget:
             time_fraction = budget / time_cost
             // partial edge — flow arrives but budget exhausted
             apply_flow(edge, source=node, dest=neighbor,
-                       stream_conc=stream_conc, fraction=time_fraction)
+                       pressure_diff=pressure_diff, stream_conc=stream_conc, fraction=time_fraction)
             // do NOT enqueue neighbor (budget used up)
         else:
             time_fraction = 1.0
             stream_conc_after = apply_flow(edge, source=node, dest=neighbor,
-                                           stream_conc=stream_conc, fraction=1.0)
+                                           pressure_diff=pressure_diff, stream_conc=stream_conc, fraction=1.0)
             enqueue(neighbor, budget - time_cost, stream_conc_after)
 ```
 
@@ -224,14 +229,22 @@ for each node:
 `apply_flow` at each traversed edge:
 
 ```
-function apply_flow(edge, source, dest, stream_conc, fraction):
-    // How much sugar flows toward dest in this partial tick
-    // stream_conc is in g/dm³ (phloem concentration)
-    pipe_cap = phloem_ring_area(r_eff, t) × g.phloem_conductance   // phloem ring cross-section, not π×r²
-    flow_vol = stream_conc × pipe_cap × fraction
+function apply_flow(edge, source, dest, pressure_diff, stream_conc, fraction):
+    // Velocity is bounded by sieve plate resistance (physical ceiling)
+    r_eff     = min(source.radius, dest.radius)
+    velocity  = pressure_diff × g.conductance_per_pressure
+    velocity  = min(velocity, world.max_phloem_velocity)
 
-    // Passive unloading: gradient between stream and dest phloem compartment (both in g/dm³)
-    dest_vol   = phloem_volume(dest)
+    // Volume of phloem sap moving through the pipe this partial tick
+    ring_area = phloem_ring_area(r_eff, t)           // pipe cross-section (ring only, not π×r²)
+    flow_vol  = velocity × ring_area × fraction      // dm³/tick
+
+    // Sugar dissolved in that sap; can't send more than source has
+    desired_sugar = flow_vol × stream_conc
+    desired_sugar = min(desired_sugar, source.sugar - accumulated_outflow[source])
+
+    // Passive unloading: gradient between stream and dest node (both in g/dm³)
+    dest_vol   = node_volume(dest)     // full node volume for concentration
     local_conc = (dest_vol > 0) ? dest.sugar / dest_vol : 0.0   // g/dm³
     gradient   = max(0, stream_conc - local_conc)
     unload     = gradient × unloading_permeability(dest.type) × flow_vol
@@ -249,25 +262,26 @@ function apply_flow(edge, source, dest, stream_conc, fraction):
 ```
 
 **Transit dead-end credit (conservation fix):** When BFS cannot continue from `dest`
-(no downhill neighbours or budget exhausted), the transit fraction `flow_vol − unload`
+(no downhill neighbours or budget exhausted), the transit fraction `desired_sugar − unload`
 has nowhere to go and disappears from the sugar balance. Credit it back to `dest`:
 
 ```
 bool will_continue = remaining > 1e-4f && stream_after > 1e-8f && has_downhill_neighbours(dest);
 if (!will_continue) {
-    delta[dest] += (flow_vol - unload);   // transit stays in dest's sieve tube
+    delta[dest] += (desired_sugar - unload);   // transit stays in dest's sieve tube
 }
 ```
 
 This ensures `delta[source] + delta[dest] = 0` for every hop, giving exact conservation.
 
-**Destination ring cap guard:** In addition to the source capacity guard, `flow_vol` must
-also be capped at the available room in the destination ring to prevent over-saturation when
+**Destination cap guard:** In addition to the source capacity guard, `desired_sugar` must
+also be capped at the available room in the destination node to prevent over-saturation when
 multiple sources target the same conduit:
 
 ```
-float dest_room = sugar_cap(dest) - (dest.sugar + accumulated_delta[dest]);
-flow_vol = std::min(flow_vol, std::max(0.0f, dest_room));
+float dest_cap  = node_volume(dest) * world.max_sugar_concentration;
+float dest_room = dest_cap - (dest.sugar + accumulated_delta[dest]);
+desired_sugar = std::min(desired_sugar, std::max(0.0f, dest_room));
 ```
 
 The stream starts at source concentration. At each sink it passes through, some sugar is unloaded. The first hungry sink (meristem, young leaf) gets the richest stream. A distant sink receives what's left. Priority emerges from physics — no explicit priority list needed.
@@ -339,19 +353,20 @@ for (int iter = 0; iter < world.phloem_iterations; ++iter) {
             if (dp <= 0.0f) return;   // cur is higher pressure: cur is sender
 
             Node& next = *flat[j].node;
-            float r_eff    = std::min(cur.radius, next.radius);
-            float pipe_cap = phloem_ring_area(r_eff, world.phloem_ring_thickness)
-                             * g.phloem_conductance;
-            float flow_vol = dp * pipe_cap;  // pressure gradient × conductance → volume flow
+            float r_eff      = std::min(cur.radius, next.radius);
+            float ring_area  = phloem_ring_area(r_eff, world.phloem_ring_thickness);
+            float velocity   = std::min(dp * g.conductance_per_pressure,
+                                        world.max_phloem_velocity);
+            float flow_vol   = velocity * ring_area;  // dm³/tick — velocity × cross-section
 
-            float cur_vol     = phloem_volume(cur, world);
+            float cur_vol     = node_volume(cur, world);    // full volume for concentration
             float cur_conc    = (cur_vol > 0)
                                 ? cur.chemical(ChemicalID::Sugar) / cur_vol : 0.0f;
             float desired_sugar = flow_vol * cur_conc;
 
             // Apply unloading: split desired_sugar into conduit transit + tissue delivery.
             // Same permeability formula as Section 4.3.
-            float next_vol       = phloem_volume(next, world);
+            float next_vol       = node_volume(next, world);   // full volume for concentration
             float next_local_conc = (next_vol > 0)
                                    ? next.chemical(ChemicalID::Sugar) / next_vol : 0.0f;
             float gradient = std::max(0.0f, cur_conc - next_local_conc);
@@ -391,7 +406,7 @@ for (int iter = 0; iter < world.phloem_iterations; ++iter) {
     for (int i = 0; i < N; ++i) {
         if (std::abs(iter_delta[i]) < 1e-10f) continue;
         Node& n = *flat[i].node;
-        float cap = phloem_volume(n, world) * world.max_sugar_concentration;
+        float cap = node_volume(n, world) * world.max_sugar_concentration;
         n.chemical(ChemicalID::Sugar) =
             std::clamp(n.chemical(ChemicalID::Sugar) + iter_delta[i], 0.0f, cap);
     }
@@ -405,7 +420,7 @@ for (int iter = 0; iter < world.phloem_iterations; ++iter) {
 | Property | BFS-per-source | Jacobi |
 |---|---|---|
 | Ordering bias | Yes — first source wins | None — all sources push simultaneously |
-| Multiple sinks from same conduit | Sequential fills; early walkers deplete capacity | Proportional by gradient × conductance |
+| Multiple sinks from same conduit | Sequential fills; early walkers deplete capacity | Proportional by gradient × conductance_per_pressure |
 | Conservation | Transit dead-end credit + shared running delta required | Fairness scaling; cap clamp is safety net |
 | Implementation complexity | Queue, source sorting, running delta bookkeeping | Two O(edges) passes per iteration; no queue |
 | Distance control | Continuous (time budget × r² speed) | Discrete (iteration count × hops) |
@@ -413,7 +428,7 @@ for (int iter = 0; iter < world.phloem_iterations; ++iter) {
 
 #### Swap footprint
 
-The Jacobi revision is contained entirely within `phloem_resolve()`. The BFS implementation (Task 5) and the Jacobi revision share the same function signature, the same pressure formula (`compute_phloem_pressure`), the same pipe capacity formula (`phloem_ring_area × conductance`), and the same endpoint passes (leaf loading pre-BFS, meristem unloading post-BFS). Swapping is a targeted rewrite of the resolution loop, not an architectural change.
+The Jacobi revision is contained entirely within `phloem_resolve()`. The BFS implementation (Task 5) and the Jacobi revision share the same function signature, the same pressure formula (`compute_phloem_pressure`), the same velocity-capped flow formula (`velocity × phloem_ring_area` with `max_phloem_velocity` cap), the same volume helpers (`node_volume`, `phloem_ring_area`), and the same endpoint passes (leaf loading pre-BFS, meristem unloading post-BFS). Swapping is a targeted rewrite of the resolution loop, not an architectural change.
 
 #### New WorldParam
 
@@ -454,11 +469,13 @@ Xylem Phase 1/Phase 2 (Water and Cytokinin) is **kept unchanged**.
 
 | Parameter | Default | Unit | Notes |
 |---|---|---|---|
-| `base_phloem_speed` | 5.0 | dm/tick (= 0.5 m/hr) | Phloem velocity at `phloem_reference_radius`. Real phloem: 0.3–1.5 m/hr. |
-| `phloem_reference_radius` | 0.05 | dm | Radius at which phloem speed equals `base_phloem_speed`. Young stems (r=0.015) are proportionally slower; thick trunks (r=0.1) proportionally faster. |
-| `phloem_ring_thickness` | 0.002 | dm (= 0.2 mm) | Thickness of the **full active sugar-handling zone**: sieve tubes + companion cells + phloem parenchyma. Real dicots: 0.1–0.5 mm wide, constant regardless of stem diameter. The trial calculation confirmed this value: every ring thickness from 0.2–5 mm satisfies the throughput constraint (a young stem carries 0.035 g/tick at just 6.6% of max concentration via the conductance multiplier). The ring does **not** need to hold the full leaf surplus per tick — it carries it as a flowing stream. t=0.002 dm is kept because it matches the real anatomy of the active phloem layer and gives the correct pressure numerics. Thicker values would lower pressure per gram of stored sugar, underdriving flow. Used in `phloem_ring_area(r, t) = π × (2r×t − t²)`. |
-| `max_sugar_concentration` | 300.0 | g/dm³ | Upper limit of phloem sap sucrose — roughly a 30% solution, matching real phloem sap. Used to cap the atomic delta apply: `sugar_cap = phloem_volume × max_sugar_concentration`. Replaces the per-tissue density params (`sugar_storage_density_wood`, `sugar_storage_density_leaf`, `sugar_cap_meristem`) with a single universal physical constant. |
-| `leaf_thickness` | 0.003 | dm | Leaf mesophyll thickness used in `phloem_volume` for LEAF nodes. `volume = leaf_size² × leaf_thickness`. |
+| `max_phloem_velocity` | 10.0 | dm/tick (= 1 m/hr) | Physical upper bound on phloem sap velocity — set by sieve plate resistance and sap viscosity. Real phloem: 0.3–1.5 m/hr; 10 dm/tick is the high end. Caps `velocity = pressure_diff × conductance_per_pressure` per edge. At max velocity through a young stem ring (~0.000176 dm²): max throughput = 10 × 0.000176 × 300 ≈ 0.53 g/tick — bounded but generous. |
+| `base_phloem_speed` | 5.0 | dm/tick | _Superseded by velocity-capped model (Section 4.2). Not used in phloem_resolve. Retained for reference — remove in a future cleanup._ |
+| `phloem_reference_radius` | 0.05 | dm | _Superseded by velocity-capped model. Not used. Retained for reference._ |
+| `phloem_ring_thickness` | 0.002 | dm (= 0.2 mm) | Thickness of the **full active sugar-handling zone**: sieve tubes + companion cells + phloem parenchyma. Real dicots: 0.1–0.5 mm wide, constant regardless of stem diameter. Used in `phloem_ring_area(r, t) = π × (2r×t − t²)` for pipe capacity only — not for concentration. |
+| `max_sugar_concentration` | 300.0 | g/dm³ | Upper limit of bulk sugar concentration per node — roughly a 30% sucrose solution, matching real phloem sap. Used to cap the atomic delta apply: `sugar_cap = node_volume(n) × max_sugar_concentration`. Replaces per-tissue density params with a single universal physical constant. |
+| `leaf_thickness` | 0.003 | dm | Leaf mesophyll thickness used in `node_volume` for LEAF nodes. `volume = leaf_size² × leaf_thickness`. |
+| `phloem_iterations` | 4 | iterations/tick | Inner Jacobi iterations per phloem_resolve call (Section 4.6 — planned replacement for BFS). Each iteration propagates sugar one edge. Default 4 = sugar travels up to 4 pipe sections per tick. |
 
 These are WorldParams (physical constants), not genome params — they represent phloem sieve tube biology and plant cell physics, not plant strategy.
 
@@ -472,15 +489,15 @@ These are WorldParams (physical constants), not genome params — they represent
 | `phloem_unloading_root` | 0.008 | Permeability for mature ROOT conduit nodes. Low — mainly sealed pipe with some maintenance leakage. See calibration table below. |
 | `phloem_unloading_stem` | 0.002 | Permeability for STEM conduit nodes. Very low — sealed phloem, minimal leakage for surface maintenance only. See calibration table below. |
 
-**`phloem_conductance`** — already in genome (default 8.0). Retained and repurposed: it scales how much flow volume passes through each edge per unit pressure difference per tick, alongside the r²-based speed limit. Acts as an overall phloem throughput knob for evolution to tune.
+**`conductance_per_pressure`** — replaces `phloem_conductance` (old default 8.0; recalibrated to ~0.5). Maps osmotic pressure gradient [g/dm³] to phloem sap velocity [dm/tick]. Together with `max_phloem_velocity`, determines how quickly the phloem stream accelerates to its physical speed limit. At `conductance_per_pressure = 0.5`, a gradient of 20 g/dm³ gives velocity = 10 dm/tick (at cap); a gradient of 5 g/dm³ gives 2.5 dm/tick. Acts as the primary phloem throughput calibration knob — evolution tunes how strongly concentration gradients drive flow.
 
 ### Parameters removed (were in genome, now deleted)
 
 `meristem_sink_fraction`, `phloem_reserve_fraction` — see Section 5.
 
-`sugar_storage_density_wood`, `sugar_storage_density_leaf`, `sugar_cap_meristem`, `sugar_cap_minimum` — replaced by `phloem_volume × world.max_sugar_concentration`. Sugar capacity is now derived from phloem ring geometry and a single universal concentration cap, not from per-tissue density lookups.
+`sugar_storage_density_wood`, `sugar_storage_density_leaf`, `sugar_cap_meristem`, `sugar_cap_minimum` — replaced by `node_volume(n) × world.max_sugar_concentration`. Sugar capacity is now derived from total node volume and a single universal concentration cap, not from per-tissue density lookups.
 
-**Broader cleanup note:** The existing `sugar_cap()` helper and per-tissue density params exist throughout the sim outside the Münch code. The Münch implementation is the first adopter of phloem-volume-based caps. The rest of the sim (maintenance costs, local diffusion headroom checks, etc.) still uses `sugar_cap()`. These should eventually be unified — replace `sugar_cap()` everywhere with `phloem_volume × max_sugar_concentration`. This is out of scope for the Münch implementation but the design here is intentionally forward-compatible: `phloem_ring_thickness` and `max_sugar_concentration` as WorldParams are the consolidation point.
+**Broader cleanup note:** The existing `sugar_cap()` helper and per-tissue density params exist throughout the sim outside the Münch code. The Münch implementation is the first adopter of `node_volume`-based caps. The rest of the sim (maintenance costs, local diffusion headroom checks, etc.) still uses `sugar_cap()`. These should eventually be unified — replace `sugar_cap()` everywhere with `node_volume(n) × max_sugar_concentration`. This is out of scope for the Münch implementation but the design here is intentionally forward-compatible: `max_sugar_concentration` as a WorldParam is the consolidation point.
 
 ---
 
@@ -490,7 +507,7 @@ These are WorldParams (physical constants), not genome params — they represent
 
 Leaf photosynthesis rate: `0.02 g/(dm²·hr)` at full sun (WorldParams). A full-size leaf (1.5 dm²) produces `0.03 g/tick` gross. After ~`0.01 g` maintenance + growth consumption during the DFS tick, it has roughly `0.02 g` surplus available to load into phloem. Leaf phloem volume ≈ `1.5² × 0.003 ≈ 0.007 dm³` (all living tissue), so surplus concentration ≈ `0.02 / 0.007 ≈ 3 g/dm³` above phloem stream. Permeability values are set so this surplus clears in approximately one tick.
 
-For stems in the calibration table, phloem concentration uses the ring volume, not the full cross-section. A mature stem conduit (r=0.1, t=0.002, L=1.0 dm) has phloem_vol ≈ 0.00124 dm³. If it holds 0.1g sugar: phloem concentration ≈ 80 g/dm³. A young stem (r=0.015, t=0.002, L=0.3 dm) with 0.001g sugar: phloem concentration ≈ 0.001 / 0.000053 ≈ 19 g/dm³.
+For stems in the calibration table, pressure uses **full node volume** (total cylinder), not ring volume. A mature stem conduit (r=0.1, L=1.0 dm) has node_vol = π × 0.1² × 1.0 ≈ 0.0314 dm³. If it holds 0.1g sugar: bulk concentration ≈ 3.18 g/dm³. A young stem (r=0.015, L=0.3 dm) node_vol ≈ 2.12×10⁻⁴ dm³. With 0.001g sugar: bulk concentration ≈ 4.72 g/dm³. A leaf (leaf_size=0.5 dm) with 0.03g surplus: concentration ≈ 40 g/dm³. Leaf pressure (~40) exceeds stem pressure (~5) — flow goes leaf→stem as expected. Ring area is used only for pipe capacity in the flow formula, not for concentration.
 
 ### The formula
 
@@ -551,15 +568,15 @@ The coupling is naturally unidirectional: phloem flow does not return water to x
 
 ### 7.2 PIN transport and canalization
 
-The Münch model uses `phloem_ring_area(r, t) × phloem_conductance` pipe capacity. The ring area `π × (2r×t − t²)` grows linearly with radius (for r >> t) rather than quadratically, but the canalization feedback is structurally identical:
+The Münch model uses `velocity × phloem_ring_area(r, t)` for pipe flow volume, where velocity is bounded by pressure gradient and `max_phloem_velocity`. The ring area `π × (2r×t − t²)` grows linearly with radius (for r >> t) rather than quadratically, but the canalization feedback is structurally identical:
 
 ```
 PIN auxin flux → auxin_flow_bias → cambium activation → radius grows →
-ring_area increases → phloem capacity increases AND phloem velocity increases →
+ring_area increases → more sap volume per tick at the same velocity →
 sugar delivery improves → growth improves → more auxin → more flux
 ```
 
-Thicker pipes have a dual advantage: higher ring-area capacity (more sugar per tick) AND higher phloem velocity from the r²-scaled speed term (the wave reaches further). Both effects strengthen the main-axis advantage that canalization builds. The linear-vs-quadratic difference between ring area and full cross-section means the capacity advantage of wide pipes is somewhat moderated — a 10× radius increase gives ~10× ring capacity vs. 100× full-circle capacity. This is biologically accurate: phloem capacity scales with girth perimeter, not girth area.
+Thicker pipes carry more sugar volume per tick because ring area grows linearly with radius — at the same pressure-driven velocity, a wider pipe moves proportionally more sap. The linear-vs-quadratic difference between ring area and full cross-section means the capacity advantage of wide pipes is somewhat moderated — a 10× radius increase gives ~10× ring capacity vs. 100× full-circle capacity. This is biologically accurate: phloem capacity scales with girth perimeter, not girth area.
 
 ### 7.3 Starch storage (storage/plan.md)
 
@@ -644,23 +661,29 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
 
 - [ ] Add to `WorldParams` struct and `default_world_params()`:
   ```cpp
-  float base_phloem_speed       = 5.0f;    // dm/tick — phloem velocity at phloem_reference_radius
-                                            //   (≈ 0.5 m/hr — mid-range real phloem velocity)
-  float phloem_reference_radius = 0.05f;   // dm — radius at which base_phloem_speed applies.
-                                            //   Young stems (r=0.015dm) run at ~9% of base speed.
-                                            //   Wide trunk (r=0.1dm) runs at 4× base speed.
+  float max_phloem_velocity     = 10.0f;   // dm/tick (= 1 m/hr) — physical upper bound on phloem velocity.
+                                            //   Caps: velocity = min(dp × conductance_per_pressure, max_phloem_velocity)
+                                            //   Real phloem: 0.3–1.5 m/hr; 10 dm/tick is the high end.
+  float base_phloem_speed       = 5.0f;    // superseded by velocity-capped model — kept for reference, not used
+  float phloem_reference_radius = 0.05f;   // superseded by velocity-capped model — kept for reference, not used
   float phloem_ring_thickness   = 0.002f;  // dm (= 0.2 mm) — thickness of the living phloem+cambium ring.
                                             //   Used in phloem_ring_area(r, t) = π × (2r×t − t²).
+                                            //   Used ONLY for pipe capacity (flow_vol = velocity × ring_area).
                                             //   Real dicots: ~0.1–0.5 mm. Constant regardless of stem diameter.
-  float max_sugar_concentration = 300.0f;  // g/dm³ — upper limit of phloem sap sucrose (~30% solution)
-                                            //   Sugar cap = phloem_volume × max_sugar_concentration.
+  float max_sugar_concentration = 300.0f;  // g/dm³ — upper limit of bulk sugar concentration (~30% solution)
+                                            //   Sugar cap = node_volume(n) × max_sugar_concentration.
                                             //   Replaces per-tissue density params.
-  float leaf_thickness          = 0.003f;  // dm — leaf mesophyll depth for phloem_volume calculation
+  float leaf_thickness          = 0.003f;  // dm — leaf mesophyll depth for node_volume calculation
                                             //   volume = leaf_size² × leaf_thickness
+  uint32_t phloem_iterations    = 4;       // inner Jacobi iterations per tick (Section 4.6, planned replacement)
   ```
 - [ ] Add to `Genome` struct and `default_genome()`:
   ```cpp
   float phloem_osmotic_coefficient = 1.0f;  // maps sugar concentration [g/dm³] to osmotic pressure
+  float conductance_per_pressure   = 0.5f;  // dm/tick per (g/dm³) — velocity per pressure gradient unit.
+                                             //   velocity = min(dp × conductance_per_pressure, max_phloem_velocity)
+                                             //   At gradient=20 g/dm³: vel=10 dm/tick (at cap).
+                                             //   Replaces phloem_conductance (old default 8.0, different units).
   float phloem_unloading_meristem  = 0.08f; // APICAL, ROOT_APICAL — calibrated active sink
   float phloem_unloading_leaf      = 0.10f; // LEAF — bidirectional; loading & unloading
   float phloem_unloading_root      = 0.008f;// mature ROOT conduit — low leakage
@@ -687,27 +710,25 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
 - Modify: `src/engine/vascular.h`
 - Create: `tests/test_munch_phloem.cpp` (or add to `test_vascularization.cpp`)
 
-- [ ] Add static helpers `phloem_ring_area` and `phloem_volume` to `vascular.cpp`. These derive volume from live geometry — no stored params, no per-tissue density lookup:
+- [ ] Add static helpers `phloem_ring_area` and `node_volume` to `vascular.cpp`. Two separate volume concepts — see Section 4.1:
   ```cpp
-  // Phloem ring cross-section area at radius r with ring thickness t.
-  // For stems/roots: the living phloem+cambium layer; heartwood excluded.
+  // Phloem ring cross-section area — used ONLY for pipe capacity (flow_vol = velocity × ring_area).
+  // For stems/roots: living phloem+cambium layer; heartwood excluded. Scales linearly with r.
   static float phloem_ring_area(float r, float t) {
       constexpr float pi = 3.14159265f;
       return pi * (2.0f * r * t - t * t);
   }
 
-  // Volume of the phloem compartment for a node:
-  //   STEM/ROOT: phloem ring × length (excludes dead heartwood core)
-  //   LEAF:      total volume (all living tissue, no heartwood)
-  //   APICAL/ROOT_APICAL: total volume (entirely living meristematic tissue)
-  static float phloem_volume(const Node& n, const WorldParams& world) {
+  // Total node volume — used for concentration (pressure) and sugar cap.
+  // Full cylinder for stems/roots: using total volume rather than ring volume prevents the
+  // 85× asymmetry that inverts leaf→stem flow direction (see Section 4.1 worked examples).
+  static float node_volume(const Node& n, const WorldParams& world) {
       constexpr float pi = 3.14159265f;
       switch (n.type) {
           case NodeType::STEM:
           case NodeType::ROOT: {
-              float length = glm::length(n.offset);  // dm
-              float area = phloem_ring_area(n.radius, world.phloem_ring_thickness);
-              return area * length;
+              float length = glm::length(n.offset);
+              return pi * n.radius * n.radius * length;   // full cylinder
           }
           case NodeType::LEAF: {
               float ls = n.as_leaf()->leaf_size;
@@ -725,9 +746,9 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
 - [ ] Add static helper `compute_phloem_pressure` to `vascular.cpp`:
   ```cpp
   static float compute_phloem_pressure(const Node& n, const Genome& g, const WorldParams& world) {
-      float vol = phloem_volume(n, world);
+      float vol = node_volume(n, world);      // full node volume — not ring volume
       if (vol <= 0.0f) return 0.0f;
-      float sugar_conc = n.chemical(ChemicalID::Sugar) / vol;  // g/dm³ — phloem compartment concentration
+      float sugar_conc = n.chemical(ChemicalID::Sugar) / vol;  // g/dm³ — bulk concentration
       float water_cap_val = water_cap(n, g);
       float water_frac = (water_cap_val > 0)
           ? std::clamp(n.chemical(ChemicalID::Water) / water_cap_val, 0.0f, 1.0f)
@@ -735,7 +756,7 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
       return sugar_conc * g.phloem_osmotic_coefficient * water_frac;
   }
   ```
-- [ ] Write test `test_phloem_pressure_high_sugar_high_pressure`: create two STEM nodes with identical geometry (same radius, same offset length). Give one sugar = `0.9 × phloem_vol × max_conc`, the other `0.1 × phloem_vol × max_conc`. Both with full water. Verify the first has ~9× the pressure of the second. Note: phloem_vol = phloem_ring_area(r, t) × length.
+- [ ] Write test `test_phloem_pressure_high_sugar_high_pressure`: create two STEM nodes with identical geometry (same radius, same offset length). Give one sugar = `0.9 × node_vol × max_conc`, the other `0.1 × node_vol × max_conc`. Both with full water. Verify the first has ~9× the pressure of the second. Note: node_vol = π × r² × length (full cylinder).
 - [ ] Write test `test_phloem_pressure_zero_water_zero_pressure`: STEM node with high sugar but zero water. Verify `compute_phloem_pressure` returns 0.0f.
 - [ ] Write test `test_phloem_pressure_meristem_after_consumption`: set up a meristem (APICAL, r=0.01dm) with very low sugar. Verify pressure is low relative to a leaf node with full post-photosynthesis sugar. Note: meristem uses sphere volume `(4/3)π×r³ ≈ 4.2×10⁻⁶ dm³`, leaf uses `leaf_size²×leaf_thickness`.
 - [ ] Run tests: `./build/botany_tests` — new tests pass
@@ -748,12 +769,10 @@ Move the existing xylem Phase 1/Phase 2 from `vascular_transport` into the new `
 
 This is the core of the implementation. `phloem_resolve` populates `delta[]` via BFS from each high-pressure source.
 
-- [ ] Add `phloem_local_speed` helper:
+- [ ] Add `phloem_edge_velocity` helper (replaces `phloem_local_speed` — velocity now from pressure, not r²):
   ```cpp
-  static float phloem_local_speed(const Node& n, const Node& child, const WorldParams& w) {
-      float r_eff = std::min(n.radius, child.radius);
-      float r_ref = w.phloem_reference_radius;
-      return w.base_phloem_speed * (r_eff * r_eff) / (r_ref * r_ref);
+  static float phloem_edge_velocity(float pressure_diff, const Genome& g, const WorldParams& w) {
+      return std::min(pressure_diff * g.conductance_per_pressure, w.max_phloem_velocity);
   }
   ```
 - [ ] Add `unloading_permeability` helper:
@@ -782,8 +801,8 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
       int N = (int)flat.size();
 
       // Step 1: compute phloem pressure at every vascular node
-      // pressure = (sugar / phloem_volume) × osmotic_coeff × water_frac   [g/dm³ × coeff]
-      // phloem_volume is the ring compartment for stems/roots; total volume for leaves/meristems
+      // pressure = (sugar / node_volume) × osmotic_coeff × water_frac   [g/dm³ × coeff]
+      // node_volume is total node volume (full cylinder for stems/roots, sphere for meristems, slab for leaves)
       std::vector<float> pressure(N, 0.0f);
       for (int i = 0; i < N; ++i) {
           if (has_vasculature(*flat[i].node, g))
@@ -809,7 +828,7 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
               if (has_vasculature(*flat[ci].node, g) && pressure[i] > pressure[ci])
                   is_source = true;
           if (is_source) {
-              float vol = phloem_volume(*flat[i].node, world);
+              float vol = node_volume(*flat[i].node, world);
               float src_conc = (vol > 0) ? flat[i].node->chemical(ChemicalID::Sugar) / vol : 0.0f;
               queue.push_back({i, 1.0f, src_conc});
           }
@@ -839,31 +858,37 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
                   Node& next = *flat[next_i].node;
 
                   float edge_len = glm::length(next.offset);
-                  float speed = phloem_local_speed(cur, next, world);
-                  float time_cost = (speed > 1e-8f) ? edge_len / speed : 1e30f;
+                  float pressure_diff = pressure[cur_i] - pressure[next_i];
+                  float velocity = phloem_edge_velocity(pressure_diff, g, world);
+                  float time_cost = (velocity > 1e-8f) ? edge_len / velocity : 1e30f;
 
                   float time_fraction = std::min(1.0f, budget / time_cost);
                   float remaining = budget - time_cost * time_fraction;
 
-                  // Sugar flowing through this edge [g]
-                  // Pipe capacity = phloem ring cross-section × conductance (NOT π×r²)
+                  // Volume of phloem sap moving through this edge this partial tick
+                  // Pipe cross-section = phloem ring area (NOT full π×r²)
                   float r_eff = std::min(cur.radius, next.radius);
-                  float pipe_cap = phloem_ring_area(r_eff, world.phloem_ring_thickness) * g.phloem_conductance;
-                  float flow_vol = stream_conc * pipe_cap * time_fraction;
+                  float ring_area = phloem_ring_area(r_eff, world.phloem_ring_thickness);
+                  float flow_vol = velocity * ring_area * time_fraction;  // dm³/tick
 
-                  // Passive unloading: gradient in g/dm³ between stream and destination phloem compartment
-                  float next_vol = phloem_volume(next, world);
+                  // Sugar dissolved in that sap; can't drain more than source has
+                  float desired_sugar = flow_vol * stream_conc;
+                  float src_available = cur.chemical(ChemicalID::Sugar) + delta[cur_i];
+                  desired_sugar = std::min(desired_sugar, std::max(0.0f, src_available));
+
+                  // Passive unloading: gradient in g/dm³ between stream and destination (full node volume)
+                  float next_vol = node_volume(next, world);
                   float next_local_conc = (next_vol > 0)
                       ? next.chemical(ChemicalID::Sugar) / next_vol : 0.0f;
                   float gradient = std::max(0.0f, stream_conc - next_local_conc);
                   float perm = unloading_permeability(next.type, g);
-                  float unload = std::min(gradient * perm * flow_vol, flow_vol);
+                  float unload = std::min(gradient * perm * desired_sugar, desired_sugar);
 
                   delta[next_i] += unload;
-                  delta[cur_i]  -= flow_vol;
+                  delta[cur_i]  -= desired_sugar;
 
-                  float stream_after = (flow_vol > 1e-6f)
-                      ? stream_conc * (1.0f - unload / flow_vol) : 0.0f;
+                  float stream_after = (desired_sugar > 1e-6f)
+                      ? stream_conc * (1.0f - unload / desired_sugar) : 0.0f;
 
                   if (remaining > 1e-4f && stream_after > 1e-6f) {
                       walk.push_back({cur_i, next_i, remaining, stream_after});
@@ -873,12 +898,11 @@ This is the core of the implementation. `phloem_resolve` populates `delta[]` via
       }
 
       // Step 3: apply deltas atomically
-      // Sugar cap = phloem_volume × max_sugar_concentration
-      // (stems/roots: ring only; leaves/meristems: total volume — all living tissue)
+      // Sugar cap = node_volume × max_sugar_concentration (total node volume for all types)
       for (int i = 0; i < N; ++i) {
           if (delta[i] == 0.0f) continue;
           Node& n = *flat[i].node;
-          float cap = phloem_volume(n, world) * world.max_sugar_concentration;
+          float cap = node_volume(n, world) * world.max_sugar_concentration;
           float new_val = std::clamp(n.chemical(ChemicalID::Sugar) + delta[i], 0.0f, cap);
           n.chemical(ChemicalID::Sugar) = new_val;
       }
