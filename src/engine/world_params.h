@@ -38,7 +38,7 @@ struct WorldParams {
     float sugar_maintenance_stem     = 0.01f;    // g glucose / (dm³ stem volume · hr)
     float sugar_maintenance_root     = 0.004f;   // g glucose / (dm³ root volume · hr)
     float sugar_maintenance_meristem = 0.0005f;  // g glucose / hr per active meristem tip
-    float sugar_meristem_photosynthesis = 1.0f;  // shoot meristem sugar production at full light, as multiple of maintenance cost
+    float sugar_meristem_photosynthesis = 0.0f;  // shoot meristem self-photosynthesis as a multiple of maintenance cost (0 = heterotrophic, real apex meristems depend entirely on leaf sugar)
 
     float light_cell_size         = 0.075f;     // dm — shadow map cell size (smaller = higher resolution, more cells)
     glm::vec3 light_direction     = glm::vec3(0.50f, 1.0f, 0.0f); // unit vector pointing TOWARD light source
@@ -77,7 +77,7 @@ inline WorldParams default_world_params() {
         .sugar_maintenance_stem     = 0.01f,
         .sugar_maintenance_root     = 0.004f,
         .sugar_maintenance_meristem = 0.0005f,
-        .sugar_meristem_photosynthesis = 1.0f,
+        .sugar_meristem_photosynthesis = 0.0f,
         .light_cell_size         = 0.075f,
         .light_direction         = glm::vec3(0.0f, 1.0f, 0.0f),
         .sun_direction           = glm::vec3(0.0f, -1.0f, 0.0f),

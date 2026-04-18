@@ -152,3 +152,49 @@ TEST_CASE("Stem photosynthesis rate zero disables production", "[stem_photosynth
 
     REQUIRE_THAT(produced_after, WithinAbs(produced_before, 1e-8f));
 }
+
+// -----------------------------------------------------------------------
+// Test: Apical meristem cannot self-sustain — must depend on leaf sugar.
+//
+// Bug: sugar_meristem_photosynthesis = 1.0 makes the SA produce exactly its
+// own maintenance cost per tick (0.0005 g). With no external sugar source,
+// the SA oscillates around 0 sugar and starvation_ticks never increments.
+//
+// Fix: sugar_meristem_photosynthesis = 0.0 — SA produces nothing itself.
+// Maintenance drains sugar to 0 immediately → starvation_ticks > 0.
+// -----------------------------------------------------------------------
+TEST_CASE("Apical meristem starves without leaf sugar supply", "[stem_photosynthesis]") {
+    Genome g = default_genome();
+    g.shoot_plastochron  = 1000000u;   // no new nodes
+    g.root_plastochron   = 1000000u;
+    g.growth_rate        = 0.0f;       // no tip extension (no growth sugar cost)
+    g.root_growth_rate   = 0.0f;
+    g.sugar_diffusion_rate = 0.0f;     // isolate from cross-node diffusion
+
+    WorldParams world = default_world_params();
+    world.light_level         = 1.0f;      // full light — maximises SA own photosynthesis
+    world.starvation_ticks_max = 1000000u; // don't kill the SA, just count ticks
+    world.soil_moisture       = 0.0f;      // no water absorption
+
+    Plant plant(g, glm::vec3(0.0f));
+    Node* seed = plant.seed_mut();
+
+    Node* sa = nullptr;
+    for (Node* c : seed->children)
+        if (c->type == NodeType::APICAL) { sa = c; break; }
+    REQUIRE(sa != nullptr);
+
+    // Zero every node's sugar — SA has no external source
+    seed->chemical(ChemicalID::Sugar) = 0.0f;
+    for (Node* c : seed->children)
+        c->chemical(ChemicalID::Sugar) = 0.0f;
+
+    for (int i = 0; i < 5; i++) plant.tick(world);
+
+    // With sugar_meristem_photosynthesis = 0.0 (fixed):
+    //   SA produces nothing, maintenance runs sugar to 0 → starvation_ticks > 0.
+    // With sugar_meristem_photosynthesis = 1.0 (bug):
+    //   SA produces exactly its maintenance, sugar oscillates above 0
+    //   → starvation_ticks = 0 forever.
+    REQUIRE(sa->starvation_ticks > 0);
+}
