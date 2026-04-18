@@ -228,6 +228,54 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
     REQUIRE(active_after > active_before);
 }
 
+// -----------------------------------------------------------------------
+// Bug: can_activate() read parent STEM cytokinin, but STEM conduit nodes
+// never accumulate cytokinin — it flows through them to SA sinks without
+// depositing. Dormant SAMs could never activate in a real plant run.
+//
+// Fix: check own cytokinin (what the xylem actually delivered to this bud).
+// -----------------------------------------------------------------------
+TEST_CASE("dormant SA activates from own cytokinin with zero parent STEM cytokinin", "[meristem]") {
+    Genome g = default_genome();
+    g.shoot_plastochron     = 1000000u;   // no auto-spawning
+    g.root_plastochron      = 1000000u;
+    g.growth_rate           = 0.0f;
+    g.apical_auxin_baseline = 0.0f;       // no auxin production
+
+    WorldParams world = default_world_params();
+    world.starvation_ticks_max = 1000000u;
+    world.light_level          = 0.0f;    // no photosynthesis
+
+    Plant plant(g, glm::vec3(0.0f));
+    Node* seed = plant.seed_mut();
+    seed->chemical(ChemicalID::Sugar) = 100.0f;
+
+    // Build: seed → stem → dormant_sa
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.2f, 0.0f), g.initial_radius);
+    seed->add_child(stem);
+    stem->position = glm::vec3(0.0f, 0.2f, 0.0f);
+    stem->chemical(ChemicalID::Sugar) = 100.0f;
+    stem->chemical(ChemicalID::Auxin) = 0.0f;   // apical dominance off
+
+    Node* dormant_sa = plant.create_node(NodeType::APICAL,
+                                          glm::vec3(0.1f, 0.0f, 0.0f), g.initial_radius * 0.5f);
+    dormant_sa->as_apical()->active = false;
+    stem->add_child(dormant_sa);
+    dormant_sa->position = stem->position + glm::vec3(0.1f, 0.0f, 0.0f);
+
+    // Own cytokinin above threshold; parent STEM cytokinin stays at 0
+    dormant_sa->chemical(ChemicalID::Cytokinin) = g.cytokinin_threshold + 0.001f;
+    dormant_sa->chemical(ChemicalID::Sugar)     = world.sugar_cost_activation + 0.01f;
+
+    REQUIRE(stem->chemical(ChemicalID::Cytokinin) == 0.0f);  // key: parent has zero CK
+
+    plant.tick(world);
+
+    // After fix (read own CK): own CK > threshold → activates.
+    // Before fix (read parent CK): parent CK = 0 → never activates.
+    REQUIRE(dormant_sa->as_apical()->active);
+}
+
 TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     Genome g = default_genome();
     g.auxin_threshold = 1.0f;

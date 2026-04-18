@@ -207,7 +207,7 @@ inline Genome default_genome() {
         .cytokinin_production_rate = 5.0f,   // cytokinin per g sugar produced by leaves
         .cytokinin_diffusion_rate = 0.02f,         // low — same as water; long-distance via xylem bulk flow, not local diffusion
         .cytokinin_decay_rate = 0.05f,             // slower than auxin (0.12) — cytokinin travels via xylem bulk flow, less degradation in transit
-        .cytokinin_threshold = 0.15f,
+        .cytokinin_threshold = 0.003f,        // just below xylem steady-state (~0.0047); activates when root signal is present
         .cytokinin_growth_threshold = 0.005f,       // low Km — trace cytokinin from roots is enough (xylem bulk flow in real plants means near-lossless delivery)
         .cytokinin_bias = 0.1f,               // gentle acropetal shift (cytokinin accumulates toward tips)
 

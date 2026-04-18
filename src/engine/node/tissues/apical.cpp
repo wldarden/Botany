@@ -238,9 +238,10 @@ bool ApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
     float stem_auxin = parent ? parent->chemical(ChemicalID::Auxin) : chemical(ChemicalID::Auxin);
     if (stem_auxin >= g.auxin_threshold) return false;
 
-    // Cytokinin from producing leaves signals "the plant can support a new branch."
-    float local_cyt = parent ? parent->chemical(ChemicalID::Cytokinin) : chemical(ChemicalID::Cytokinin);
-    if (local_cyt < g.cytokinin_threshold) return false;
+    // Cytokinin from roots (xylem-delivered) signals "the root system is healthy".
+    // Read own cytokinin — the xylem deposits CK directly in the SA sink, not in
+    // the STEM conduit above. Parent STEM CK is always ~0 (pass-through only).
+    if (chemical(ChemicalID::Cytokinin) < g.cytokinin_threshold) return false;
 
     if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 

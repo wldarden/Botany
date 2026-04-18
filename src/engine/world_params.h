@@ -26,7 +26,7 @@ struct WorldParams {
     float sugar_cost_meristem_growth = 1.5f;    // g glucose / dm of shoot meristem tip extension
     float sugar_cost_root_growth  = 1.5f;       // g glucose / dm of root tip extension
     float sugar_cost_stem_growth  = 1.0f;       // g glucose / dm of stem/root internode growth (thickening + elongation)
-    float sugar_cost_activation   = 0.3f;       // g glucose per meristem activation (bud break)
+    float sugar_cost_activation   = 0.01f;      // g glucose per meristem activation (bud break) — low; dormant buds accumulate little sugar
     float sugar_cost_leaf_growth  = 1.5f;       // g glucose / dm of leaf expansion (leaf tissue is expensive — 1.5 g/g dry mass)
     float sugar_cost_phototropism = 0.001f;      // g glucose / radian of leaf turning
 
@@ -70,7 +70,7 @@ inline WorldParams default_world_params() {
         .sugar_cost_meristem_growth = 2.0f,
         .sugar_cost_root_growth  = 1.5f,
         .sugar_cost_stem_growth  = 1.0f,
-        .sugar_cost_activation   = 0.3f,
+        .sugar_cost_activation   = 0.01f,
         .sugar_cost_leaf_growth  = 1.5f,
         .sugar_cost_phototropism = 0.001f,
         .sugar_maintenance_leaf     = 0.002f,
