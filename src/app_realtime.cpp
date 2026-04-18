@@ -1046,8 +1046,8 @@ int main(int argc, char* argv[]) {
                     const WorldParams& mw = engine.world_params();
                     float density_scale = mg.wood_density / mw.reference_wood_density;
 
-                    // Thickening: vascular-history driven, proportional to structural_flow_bias
-                    float bias = sel.get_parent_structural_bias();
+                    // Thickening: vascular-history driven, proportional to auxin_flow_bias
+                    float bias = sel.get_parent_auxin_flow_bias();
                     float thicken_max_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth * density_scale;
                     float thicken_sugar_gf = (thicken_max_cost > 1e-6f) ? std::min(sel.chemical(ChemicalID::Sugar) / thicken_max_cost, 1.0f) : 1.0f;
                     float stress_boost = 1.0f + sel.chemical(ChemicalID::Stress) * mg.stress_thickening_boost;
@@ -1094,7 +1094,7 @@ int main(int argc, char* argv[]) {
                                 surface_area, gradient * 100.0f, fill_frac * 100.0f);
 
                     // Thickening: same vascular-driven model as stem (no density scale for roots)
-                    float bias = sel.get_parent_structural_bias();
+                    float bias = sel.get_parent_auxin_flow_bias();
                     float thicken_max_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth;
                     float thicken_sugar_gf = (thicken_max_cost > 1e-6f) ? std::min(sel.chemical(ChemicalID::Sugar) / thicken_max_cost, 1.0f) : 1.0f;
                     float thicken_rate = (bias >= 1e-6f) ? (mg.cambium_responsiveness * bias * thicken_sugar_gf) : 0.0f;
