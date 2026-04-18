@@ -213,6 +213,12 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     leaf_src->chemical(ChemicalID::Sugar)   = 0.7f;
     apical_high->chemical(ChemicalID::Sugar) = 0.0f;
     apical_low->chemical(ChemicalID::Sugar)  = 0.0f;
+    // Drain the seed to below its phloem reserve so it doesn't act as a
+    // confounding source. The seed was filled to its 48g cap above, giving
+    // it 33.6g surplus — far exceeding the combined 0.2g apical demand and
+    // filling both apicals to cap equally, which defeats the conductance-
+    // weighting assertion (got_high > got_low).
+    seed->chemical(ChemicalID::Sugar) = 0.0f;
 
     // Single vascular transport pass — tests the distribution algorithm directly.
     vascular_transport(plant, g, static_world());

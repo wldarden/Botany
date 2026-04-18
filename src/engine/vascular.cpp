@@ -100,8 +100,18 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
 
         // Classify source/sink based on chemical and node type
         if (chem_id == ChemicalID::Sugar) {
-            // Phloem: leaves are sources, growing tips are sinks
-            if (n.type == NodeType::LEAF) {
+            // Phloem: leaves and seed reserves are sources, growing tips are sinks
+            if (!n.parent) {
+                // Seed: mobilize stored reserves above the phloem reserve floor.
+                // The seed's stored sugar is trapped by the vascular skip logic
+                // (seed→STEM local diffusion is blocked because both have vasculature),
+                // so the phloem pass is the only path out. Without this, 44g of seed
+                // sugar sits inert while the plant starves.
+                float cap = sugar_cap(n, g);
+                float reserve = cap * g.phloem_reserve_fraction;
+                float surplus = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
+                info.supply += surplus;
+            } else if (n.type == NodeType::LEAF) {
                 float cap = sugar_cap(n, g);
                 float reserve = cap * g.phloem_reserve_fraction;
                 // Also protect sugar reserved for local growth (set by pre_transport_growth()).
@@ -200,7 +210,12 @@ static void run_vascular(std::vector<VascNodeInfo>& flat,
             // This node is a source — how much of the available flow is sourced here?
             // Compute what this node itself supplies (not children)
             float local_supply = 0.0f;
-            if (chem_id == ChemicalID::Sugar && n.type == NodeType::LEAF) {
+            if (chem_id == ChemicalID::Sugar && !n.parent) {
+                // Seed: deduct mobilized reserves (mirrors Phase 1 classification).
+                float cap = sugar_cap(n, g);
+                float reserve = cap * g.phloem_reserve_fraction;
+                local_supply = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
+            } else if (chem_id == ChemicalID::Sugar && n.type == NodeType::LEAF) {
                 float cap = sugar_cap(n, g);
                 float reserve = cap * g.phloem_reserve_fraction;
                 local_supply = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
