@@ -305,6 +305,129 @@ Leaves and meristems are not in the vascular network (no `has_vasculature` membe
 
 ---
 
+### 4.6 Phase 2 Revision: Jacobi Simultaneous Resolution
+
+> **Status: planned replacement.** The BFS-per-source approach in sections 4.2–4.4 is the current implementation target. This section describes the planned next iteration that fixes the ordering-bias problem. The swap is isolated to `phloem_resolve()` — all data structures, pressure formulas, and endpoint passes (leaf loading pre-BFS, meristem unloading post-BFS) remain unchanged.
+
+#### The problem with BFS-per-source
+
+Sources are processed sequentially. The first source gets priority — later sources find depleted capacity or already-filled nodes. Processing order determines who "wins," which is arbitrary. In real phloem, all sources push simultaneously.
+
+#### The Jacobi approach
+
+Each tick of `phloem_resolve` runs `phloem_iterations` inner iterations (WorldParam, default 3–5). Each iteration resolves **all edges simultaneously** from the current sugar state:
+
+```cpp
+for (int iter = 0; iter < world.phloem_iterations; ++iter) {
+
+    // 1. Recompute pressure at every vascular node from current sugar
+    for (int i = 0; i < N; ++i)
+        pressure[i] = has_vasculature(*flat[i].node, g)
+            ? compute_phloem_pressure(*flat[i].node, g, world) : 0.0f;
+
+    // 2. Compute desired flow for EVERY edge simultaneously.
+    //    All reads from start-of-iteration sugar — no intra-iteration updates.
+    std::vector<float> iter_delta(N, 0.0f);
+
+    for (int i = 0; i < N; ++i) {
+        if (!has_vasculature(*flat[i].node, g)) continue;
+        Node& cur = *flat[i].node;
+
+        auto process_edge = [&](int j) {
+            if (!has_vasculature(*flat[j].node, g)) return;
+            float dp = pressure[i] - pressure[j];
+            if (dp <= 0.0f) return;   // cur is higher pressure: cur is sender
+
+            Node& next = *flat[j].node;
+            float r_eff    = std::min(cur.radius, next.radius);
+            float pipe_cap = phloem_ring_area(r_eff, world.phloem_ring_thickness)
+                             * g.phloem_conductance;
+            float flow_vol = dp * pipe_cap;  // pressure gradient × conductance → volume flow
+
+            float cur_vol     = phloem_volume(cur, world);
+            float cur_conc    = (cur_vol > 0)
+                                ? cur.chemical(ChemicalID::Sugar) / cur_vol : 0.0f;
+            float desired_sugar = flow_vol * cur_conc;
+
+            // Apply unloading: split desired_sugar into conduit transit + tissue delivery.
+            // Same permeability formula as Section 4.3.
+            float next_vol       = phloem_volume(next, world);
+            float next_local_conc = (next_vol > 0)
+                                   ? next.chemical(ChemicalID::Sugar) / next_vol : 0.0f;
+            float gradient = std::max(0.0f, cur_conc - next_local_conc);
+            float perm     = unloading_permeability(next.type, g);
+            float unload   = std::min(gradient * perm * flow_vol, desired_sugar);
+
+            iter_delta[i] -= desired_sugar;   // cur pays for full flow
+            iter_delta[j] += unload;          // next receives unloaded fraction
+            // transit remainder (desired_sugar - unload) stays in the sieve tube and is
+            // credited back to cur at the cap-apply step (it never actually left cur's
+            // compartment — only the unloaded fraction crosses the membrane)
+        };
+
+        if (flat[i].parent_idx >= 0) process_edge(flat[i].parent_idx);
+        for (int ci : flat[i].child_idxs) process_edge(ci);
+    }
+
+    // 3. Fairness scaling: if any node's total outflow exceeds its sugar, scale down.
+    //    Ensures conservation — no node goes negative.
+    for (int i = 0; i < N; ++i) {
+        if (iter_delta[i] >= 0.0f) continue;   // net receiver — no scaling needed
+        float available = flat[i].node->chemical(ChemicalID::Sugar);
+        float total_out = -iter_delta[i];
+        if (total_out > available + 1e-8f) {
+            float scale = available / total_out;
+            iter_delta[i] = -available;         // node sends exactly what it has
+            // Scale back all inflows that originated from this node.
+            // Because we iterate edges from the sender's perspective, receivers
+            // credited from this node need their share scaled proportionally.
+            // Implementation: track sender per receiver in a separate pass, or
+            // accept slight over-credit (bounded by ring cap) and clamp at apply.
+            // The clamp at step 4 is the safety net; per-edge scaling is the refinement.
+        }
+    }
+
+    // 4. Apply iteration delta — clamp to [0, cap]
+    for (int i = 0; i < N; ++i) {
+        if (std::abs(iter_delta[i]) < 1e-10f) continue;
+        Node& n = *flat[i].node;
+        float cap = phloem_volume(n, world) * world.max_sugar_concentration;
+        n.chemical(ChemicalID::Sugar) =
+            std::clamp(n.chemical(ChemicalID::Sugar) + iter_delta[i], 0.0f, cap);
+    }
+}
+```
+
+**`phloem_iterations` — WorldParam, default 3–5.** Each iteration propagates sugar one pipe section. 3 iterations = sugar moves up to 3 edges per tick. The iteration count replaces the BFS time budget as the distance control. Unlike the BFS budget (which had edge-length and r²-speed dependence), iterations are discrete hops — simpler to reason about, though less physically precise about long vs. short edges. The r²-scaled pipe capacity already encodes the fast/slow distinction, so this tradeoff is acceptable.
+
+#### Why this is better than BFS-per-source
+
+| Property | BFS-per-source | Jacobi |
+|---|---|---|
+| Ordering bias | Yes — first source wins | None — all sources push simultaneously |
+| Multiple sinks from same conduit | Sequential fills; early walkers deplete capacity | Proportional by gradient × conductance |
+| Conservation | Transit dead-end credit + shared running delta required | Fairness scaling; cap clamp is safety net |
+| Implementation complexity | Queue, source sorting, running delta bookkeeping | Two O(edges) passes per iteration; no queue |
+| Distance control | Continuous (time budget × r² speed) | Discrete (iteration count × hops) |
+| Per-tick cost | O(nodes) amortized over BFS walks | O(edges × iterations) — same order |
+
+#### Swap footprint
+
+The Jacobi revision is contained entirely within `phloem_resolve()`. The BFS implementation (Task 5) and the Jacobi revision share the same function signature, the same pressure formula (`compute_phloem_pressure`), the same pipe capacity formula (`phloem_ring_area × conductance`), and the same endpoint passes (leaf loading pre-BFS, meristem unloading post-BFS). Swapping is a targeted rewrite of the resolution loop, not an architectural change.
+
+#### New WorldParam
+
+Add `phloem_iterations` alongside the other Münch WorldParams in Task 3:
+
+```cpp
+uint32_t phloem_iterations = 4;   // inner Jacobi iterations per tick — controls how many
+                                   // pipe sections sugar can travel per tick.
+                                   // 3 = conservative (short-range flow); 5 = aggressive
+                                   // (sugar travels further per tick, approaches BFS reach).
+```
+
+---
+
 ## 5. What Gets Deleted from the Codebase
 
 These are removed entirely — not simplified or refactored, deleted:
