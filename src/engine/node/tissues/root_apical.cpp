@@ -127,14 +127,6 @@ void RootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome&
     bud->position = internode->position + bud->offset;
 }
 
-void RootApicalNode::compute_growth_reserve(const Genome& g, const WorldParams& world) {
-    sugar_reserved_for_growth = 0.0f;
-    if (!active) return;
-
-    // Mirror elongate(): max sugar cost at full growth rate.
-    float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
-    sugar_reserved_for_growth = std::min(max_cost, chemical(ChemicalID::Sugar));
-}
 
 float RootApicalNode::maintenance_cost(const WorldParams& world) const {
     return active ? world.sugar_maintenance_meristem : 0.0f;

@@ -62,6 +62,19 @@ struct WorldParams {
     float ground_support_height = 0.5f;     // dm — below this Y, stress is zeroed
     float droop_rate = 0.01f;               // radians/tick — max angular droop when overstressed
 
+    // Münch phloem physical constants
+    float base_phloem_speed       = 5.0f;   // dm/tick — phloem velocity at phloem_reference_radius
+                                            //   (≈ 0.5 m/hr — mid-range real phloem velocity)
+    float phloem_reference_radius = 0.05f;  // dm — radius at which base_phloem_speed applies.
+                                            //   Young stems (r=0.015dm) run at ~9% of base speed.
+    float phloem_ring_thickness   = 0.002f; // dm (0.2 mm) — thickness of the living phloem+cambium ring.
+                                            //   Used in phloem_ring_area(r,t) = π×(2r×t − t²).
+                                            //   Real dicots: ~0.1–0.5 mm. Constant regardless of stem diameter.
+    float max_sugar_concentration = 300.0f; // g/dm³ — upper cap for phloem sap sucrose (~30% solution).
+                                            //   Sugar cap = phloem_volume × max_sugar_concentration.
+    float leaf_thickness          = 0.003f; // dm — mesophyll thickness for phloem_volume(LEAF).
+                                            //   volume = leaf_size² × leaf_thickness
+
     // Debug / diagnostics
     bool vascular_debug_log = false;        // write per-junction vascular flow to debug/vascular_log.csv
     uint32_t current_tick = 0;              // set by caller each tick; used to label vascular log rows

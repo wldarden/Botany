@@ -175,26 +175,6 @@ void LeafNode::expand(const Genome& g, const WorldParams& world) {
     }
 }
 
-void LeafNode::compute_growth_reserve(const Genome& g, const WorldParams& world) {
-    sugar_reserved_for_growth = 0.0f;
-    // Senescing leaves don't expand; full-grown leaves don't need a reserve.
-    if (senescence_ticks != 0 || leaf_size >= g.max_leaf_size) return;
-
-    // Mirror expand(): compute expected sugar cost this tick before vascular runs.
-    float auxin_boost = meristem_helpers::auxin_growth_factor(
-        chemical(ChemicalID::Auxin), g.leaf_auxin_max_boost, g.leaf_auxin_half_saturation);
-    float max_growth = g.leaf_growth_rate * auxin_boost;
-    float remaining  = g.max_leaf_size - leaf_size;
-    float growth     = std::min(max_growth, remaining);
-
-    float water_gf = meristem_helpers::turgor_fraction(
-        chemical(ChemicalID::Water), water_cap(*this, g));
-    growth *= water_gf;
-
-    float cost = growth * world.sugar_cost_leaf_growth;
-    // Reserve only what we already have — can't protect sugar we don't possess.
-    sugar_reserved_for_growth = std::min(cost, chemical(ChemicalID::Sugar));
-}
 
 float LeafNode::maintenance_cost(const WorldParams& world) const {
     return world.sugar_maintenance_leaf * leaf_size * leaf_size;

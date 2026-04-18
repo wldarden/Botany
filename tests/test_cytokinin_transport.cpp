@@ -59,9 +59,11 @@ TEST_CASE("cytokinin: RA accumulates > 0.04 with low default diffusion rate", "[
     WorldParams world = cytokinin_test_world();
     for (int i = 0; i < 100; i++) plant.tick(world);
 
-    // With rate=0.02: RA_eq ≈ 0.06  → PASS
-    // With rate=0.10: RA_eq ≈ 0.027 → FAIL
-    REQUIRE(ra->chemical(ChemicalID::Cytokinin) > 0.04f);
+    // With rate=0.02: RA_eq ≈ 0.030 → PASS  (Münch tick order — DFS before xylem —
+    //   lowers equilibrium vs the old order where xylem preceded DFS; the two diffusion
+    //   rates still differ clearly, as Test 2 verifies)
+    // With rate=0.10: RA_eq ≈ 0.013 → FAIL
+    REQUIRE(ra->chemical(ChemicalID::Cytokinin) > 0.02f);
 }
 
 // -----------------------------------------------------------------------

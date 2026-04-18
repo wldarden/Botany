@@ -101,6 +101,12 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "sugar_storage_density_leaf",  g.sugar_storage_density_leaf,  r, 0.05f,   5.0f, p);
     reg(sg, "sugar_cap_minimum",           g.sugar_cap_minimum,           r, 0.005f,  0.5f, p);
     reg(sg, "sugar_cap_meristem",          g.sugar_cap_meristem,          r, 0.1f,    10.0f, p);
+    // Münch phloem permeabilities (evolvable: tune how strongly concentration gradients drive exchange)
+    reg(sg, "phloem_osmotic_coefficient",  g.phloem_osmotic_coefficient,  r, 0.1f,    5.0f, p);
+    reg(sg, "phloem_unloading_meristem",   g.phloem_unloading_meristem,   r, 0.01f,   0.5f, p);
+    reg(sg, "phloem_unloading_leaf",       g.phloem_unloading_leaf,       r, 0.01f,   0.5f, p);
+    reg(sg, "phloem_unloading_root",       g.phloem_unloading_root,       r, 0.001f,  0.1f, p);
+    reg(sg, "phloem_unloading_stem",       g.phloem_unloading_stem,       r, 0.001f,  0.1f, p);
     // --- Water economy group (10 genes) ---
     reg(sg, "water_absorption_rate",       g.water_absorption_rate,       r, 0.001f,  0.5f, p);
     reg(sg, "transpiration_rate",          g.transpiration_rate,          r, 0.001f,  0.5f, p);
@@ -157,8 +163,6 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     // Vascular transport
     reg(sg, "xylem_conductance",           g.xylem_conductance,           r, 1.0f,  500.0f, p);
     reg(sg, "phloem_conductance",          g.phloem_conductance,          r, 1.0f,  50.0f,  p);
-    reg(sg, "phloem_reserve_fraction",     g.phloem_reserve_fraction,     r, 0.05f, 0.8f,   p);
-    reg(sg, "meristem_sink_fraction",      g.meristem_sink_fraction,      r, 0.01f, 0.5f,   p);
     reg(sg, "vascular_radius_threshold",   g.vascular_radius_threshold,   r, 0.001f, 0.05f, p);
 
     // --- Linkage groups ---
@@ -212,8 +216,10 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "sugar_diffusion_rate", "seed_sugar",
         "sugar_storage_density_wood", "sugar_storage_density_leaf",
         "sugar_cap_minimum", "sugar_cap_meristem",
-        "xylem_conductance", "phloem_conductance", "phloem_reserve_fraction",
-        "meristem_sink_fraction", "vascular_radius_threshold"
+        "xylem_conductance", "phloem_conductance", "vascular_radius_threshold",
+        "phloem_osmotic_coefficient",
+        "phloem_unloading_meristem", "phloem_unloading_leaf",
+        "phloem_unloading_root", "phloem_unloading_stem"
     }});
 
     sg.add_linkage_group({"water_economy", {
@@ -399,13 +405,21 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     // Vascular transport
     g.xylem_conductance          = sg.get("xylem_conductance");
     g.phloem_conductance         = sg.get("phloem_conductance");
-    g.phloem_reserve_fraction    = sg.get("phloem_reserve_fraction");
-    g.meristem_sink_fraction     = sg.has_gene("meristem_sink_fraction")
-                                       ? sg.get("meristem_sink_fraction")
-                                       : 0.05f;
     g.vascular_radius_threshold  = sg.has_gene("vascular_radius_threshold")
                                        ? sg.get("vascular_radius_threshold")
                                        : 0.01f;
+
+    // Münch phloem permeabilities
+    g.phloem_osmotic_coefficient = sg.has_gene("phloem_osmotic_coefficient")
+                                       ? sg.get("phloem_osmotic_coefficient") : 1.0f;
+    g.phloem_unloading_meristem  = sg.has_gene("phloem_unloading_meristem")
+                                       ? sg.get("phloem_unloading_meristem") : 0.08f;
+    g.phloem_unloading_leaf      = sg.has_gene("phloem_unloading_leaf")
+                                       ? sg.get("phloem_unloading_leaf") : 0.10f;
+    g.phloem_unloading_root      = sg.has_gene("phloem_unloading_root")
+                                       ? sg.get("phloem_unloading_root") : 0.008f;
+    g.phloem_unloading_stem      = sg.has_gene("phloem_unloading_stem")
+                                       ? sg.get("phloem_unloading_stem") : 0.002f;
 
     return g;
 }

@@ -167,17 +167,20 @@ struct Genome {
     // Vascular transport
     float xylem_conductance;              // throughput per dm² cross-section per tick (water + cytokinin)
     float phloem_conductance;             // throughput per dm² cross-section per tick (sugar)
-    float phloem_reserve_fraction;        // structural glucose reserve fraction — leaves keep this fraction of cap
-                                          // as a minimum buffer. Growth needs are handled by sugar_reserved_for_growth.
-    float meristem_sink_fraction;         // fraction of sugar_cap_meristem a meristem can demand per tick.
-                                          // Caps demand at cap×fraction instead of cap−current so meristems
-                                          // can't out-compete leaves for limited phloem sugar. At 0.05 and
-                                          // sugar_cap_meristem=0.1, max demand = 0.005g/tick — well below
-                                          // typical leaf production (~0.025g/tick per leaf).
     float vascular_radius_threshold;      // dm — minimum radius for bulk vascular admission.
                                           // Set below initial_radius (0.015 dm) so newly spawned
                                           // internodes qualify from birth. Only pre-initial-radius
                                           // manually-created nodes stay excluded.
+
+    // Münch pressure-flow phloem parameters
+    float phloem_osmotic_coefficient;     // maps sugar concentration [g/dm³] to osmotic pressure.
+                                          // pressure = (sugar/phloem_vol) × coeff × water_frac.
+                                          // Primary calibration knob — evolution tunes how strongly
+                                          // concentration gradients drive flow.
+    float phloem_unloading_meristem;      // permeability for APICAL and ROOT_APICAL nodes (active sink)
+    float phloem_unloading_leaf;          // permeability for LEAF nodes (bidirectional: loading + unloading)
+    float phloem_unloading_root;          // permeability for mature ROOT conduit nodes (low — mostly sealed pipe)
+    float phloem_unloading_stem;          // permeability for STEM conduit nodes (very low — minimal leakage)
 };
 
 inline Genome default_genome() {
@@ -326,10 +329,14 @@ inline Genome default_genome() {
         .xylem_conductance = 100.0f,          // primary long-range water mover (diffusion dropped to 0.02);
                                               // π×r²×100 at initial_radius = 0.071 ml/tick, above root absorption cap
         .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
-        .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap as structural glucose reserve
-        .meristem_sink_fraction = 0.05f,      // max demand per tick = 5% of cap (0.005g at cap=0.1) — well
-                                              // below leaf production; meristem can't starve the plant
         .vascular_radius_threshold = 0.01f,   // dm — below initial_radius (0.015), all new internodes qualify from birth
+
+        // Münch pressure-flow phloem
+        .phloem_osmotic_coefficient = 1.0f,   // maps g/dm³ to osmotic pressure units; primary calibration knob
+        .phloem_unloading_meristem  = 0.08f,  // APICAL/ROOT_APICAL: active growing sink, high permeability
+        .phloem_unloading_leaf      = 0.10f,  // LEAF: bidirectional (loading ← →  unloading via gradient)
+        .phloem_unloading_root      = 0.008f, // mature ROOT conduit: low leakage, mostly sealed pipe
+        .phloem_unloading_stem      = 0.002f, // STEM conduit: very low, minimal surface leakage only
     };
 }
 

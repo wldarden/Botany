@@ -142,7 +142,9 @@ TEST_CASE("Active meristem tip maintenance_cost", "[sugar]") {
 
 // === Diffusion tests ===
 
-TEST_CASE("Sugar diffuses from high to low concentration", "[sugar]") {
+// Sugar is handled exclusively by phloem_resolve (Münch pressure flow).
+// transport_with_children() skips sugar — verifying that invariant here.
+TEST_CASE("Sugar does not move via local transport (phloem-only)", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
@@ -150,13 +152,13 @@ TEST_CASE("Sugar diffuses from high to low concentration", "[sugar]") {
     seed->chemical(ChemicalID::Sugar) = 100.0f;
 
     float seed_before = seed->chemical(ChemicalID::Sugar);
-    // Parent distributes to children collectively
     seed->transport_with_children(g);
     flush_buffers(plant);
 
-    REQUIRE(seed->chemical(ChemicalID::Sugar) < seed_before);
+    // Sugar must NOT diffuse via local transport — phloem_resolve handles it.
+    REQUIRE(seed->chemical(ChemicalID::Sugar) == seed_before);
     for (const Node* child : seed->children) {
-        REQUIRE(child->chemical(ChemicalID::Sugar) > 0.0f);
+        REQUIRE(child->chemical(ChemicalID::Sugar) == 0.0f);
     }
 }
 
@@ -183,7 +185,8 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
     REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
 }
 
-TEST_CASE("Transport moves sugar from full parent to empty children", "[sugar]") {
+// Sugar transport is now phloem-only — transport_with_children must not move sugar.
+TEST_CASE("transport_with_children does not distribute sugar (phloem handles it)", "[sugar]") {
     Genome g = default_genome();
 
     Plant plant(g, glm::vec3(0.0f));
@@ -191,21 +194,20 @@ TEST_CASE("Transport moves sugar from full parent to empty children", "[sugar]")
         Node* c = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.2f);
         plant.seed_mut()->add_child(c);
     }
-    // Zero all children, give seed a full load
     plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
     plant.seed_mut()->chemical(ChemicalID::Sugar) = 10.0f;
 
     float child_before = 0.0f;
     for (const Node* c : plant.seed()->children) { child_before += c->chemical(ChemicalID::Sugar); }
 
-    // One round of transport: seed should distribute to children
     plant.seed_mut()->transport_with_children(g);
     flush_buffers(plant);
 
     float child_after = 0.0f;
     for (const Node* c : plant.seed()->children) { child_after += c->chemical(ChemicalID::Sugar); }
 
-    REQUIRE(child_after > child_before);  // children received sugar from seed
+    // children must receive nothing via local transport — phloem_resolve handles delivery
+    REQUIRE(child_after == child_before);
 }
 
 TEST_CASE("Sugar diffusion conserves total across many ticks", "[sugar]") {

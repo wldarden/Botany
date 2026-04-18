@@ -194,9 +194,15 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
     g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
-    // Tick twice — plastochron fires on the second tick, creating an interior node with axillary
+    // Tick twice — plastochron fires on the second tick, creating an interior node with axillary.
+    // Water is explicitly set so the apical has turgor for elongation even before xylem_resolve
+    // runs (DFS now precedes xylem in the tick order).
     for (int i = 0; i < 2; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.chemical(ChemicalID::Water) = 50.0f;
+        });
         plant.tick(default_world_params());
     }
 
@@ -283,9 +289,15 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     g.shoot_plastochron = 1; // spawn internode every tick for fast testing
     Plant plant(g, glm::vec3(0.0f));
 
-    // Tick twice — plastochron fires on the second tick, creating axillary buds
+    // Tick twice — plastochron fires on the second tick, creating axillary buds.
+    // Water is explicitly set so the apical has turgor for elongation even before xylem_resolve
+    // runs (DFS now precedes xylem in the tick order).
     for (int i = 0; i < 2; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 100.0f;
+            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.chemical(ChemicalID::Water) = 50.0f;
+        });
         plant.tick(default_world_params());
     }
 

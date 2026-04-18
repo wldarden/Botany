@@ -121,17 +121,18 @@ TEST_CASE("Canalization: get_bias_multiplier scales with canalization_weight", "
     REQUIRE(parent_node->get_bias_multiplier(child_node, g) == expected);
 }
 
-TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]") {
+TEST_CASE("Canalization: biased child gets larger cytokinin share", "[canalization]") {
     Genome g = default_genome();
     g.canalization_weight = 1.0f;
-    // Raise vascular_radius_threshold above node radii so local diffusion runs —
+    // Sugar and Water are now phloem/xylem-only; use Cytokinin which still diffuses locally.
+    // Cytokinin has acropetal bias so it naturally flows parent→child.
+    // Raise vascular_radius_threshold above node radii so cytokinin local diffusion runs —
     // these unit tests call transport_with_children directly without the vascular pass.
+    // Without this, radius >= default threshold causes cytokinin to be skipped on
+    // vascular-to-vascular edges (it would be handled by xylem_resolve instead).
     g.vascular_radius_threshold = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
 
-    // Use small parent sugar so children don't hit headroom caps.
-    // Both children are identical STEM nodes with cap ~0.39g.
-    // Parent sugar = 0.3g → budget < headroom, so bias split shows through.
     Node* parent_node = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
     Node* childA = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
     Node* childB = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
@@ -139,32 +140,31 @@ TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]"
     parent_node->add_child(childA);
     parent_node->add_child(childB);
 
-    parent_node->chemical(ChemicalID::Sugar) = 0.3f;
-    childA->chemical(ChemicalID::Sugar) = 0.0f;
-    childB->chemical(ChemicalID::Sugar) = 0.0f;
+    parent_node->chemical(ChemicalID::Cytokinin) = 0.3f;
+    childA->chemical(ChemicalID::Cytokinin) = 0.0f;
+    childB->chemical(ChemicalID::Cytokinin) = 0.0f;
 
     // bias_mult for childA = 1 + 1*(1+0) = 2.0, for childB = 1.0
-    // childA should get 2/3 of the budget, childB 1/3
+    // childA should get 2/3 of the transport budget, childB 1/3
     parent_node->auxin_flow_bias[childA] = 1.0f;
     parent_node->auxin_flow_bias[childB] = 0.0f;
 
     parent_node->transport_with_children(g);
-    // Flush received buffers (normally done by tick())
     for (Node* c : parent_node->children) {
         for (auto& [id, amt] : c->transport_received) c->chemical(id) += amt;
         c->transport_received.clear();
     }
 
-    REQUIRE(childA->chemical(ChemicalID::Sugar) > childB->chemical(ChemicalID::Sugar) * 1.5f);
+    REQUIRE(childA->chemical(ChemicalID::Cytokinin) > childB->chemical(ChemicalID::Cytokinin) * 1.5f);
 }
 
 TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization]") {
     Genome g = default_genome();
-    g.canalization_weight = 0.0f;  // disabled
-    g.vascular_radius_threshold = 1.0f;  // same vascular bypass as the bias test above
+    g.canalization_weight = 0.0f;  // disabled — biases must have no effect
+    g.vascular_radius_threshold = 1.0f;  // same local-diffusion bypass as the bias test above
     Plant plant(g, glm::vec3(0.0f));
 
-    // Same small-sugar setup as the bias test
+    // Same cytokinin-based setup as the bias test above
     Node* parent_node = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
     Node* childA = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
     Node* childB = plant.create_node(NodeType::STEM, glm::vec3(0, 0.1f, 0), 0.05f);
@@ -172,24 +172,23 @@ TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization
     parent_node->add_child(childA);
     parent_node->add_child(childB);
 
-    parent_node->chemical(ChemicalID::Sugar) = 0.3f;
-    childA->chemical(ChemicalID::Sugar) = 0.0f;
-    childB->chemical(ChemicalID::Sugar) = 0.0f;
+    parent_node->chemical(ChemicalID::Cytokinin) = 0.3f;
+    childA->chemical(ChemicalID::Cytokinin) = 0.0f;
+    childB->chemical(ChemicalID::Cytokinin) = 0.0f;
 
     // Big biases — but weight=0 should make them irrelevant
     parent_node->auxin_flow_bias[childA] = 5.0f;
     parent_node->auxin_flow_bias[childB] = 0.0f;
 
     parent_node->transport_with_children(g);
-    // Flush received buffers (normally done by tick())
     for (Node* c : parent_node->children) {
         for (auto& [id, amt] : c->transport_received) c->chemical(id) += amt;
         c->transport_received.clear();
     }
 
-    // Both should get roughly equal sugar
-    float ratio = childA->chemical(ChemicalID::Sugar) /
-                  std::max(childB->chemical(ChemicalID::Sugar), 1e-8f);
+    // Both should get roughly equal cytokinin (bias is disabled)
+    float ratio = childA->chemical(ChemicalID::Cytokinin) /
+                  std::max(childB->chemical(ChemicalID::Cytokinin), 1e-8f);
     REQUIRE(ratio > 0.8f);
     REQUIRE(ratio < 1.2f);
 }

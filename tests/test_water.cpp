@@ -94,11 +94,10 @@ TEST_CASE("water_cap returns minimum for tiny nodes", "[water]") {
 
 // === Water transport tests ===
 
-TEST_CASE("Water diffuses from high to low concentration", "[water]") {
+// Water is handled exclusively by xylem_resolve — transport_with_children() skips it.
+// Verifying that invariant here.
+TEST_CASE("Water does not move via local transport (xylem-only)", "[water]") {
     Genome g = default_genome();
-    // Raise vascular_radius_threshold so local diffusion runs — this test calls
-    // transport_with_children directly without running the vascular pass.
-    g.vascular_radius_threshold = 1.0f;
     Plant plant(g, glm::vec3(0.0f));
 
     Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.02f);
@@ -110,8 +109,9 @@ TEST_CASE("Water diffuses from high to low concentration", "[water]") {
     plant.seed_mut()->transport_with_children(g);
     flush_buffers(plant);
 
-    REQUIRE(child->chemical(ChemicalID::Water) > 0.0f);
-    REQUIRE(plant.seed()->chemical(ChemicalID::Water) < 50.0f);
+    // Water must NOT move via local transport — xylem_resolve handles it.
+    REQUIRE(child->chemical(ChemicalID::Water) == 0.0f);
+    REQUIRE(plant.seed()->chemical(ChemicalID::Water) == 50.0f);
 }
 
 TEST_CASE("Water transport conserves total water", "[water]") {

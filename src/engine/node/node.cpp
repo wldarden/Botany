@@ -94,8 +94,6 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     // each tick to cover maintenance must not accumulate starvation ticks.
     if (check_starvation(plant, world)) return;
 
-    // Clear growth reserve — update_tissue() has already used the sugar it needed.
-    sugar_reserved_for_growth = 0.0f;
 }
 
 // --- Tick helpers ---
@@ -278,9 +276,6 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
 
 void Node::update_tissue(Plant& /*plant*/, const WorldParams& /*world*/) {}
 
-void Node::compute_growth_reserve(const Genome& /*g*/, const WorldParams& /*world*/) {
-    sugar_reserved_for_growth = 0.0f;
-}
 
 float Node::get_bias_multiplier(Node* child, const Genome& g) const {
     float flow = 0.0f;
@@ -346,6 +341,12 @@ void Node::transport_with_children(const Genome& g) {
     float parent_cap_water = water_cap(*this, g);
 
     for (const auto& dp : diffusion_params(g)) {
+        // Sugar is handled exclusively by phloem_resolve (Münch pressure flow).
+        // Water is handled exclusively by xylem_resolve (Phase 1/Phase 2).
+        // Both are skipped here so local diffusion doesn't interfere with the
+        // vascular passes that run after the DFS tick.
+        if (dp.id == ChemicalID::Sugar || dp.id == ChemicalID::Water) continue;
+
         bool has_cap = (dp.id == ChemicalID::Sugar || dp.id == ChemicalID::Water);
 
         auto cap_for = [&](const Node& n) -> float {
