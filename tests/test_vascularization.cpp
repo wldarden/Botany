@@ -178,8 +178,8 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     Node* seed = plant.seed_mut();
 
     // Leaf source: leaf_size = 1.0 → sugar_cap = 2.0, reserve = 0.6 (phloem_reserve_fraction=0.3).
-    // Setting sugar = 0.7 → surplus = 0.1, which is less than the combined
-    // demand of the two apicals (0.1g each at meristem_sink_fraction=0.05), so rationing applies.
+    // Setting sugar = 0.605 → surplus = 0.005, which is less than the combined
+    // demand of the two apicals (0.005g each at cap=0.1, sink_fraction=0.05), so rationing applies.
     Node* leaf_src = plant.create_node(NodeType::LEAF,
                                        glm::vec3(0.1f, 0.0f, 0.0f), 0.01f);
     leaf_src->as_leaf()->leaf_size = 1.0f;
@@ -210,12 +210,12 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
             n.chemical(ChemicalID::Sugar) = sugar_cap(n, g);
     });
     // Set the leaf source and empty sinks after the fill.
-    leaf_src->chemical(ChemicalID::Sugar)   = 0.7f;
+    leaf_src->chemical(ChemicalID::Sugar)   = 0.605f;
     apical_high->chemical(ChemicalID::Sugar) = 0.0f;
     apical_low->chemical(ChemicalID::Sugar)  = 0.0f;
     // Drain the seed to below its phloem reserve so it doesn't act as a
     // confounding source. The seed was filled to its 48g cap above, giving
-    // it 33.6g surplus — far exceeding the combined 0.2g apical demand and
+    // it 33.6g surplus — far exceeding the combined 0.01g apical demand and
     // filling both apicals to cap equally, which defeats the conductance-
     // weighting assertion (got_high > got_low).
     seed->chemical(ChemicalID::Sugar) = 0.0f;

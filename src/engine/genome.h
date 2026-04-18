@@ -98,7 +98,8 @@ struct Genome {
     float sugar_storage_density_wood; // g glucose max / dm³ of stem/root tissue
     float sugar_storage_density_leaf; // g glucose max / dm² of leaf area
     float sugar_cap_minimum;          // g glucose — floor for tiny/new stem/root/leaf nodes
-    float sugar_cap_meristem;         // g glucose — cap for meristem nodes (must hold growth sugar)
+    float sugar_cap_meristem;         // g glucose — cap for meristem nodes. Kept small (0.1g) to match
+                                          // microscopic tissue volume; prevents outsized phloem demand.
 
     // Water economy (ml)
     float water_absorption_rate;          // ml / (dm² root surface · hr) per unit soil_moisture
@@ -171,8 +172,8 @@ struct Genome {
     float meristem_sink_fraction;         // fraction of sugar_cap_meristem a meristem can demand per tick.
                                           // Caps demand at cap×fraction instead of cap−current so meristems
                                           // can't out-compete leaves for limited phloem sugar. At 0.05 and
-                                          // sugar_cap_meristem=2.0, max demand = 0.1g/tick — matches actual
-                                          // elongation cost and prevents the "leafless pole" starvation pattern.
+                                          // sugar_cap_meristem=0.1, max demand = 0.005g/tick — well below
+                                          // typical leaf production (~0.025g/tick per leaf).
     float vascular_radius_threshold;      // dm — minimum radius for bulk vascular admission.
                                           // Set below initial_radius (0.015 dm) so newly spawned
                                           // internodes qualify from birth. Only pre-initial-radius
@@ -258,7 +259,7 @@ inline Genome default_genome() {
         .sugar_storage_density_wood = 500.0f, // g glucose max / dm³ — high cap so stems can pass sugar through
         .sugar_storage_density_leaf = 2.0f,   // g glucose max / dm² — enough buffer for export
         .sugar_cap_minimum = 0.1f,            // floor for tiny/new nodes
-        .sugar_cap_meristem = 2.0f,           // meristem tips — must hold enough sugar for active growth
+        .sugar_cap_meristem = 0.1f,           // meristem tips — microscopic tissue; 0.1g cap → 0.005g/tick demand
 
         // Water economy
         .water_absorption_rate = 0.5f,           // ml / (dm² · hr) — roots must keep up with full canopy transpiration
@@ -326,8 +327,8 @@ inline Genome default_genome() {
                                               // π×r²×100 at initial_radius = 0.071 ml/tick, above root absorption cap
         .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
         .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap as structural glucose reserve
-        .meristem_sink_fraction = 0.05f,      // max demand per tick = 5% of cap (0.1g at cap=2.0) — matches
-                                              // actual elongation cost (~0.05g/tick) with a 2-tick buffer
+        .meristem_sink_fraction = 0.05f,      // max demand per tick = 5% of cap (0.005g at cap=0.1) — well
+                                              // below leaf production; meristem can't starve the plant
         .vascular_radius_threshold = 0.01f,   // dm — below initial_radius (0.015), all new internodes qualify from birth
     };
 }
