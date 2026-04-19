@@ -281,16 +281,22 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     // ── Phase 2: Jacobi simultaneous pipe-network resolution ─────────────────
     // phloem_iterations inner loops.  Each iteration:
     //   a) Compute pressure at every vascular node from current sugar state.
-    //   b) Compute desired flow for EVERY edge simultaneously (reads from
-    //      start-of-iteration sugar only — no intra-iteration updates).
-    //   c) Fairness scaling: if a sender would be overdrawn, scale its outflows.
-    //   d) Apply iteration delta, clamped to [0, node_cap].
+    //   b) Compute desired flow for every edge processed in pre-order.  Pipe
+    //      throughput (velocity × ring_area) and equalization both cap the
+    //      transfer.  Unload permeability throttles how much of `desired`
+    //      crosses the sieve-tube membrane into receiver tissue per tick.
+    //   c) Apply iteration delta.
     //
-    // Unloading at conduit nodes happens in the edge loop (Section 4.6):
-    // each edge transfer splits into sieve-tube transit and membrane crossing.
-    // Only the membrane-crossing fraction actually changes the receiver's sugar;
-    // the transit fraction remains in the sender's sieve tube (credited back via
-    // the sign convention: sender pays full desired_sugar, receiver gets unload).
+    // Transit vs. storage — biologically correct interpretation:
+    // The node's sugar chemical represents BOTH parenchymatic storage AND
+    // sieve-tube transit sugar.  Real phloem sap runs at 150–250 g/dm³ which
+    // far exceeds parenchyma-tissue storage concentration — transit sugar
+    // can legitimately push a node's total above sugar_cap().  No receiver_
+    // room cap here: a high-pressure push can fill an intermediate stem
+    // above cap, and the next iteration's gradient forwards the excess.
+    // Only the sender_remaining cap (sender can't export more than it has)
+    // and the max_equil cap (no overshoot between adjacent nodes) constrain
+    // per-edge flow.  Mass is conserved exactly every edge.
     for (uint32_t iter = 0; iter < world.phloem_iterations; ++iter) {
 
         // a) Pressure at every vascular node
@@ -303,23 +309,6 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             for (int i = 0; i < N; ++i) edge_final_pressure[i] = pressure[i];
         }
 
-        // Precompute per-node caps so edge-time room checks are cheap.
-        // Uses sugar_cap() (per-type storage model) rather than node_volume ×
-        // concentration, so each node type gets the right storage capacity:
-        // - seed: max of Σ children caps and seed_sugar (fits initial reserve)
-        // - STEM/ROOT: volume × sugar_storage_density_wood
-        // - LEAF:   area × sugar_storage_density_leaf
-        // - meristems: fixed g.sugar_cap_meristem
-        std::vector<float> node_cap(N, 0.0f);
-        for (int i = 0; i < N; ++i) {
-            node_cap[i] = sugar_cap(*flat[i].node, g);
-        }
-
-        // b) Desired flow for every edge (processed in pre-order).  This is
-        // Gauss-Seidel-like within one iteration: each edge sees iter_delta
-        // accumulated so far, so running-budget checks keep mass conservation
-        // an exact invariant.  Across iterations the system still converges
-        // like Jacobi (each outer iter recomputes pressures from scratch).
         std::vector<float> iter_delta(N, 0.0f);
 
         for (int i = 0; i < N; ++i) {
@@ -374,22 +363,25 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 float grad_unload = std::max(0.0f, cur_conc - next_conc);
                 float perm    = unloading_permeability(next.type, g);
                 float unload  = std::min(grad_unload * perm * desired, desired);
-
-                // MASS-CONSERVATION: cap unload by receiver's RUNNING room budget.
-                // Without this, tiny new child nodes (cap ~0.002 g for a fresh
-                // internode) silently swallow huge inflows via the apply-step
-                // upper clamp — the most recent sugar-conservation leak (tick 24
-                // destroyed 47.66 g of the seed's 48 g when topology expanded).
-                float receiver_room = std::max(0.0f,
-                    node_cap[j] - next.chemical(ChemicalID::Sugar) - iter_delta[j]);
-                unload = std::min(unload, receiver_room);
                 if (unload <= 0.0f) return;
 
-                // Mass-conserving edge transfer: sender loses exactly what receiver
-                // gains.  With running-budget caps above, this delta can no longer
-                // push the sender below 0 or the receiver above cap — conservation
-                // is an exact per-iter invariant.  Verified by SUMMARY row in
-                // phloem_log.csv (conservation_error must stay ≈ 0 every tick).
+                // NO receiver_room cap here — in real phloem the sieve tube
+                // carries sugar through nodes at concentrations far above the
+                // parenchymatic storage cap (sieve sap is ~150–250 g/dm³ sucrose
+                // in a stem whose bulk-tissue concentration is much lower).  The
+                // node's sugar pool represents both parenchymatic storage AND
+                // transit sugar in the sieve tube — it is allowed to temporarily
+                // exceed sugar_cap() when a high-pressure push is in transit.
+                // The next Jacobi iteration will see the elevated concentration
+                // and forward it along the pressure gradient.  Equilibration
+                // (max_equil clamp above) still prevents overshoot between any
+                // two adjacent nodes; the sender_remaining cap still prevents a
+                // sender from pushing more than it holds.  Conservation is the
+                // exact per-edge invariant sender -= X; receiver += X.
+
+                // Mass-conserving edge transfer: sender loses exactly what
+                // receiver gains.  Verified every tick by SUMMARY conservation
+                // row in phloem_log.csv.
                 iter_delta[i] -= unload;
                 iter_delta[j] += unload;
                 if (logging) {
@@ -415,11 +407,12 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             for (int ci : flat[i].child_idxs) process_edge(ci);
         }
 
-        // c) Apply iteration delta.  Running-budget caps in process_edge guarantee
-        // every delta already respects sender availability and receiver room, so
-        // no clamp truncation is needed (and any truncation here would be a leak).
-        // The std::max(..., 0.0f) is a float-rounding safety rail only — it cannot
-        // fire for more than ~1e-6 g given the caps above.
+        // c) Apply iteration delta.  Sender cap (sender_remaining in process_edge)
+        // keeps each node's sugar ≥ 0; the max(,0) is a float-rounding safety rail.
+        // No upper cap: intermediate stems may temporarily hold sugar above their
+        // parenchymatic sugar_cap() when sieve-tube transit is in progress.  That
+        // elevated concentration feeds the pressure gradient for the next
+        // iteration, which forwards the excess toward sinks.
         for (int i = 0; i < N; ++i) {
             if (std::abs(iter_delta[i]) < 1e-10f) continue;
             Node& n   = *flat[i].node;
@@ -689,15 +682,16 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
 
                 float desired = std::min(flow_vol, max_equil);
 
-                // Running-budget caps — same invariant as phloem_resolve.  Per-edge
-                // mass conservation means conservation_error stays ≈ 0 every tick.
+                // Sender cap only — the xylem equivalent of the "sieve-tube
+                // transit" relaxation in phloem.  Real xylem vessels carry
+                // water through a node at high throughput; the node's water
+                // chemical represents bulk tissue water AND vessel transit,
+                // and is allowed to temporarily exceed water_cap in transit.
+                // The next iteration sees the elevated water_frac and pushes
+                // the excess forward along the gradient.  Equalization cap
+                // (max_equil) prevents overshoot between adjacent nodes.
                 float sender_remaining = cur.chemical(ChemicalID::Water) + iter_delta[i];
                 desired = std::min(desired, std::max(0.0f, sender_remaining));
-                if (desired <= 0.0f) return;
-
-                float receiver_room = std::max(0.0f,
-                    wcap[j] - next.chemical(ChemicalID::Water) - iter_delta[j]);
-                desired = std::min(desired, receiver_room);
                 if (desired <= 0.0f) return;
 
                 iter_delta[i] -= desired;
@@ -712,8 +706,11 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             for (int ci : flat[i].child_idxs) process_edge(ci);
         }
 
-        // Apply — running caps guarantee [0, cap], but the max(,0) is a
-        // float-rounding safety rail (cannot fire for >~1e-6 ml).
+        // Apply — sender cap still guarantees ≥ 0 so the max(,0) is a
+        // float-rounding safety rail (cannot fire for >~1e-6 ml).  No upper
+        // cap: water_cap bounds physical storage, but the chemical pool may
+        // temporarily hold extra water in transit through the xylem.  That
+        // transit excess drives the gradient for the next iteration.
         for (int i = 0; i < N; ++i) {
             if (std::abs(iter_delta[i]) < 1e-10f) continue;
             Node& n = *flat[i].node;

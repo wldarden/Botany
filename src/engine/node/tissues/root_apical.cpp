@@ -18,24 +18,23 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 
     absorb_water(g, world);
 
-    // Auxin production: unconditional (active and dormant). Real root tips maintain
-    // a local auxin maximum via PIN-mediated recycling regardless of growth state.
-    // Dormant buds need this to self-supply the auxin required for can_activate().
-    chemical(ChemicalID::Auxin) += g.root_tip_auxin_production_rate;
-    tick_auxin_produced += g.root_tip_auxin_production_rate;
-
     if (!active) {
+        // Dormant RAs do not synthesize auxin or cytokinin — matches shoot apical
+        // behavior and real plant biology (hormone biosynthesis is an active process
+        // gated on metabolism).  Dormant buds depend on PIN-transported auxin from
+        // upstream to eventually cross the activation threshold, which is the
+        // canalization-driven branching pattern real plants exhibit: laterals
+        // activate along well-canalized paths, not uniformly everywhere.
         if (can_activate(g, world)) activate(g, world);
         return;
     }
 
-    // Cytokinin production: only ACTIVE root apicals signal "the plant wants more roots".
-    // Dormant buds must NOT produce cytokinin — their own production would saturate their
-    // local cytokinin ~20× above root_cytokinin_inhibition_threshold, permanently blocking
-    // can_activate(). Shoot apicals follow the same convention: produce_auxin() is called
-    // only inside the active branch.
-    // Gate by local auxin — the genome comment says "cytokinin per unit auxin".
-    // Root apicals with more auxin (PIN-delivered + self-produced) signal more strongly.
+    // Active root tips: auxin self-maintenance (local PIN-recycling maximum) and
+    // cytokinin production gated by local auxin ("more auxin → stronger cyto
+    // signal").  Both productions match the shoot apical pattern.
+    chemical(ChemicalID::Auxin) += g.root_tip_auxin_production_rate;
+    tick_auxin_produced += g.root_tip_auxin_production_rate;
+
     float cyto_produced = g.root_cytokinin_production_rate * chemical(ChemicalID::Auxin);
     chemical(ChemicalID::Cytokinin) += cyto_produced;
     tick_cytokinin_produced += cyto_produced;
