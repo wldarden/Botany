@@ -592,32 +592,39 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     }
 }
 
-// ── xylem_resolve: mass-conserving Jacobi pressure-flow for water + cytokinin ──
+// ── xylem_resolve: demand-driven water + cytokinin transport ──────────────
 //
-// Mirrors phloem_resolve in structure: flat pre-order traversal, Jacobi outer
-// iterations, per-edge mass-conserving transfer with running-budget caps on both
-// sender and receiver.  Key differences from phloem_resolve:
+// Real xylem is NOT local diffusion — it's bulk flow under transpiration tension.
+// A transpiring leaf creates a negative pressure that propagates through the
+// cohesion-tension water column and pulls water from roots in the same instant
+// (classical plant physiology).  Our previous wfrac-gradient Jacobi model could
+// not capture this: adjacent-pair equilibration bottlenecks flow at every edge,
+// and water pools at roots while shoot tips stay drought-stunted no matter how
+// many iterations we run.
 //
-//   • Driving "pressure" is water_fraction = water / water_cap (dimensionless, 0–1).
-//     No osmotic-coefficient multiplier — dp = frac_sender − frac_receiver directly
-//     drives flow.  This is a pragmatic proxy for xylem water potential: the
-//     thirstiest node pulls the hardest.  Leaves transpire → frac drops → they
-//     pull from stems → stems pull from roots → roots absorb from soil.
+// Replacing it with a source-to-sink flow network, mirroring how phloem_resolve
+// handles sugar sources (leaves) and sinks (meristems):
 //
-//   • Pipe area = full node cross-section (π·r²) rather than a thin ring.
-//     In real stems the xylem (dead wood vessels) occupies the bulk of the cross
-//     section, whereas phloem is a thin living layer.  So xylem throughput
-//     scales with r² instead of r.
+//   1. Classify every node as SOURCE (has water to give), SINK (needs water),
+//      or NEUTRAL (conduit/no participation).
+//   2. Sum total supply and total demand plant-wide.
+//   3. Deliver flow = min(total_supply, total_demand) — mass-conservative.
+//   4. Each source contributes proportionally: source.water -= supply[i] × scale_s.
+//      Each sink receives proportionally: sink.water += demand[j] × scale_d.
+//   5. Cytokinin rides the water: each source also loses cyto proportional to the
+//      water it sent; sinks receive cyto pooled across the xylem stream.
 //
-//   • Two separate passes: water first (driven by its own fraction gradient),
-//     then cytokinin (driven by the same water gradient; amount moved per edge
-//     = flow_vol × sender_cyto_per_water).  Cyto rides the xylem stream.
+// Classifications:
+//   SOURCE: ROOT, ROOT_APICAL — absorbed from soil, offer water above a reserve
+//   SINK:   LEAF — transpiration + photosynthesis water cost + fill-to-cap demand
+//           APICAL, STEM, ROOT (buffer demand to maintain growth turgor)
+//   NEUTRAL: seed — it's a junction; its water replenishes via root subtree and
+//           is drained by shoot subtree through the source/sink accounting.
 //
-//   • Leaves, meristems, and all other nodes participate — there is no Phase-1
-//     loading or Phase-3 unloading like phloem.  The whole network is one pipe.
-//     Transpiration at leaves is modeled elsewhere (LeafNode::transpire) as a
-//     direct subtraction from leaf water; that creates the gradient this pass
-//     resolves.
+// Mass conservation is trivially exact: Σ deducted = delivered = Σ added.
+// Pipe capacity is NOT modeled explicitly; throughput is demand-limited and the
+// xylem conductance is high enough that real tree-scale flows stay below capacity.
+// If that becomes false we can add a pipe-throughput cap as a secondary limit.
 void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     Node* seed = plant.seed_mut();
     if (!seed) return;
@@ -631,8 +638,8 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     // Logging arrays — capture pre-amounts so SUMMARY rows show conservation.
     const bool logging = world.xylem_debug_log;
     std::vector<float> pre_water(N, 0.0f), pre_cyto(N, 0.0f);
-    std::vector<float> edge_water_up(N, 0.0f);   // water flowing from i to parent(i)
-    std::vector<float> edge_water_down(N, 0.0f); // water flowing from i to children (+ sum over children)
+    std::vector<float> edge_water_up(N, 0.0f);   // per-node net water gained (for logging only)
+    std::vector<float> edge_water_down(N, 0.0f); // per-node water lost (for logging only)
     std::vector<float> edge_cyto_up(N, 0.0f);
     std::vector<float> edge_cyto_down(N, 0.0f);
     if (logging) {
@@ -642,140 +649,140 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         }
     }
 
-    // ── Pre-compute water caps (same for both passes; unchanged across iters) ──
+    // ── Pre-compute water caps ─────────────────────────────────────────────
     std::vector<float> wcap(N, 0.0f);
     for (int i = 0; i < N; ++i) wcap[i] = water_cap(*flat[i].node, g);
 
-    // ── Water pass ─────────────────────────────────────────────────────────────
-    for (uint32_t iter = 0; iter < world.xylem_iterations; ++iter) {
-        // Compute water_fraction at every node (the "pressure" proxy).
-        std::vector<float> wfrac(N, 0.0f);
-        for (int i = 0; i < N; ++i) {
-            if (wcap[i] > 0.0f)
-                wfrac[i] = flat[i].node->chemical(ChemicalID::Water) / wcap[i];
-        }
+    // ── Phase 1: compute per-node supply (sources) and demand (sinks) ──────
+    //
+    // SOURCE: ROOT, ROOT_APICAL offer water above a reserve fraction of their cap
+    // (keeps some for their own turgor/growth).  Reserve fraction tuned low (0.3)
+    // because roots are never short on water in moist soil.
+    //
+    // SINK: LEAF demand combines three terms:
+    //   - transpiration this tick (area × transp_rate × light × stomatal)
+    //   - photosynthesis water cost (production this tick × photo_water_ratio)
+    //   - fill-to-cap buffer so wfrac doesn't sag between consumption events
+    //
+    // SAs, STEMs, and ROOTs have a turgor-buffer demand to reach a target wfrac
+    // (0.5 for stems/SAs).  This keeps the whole vascular chain moist enough for
+    // growth; real plants don't run stems bone dry either.
+    //
+    // Seed is neutral — no supply or demand of its own; water flows through it
+    // from root subtree to shoot subtree as part of the source/sink accounting.
+    constexpr float kRootReserveFrac   = 0.3f;  // roots keep 30% of cap as reserve
+    constexpr float kStemTargetTurgor  = 0.5f;  // stems aim for 50% wfrac
+    constexpr float kShootMeristemTurgor = 0.7f; // SAs want 70% wfrac for growth
+    constexpr float kRootMeristemTurgor  = 0.5f; // RAs want 50% (less critical)
 
-        std::vector<float> iter_delta(N, 0.0f);
+    std::vector<float> supply(N, 0.0f);
+    std::vector<float> demand(N, 0.0f);
 
-        for (int i = 0; i < N; ++i) {
-            Node& cur = *flat[i].node;
+    for (int i = 0; i < N; ++i) {
+        Node& n = *flat[i].node;
+        float w = n.chemical(ChemicalID::Water);
+        float cap = wcap[i];
+        if (cap <= 1e-8f) continue;
 
-            auto process_edge = [&](int j) {
-                Node& next = *flat[j].node;
-                float dp = wfrac[i] - wfrac[j];
-                if (dp <= 1e-6f) return;  // cur must be the fuller (higher-frac) side
-
-                float r_eff    = edge_pipe_radius(cur, next);
-                float pipe_area = 3.14159265f * r_eff * r_eff;  // full cross-section
-                float velocity  = std::min(dp * g.xylem_conductance_per_pressure,
-                                           world.max_xylem_velocity);
-                float flow_vol  = velocity * pipe_area;  // dm³/tick
-
-                // Equalization cap — cur cannot drop below the fraction that
-                // would result if both nodes pooled their water.  Prevents
-                // oscillation from overshoot.
-                float total_water = cur.chemical(ChemicalID::Water) + next.chemical(ChemicalID::Water);
-                float total_cap   = wcap[i] + wcap[j];
-                float equil_frac  = (total_cap > 1e-8f) ? total_water / total_cap : 0.0f;
-                float max_equil   = std::max(0.0f,
-                    cur.chemical(ChemicalID::Water) - equil_frac * wcap[i]);
-
-                float desired = std::min(flow_vol, max_equil);
-
-                // Sender cap only — the xylem equivalent of the "sieve-tube
-                // transit" relaxation in phloem.  Real xylem vessels carry
-                // water through a node at high throughput; the node's water
-                // chemical represents bulk tissue water AND vessel transit,
-                // and is allowed to temporarily exceed water_cap in transit.
-                // The next iteration sees the elevated water_frac and pushes
-                // the excess forward along the gradient.  Equalization cap
-                // (max_equil) prevents overshoot between adjacent nodes.
-                float sender_remaining = cur.chemical(ChemicalID::Water) + iter_delta[i];
-                desired = std::min(desired, std::max(0.0f, sender_remaining));
-                if (desired <= 0.0f) return;
-
-                iter_delta[i] -= desired;
-                iter_delta[j] += desired;
-                if (logging) {
-                    if (flat[i].parent_idx == j) edge_water_up[i] += desired;
-                    else                         edge_water_down[i] += desired;
-                }
-            };
-
-            if (flat[i].parent_idx >= 0) process_edge(flat[i].parent_idx);
-            for (int ci : flat[i].child_idxs) process_edge(ci);
-        }
-
-        // Apply — sender cap still guarantees ≥ 0 so the max(,0) is a
-        // float-rounding safety rail (cannot fire for >~1e-6 ml).  No upper
-        // cap: water_cap bounds physical storage, but the chemical pool may
-        // temporarily hold extra water in transit through the xylem.  That
-        // transit excess drives the gradient for the next iteration.
-        for (int i = 0; i < N; ++i) {
-            if (std::abs(iter_delta[i]) < 1e-10f) continue;
-            Node& n = *flat[i].node;
-            n.chemical(ChemicalID::Water) = std::max(n.chemical(ChemicalID::Water) + iter_delta[i], 0.0f);
+        if (n.type == NodeType::ROOT || n.type == NodeType::ROOT_APICAL) {
+            // Source side.  ROOT_APICAL is both absorbing tissue and xylem
+            // stream — offer whatever's above the reserve floor.
+            float reserve = cap * kRootReserveFrac;
+            supply[i] = std::max(0.0f, w - reserve);
+            // Still give RAs a small turgor-buffer demand so they don't drain
+            // below the reserve during big transpiration pulls.
+            if (n.type == NodeType::ROOT_APICAL) {
+                float target = cap * kRootMeristemTurgor;
+                demand[i] = std::max(0.0f, target - w);
+            }
+        } else if (n.type == NodeType::LEAF) {
+            // Sink.  Anticipate this tick's consumption (transpiration + photo)
+            // plus fill any deficit to cap.  Using last-tick's observed
+            // light_exposure and wfrac-derived stomatal conductance.
+            const LeafNode* leaf = n.as_leaf();
+            float area = leaf->leaf_size * leaf->leaf_size;
+            float light = leaf->light_exposure * world.light_level;
+            float wfrac_now = w / cap;
+            float stomatal = std::clamp(wfrac_now, 0.2f, 1.0f);
+            float transp = area * g.transpiration_rate * light * stomatal;
+            float production = area * world.sugar_production_rate * light * stomatal;
+            float photo_water = production * g.photosynthesis_water_ratio;
+            float buffer = std::max(0.0f, cap - w);
+            demand[i] = transp + photo_water + buffer;
+        } else if (n.type == NodeType::APICAL) {
+            float target = cap * kShootMeristemTurgor;
+            demand[i] = std::max(0.0f, target - w);
+        } else if (n.type == NodeType::STEM) {
+            // Seed (no parent) is neutral — stays out of the accounting so it
+            // behaves as a passive junction.
+            if (n.parent == nullptr) continue;
+            float target = cap * kStemTargetTurgor;
+            demand[i] = std::max(0.0f, target - w);
         }
     }
 
-    // ── Cytokinin pass ────────────────────────────────────────────────────────
-    // Cytokinin rides in the water stream.  Drive = same water_fraction gradient
-    // (cyto goes wherever water goes).  Mass per edge = flow_vol × sender's
-    // cyto-per-water concentration.  Mass-conserving via the same running caps.
-    for (uint32_t iter = 0; iter < world.xylem_iterations; ++iter) {
-        std::vector<float> wfrac(N, 0.0f);
+    float total_supply = 0.0f, total_demand = 0.0f;
+    for (int i = 0; i < N; ++i) {
+        total_supply += supply[i];
+        total_demand += demand[i];
+    }
+    float delivered = std::min(total_supply, total_demand);
+
+    // ── Phase 2: apply transfers proportionally ────────────────────────────
+    // Mass conservation: Σ source_deduct = delivered = Σ sink_add.
+    // The proportional scaling means every source sends the same FRACTION of its
+    // offered supply, and every sink receives the same FRACTION of its demand.
+    // This avoids prioritization decisions and matches bulk-flow physics where a
+    // single-junction tree redistributes flow uniformly under full mixing.
+    if (delivered > 1e-12f) {
+        float supply_scale = (total_supply > 1e-12f) ? delivered / total_supply : 0.0f;
+        float demand_scale = (total_demand > 1e-12f) ? delivered / total_demand : 0.0f;
+
+        // ── Water transfers ────────────────────────────────────────────────
         for (int i = 0; i < N; ++i) {
-            if (wcap[i] > 0.0f)
-                wfrac[i] = flat[i].node->chemical(ChemicalID::Water) / wcap[i];
-        }
-
-        std::vector<float> iter_delta(N, 0.0f);
-
-        for (int i = 0; i < N; ++i) {
-            Node& cur = *flat[i].node;
-
-            auto process_edge = [&](int j) {
-                Node& next = *flat[j].node;
-                float dp = wfrac[i] - wfrac[j];
-                if (dp <= 1e-6f) return;
-
-                float cur_water = cur.chemical(ChemicalID::Water);
-                if (cur_water <= 1e-8f) return;
-                float cyto_per_water = cur.chemical(ChemicalID::Cytokinin) / cur_water;
-                if (cyto_per_water <= 0.0f) return;
-
-                float r_eff     = edge_pipe_radius(cur, next);
-                float pipe_area = 3.14159265f * r_eff * r_eff;
-                float velocity  = std::min(dp * g.xylem_conductance_per_pressure,
-                                           world.max_xylem_velocity);
-                float flow_vol  = velocity * pipe_area;  // dm³/tick
-
-                float desired = flow_vol * cyto_per_water;  // mass of cyto carried
-
-                float sender_remaining = cur.chemical(ChemicalID::Cytokinin) + iter_delta[i];
-                desired = std::min(desired, std::max(0.0f, sender_remaining));
-                if (desired <= 0.0f) return;
-
-                // Cytokinin has no storage cap (signal molecule) — receiver accepts
-                // whatever arrives.  Decay (Node::decay_chemicals) prevents
-                // unbounded accumulation.
-                iter_delta[i] -= desired;
-                iter_delta[j] += desired;
-                if (logging) {
-                    if (flat[i].parent_idx == j) edge_cyto_up[i] += desired;
-                    else                         edge_cyto_down[i] += desired;
-                }
-            };
-
-            if (flat[i].parent_idx >= 0) process_edge(flat[i].parent_idx);
-            for (int ci : flat[i].child_idxs) process_edge(ci);
-        }
-
-        for (int i = 0; i < N; ++i) {
-            if (std::abs(iter_delta[i]) < 1e-10f) continue;
             Node& n = *flat[i].node;
-            n.chemical(ChemicalID::Cytokinin) = std::max(
-                n.chemical(ChemicalID::Cytokinin) + iter_delta[i], 0.0f);
+            if (supply[i] > 0.0f) {
+                float deducted = supply[i] * supply_scale;
+                n.chemical(ChemicalID::Water) -= deducted;
+                if (logging) edge_water_down[i] += deducted;
+            }
+            if (demand[i] > 0.0f) {
+                float added = demand[i] * demand_scale;
+                n.chemical(ChemicalID::Water) += added;
+                if (logging) edge_water_up[i] += added;
+            }
+        }
+
+        // ── Cytokinin rides the water stream ──────────────────────────────
+        // Each source loses cyto proportional to the water it sent, using its
+        // pre-transfer cyto-per-water concentration.  Pool all the transported
+        // cyto at the seed "junction" and redistribute to sinks in the same
+        // proportion the sinks received water.  Mass-conservative.
+        float total_cyto_transported = 0.0f;
+        for (int i = 0; i < N; ++i) {
+            Node& n = *flat[i].node;
+            if (supply[i] <= 0.0f) continue;
+            float water_sent = supply[i] * supply_scale;
+            float water_before = pre_water[i];  // use pre-tick water (matches cyto basis)
+            if (water_before <= 1e-8f) continue;
+            float cyto_per_water = pre_cyto[i] / water_before;
+            float cyto_sent = std::min(water_sent * cyto_per_water, n.chemical(ChemicalID::Cytokinin));
+            if (cyto_sent <= 0.0f) continue;
+            n.chemical(ChemicalID::Cytokinin) -= cyto_sent;
+            total_cyto_transported += cyto_sent;
+            if (logging) edge_cyto_down[i] += cyto_sent;
+        }
+
+        if (total_cyto_transported > 1e-12f && total_demand > 1e-12f) {
+            // Distribute to sinks proportional to their share of received water.
+            for (int i = 0; i < N; ++i) {
+                Node& n = *flat[i].node;
+                if (demand[i] <= 0.0f) continue;
+                float water_received = demand[i] * demand_scale;
+                float cyto_share = total_cyto_transported * (water_received / delivered);
+                n.chemical(ChemicalID::Cytokinin) += cyto_share;
+                if (logging) edge_cyto_up[i] += cyto_share;
+            }
         }
     }
 

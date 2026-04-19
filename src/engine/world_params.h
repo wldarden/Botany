@@ -85,8 +85,9 @@ struct WorldParams {
                                            //   Real xylem moves water at 1–15 m/hr in trees (much faster
                                            //   than phloem).  We keep the cap generous; the driving gradient
                                            //   (water_fraction differential) is small, so flows stay modest.
-    uint32_t xylem_iterations  = 3;        // inner Jacobi iterations per xylem_resolve call.
-                                           //   Like phloem_iterations; 3 is a safe default.
+    uint32_t xylem_iterations  = 1;        // unused with demand-driven xylem_resolve.
+                                           // Kept for potential future Jacobi fallback; default
+                                           // 1 since the demand-driven algorithm is single-pass.
 
     // Debug / diagnostics
     bool vascular_debug_log = false;        // write per-junction vascular flow to debug/vascular_log.csv
@@ -149,7 +150,7 @@ inline WorldParams default_world_params() {
         .phloem_ring_thickness   = 0.005f,
         .leaf_thickness          = 0.003f,
         .max_xylem_velocity      = 30.0f,
-        .xylem_iterations        = 3,
+        .xylem_iterations        = 1,
     };
 }
 

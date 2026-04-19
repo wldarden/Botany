@@ -33,7 +33,7 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
               << "auxin,cytokinin,gibberellin,ethylene,stress_hormone,"
               << "auxin_produced,cytokinin_produced,"
               << "light_exposure,leaf_size,angle_eff,senescence,"
-              << "starvation_ticks,pos_x,pos_y,pos_z,radius,"
+              << "starvation_ticks,pos_x,pos_y,pos_z,radius,length,"
               << "total_mass,stress\n";
         header_written_ = true;
     }
@@ -94,7 +94,7 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
               << senescence << ","
               << node.starvation_ticks << ","
               << node.position.x << "," << node.position.y << "," << node.position.z << ","
-              << node.radius << ","
+              << node.radius << "," << glm::length(node.offset) << ","
               << node.total_mass << "," << node.stress << "\n";
     });
 }
