@@ -17,7 +17,18 @@ ApicalNode::ApicalNode(uint32_t id, glm::vec3 position, float radius)
 void ApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
+    // Quiescence: active meristem reverts to dormant after sustained sugar
+    // starvation rather than dying.  Symmetric with RA quiescence.
+    if (active && starvation_ticks >= static_cast<uint32_t>(g.quiescence_threshold)) {
+        active = false;
+        starvation_ticks = 0;
+    }
+
     if (!active) {
+        // Dormant buds accumulate nothing — zero maintenance cost, and we
+        // keep starvation_ticks at 0 so check_starvation can't drive them
+        // to death while dormant.  They can always reactivate via can_activate().
+        starvation_ticks = 0;
         if (can_activate(g, world)) activate(g, world);
         return;
     }

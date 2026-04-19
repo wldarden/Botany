@@ -934,6 +934,34 @@ TEST_CASE("Active RA reverts to dormant after quiescence_threshold ticks of star
     REQUIRE(ra->starvation_ticks <= 1u);
 }
 
+TEST_CASE("Active SA reverts to dormant after quiescence_threshold ticks of starvation", "[meristem][quiescence]") {
+    Genome g = default_genome();
+    g.quiescence_threshold = 10.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+
+    ApicalNode* sa = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::APICAL && !sa) sa = n.as_apical();
+    });
+    REQUIRE(sa != nullptr);
+    REQUIRE(sa->active);
+
+    for (int i = 0; i < 15; ++i) {
+        // Zero ALL nodes' sugar so local diffusion from seed doesn't refill SA.
+        plant.for_each_node_mut([&](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 0.0f;
+        });
+        plant.tick(world);
+    }
+
+    REQUIRE_FALSE(sa->active);
+    // starvation_ticks is reset in the quiescence flip and again in the dormant
+    // branch, but check_starvation runs after update_tissue and increments if
+    // sugar <= 0. So it can be 0 or 1 at any given observation point.
+    REQUIRE(sa->starvation_ticks <= 1u);
+}
+
 TEST_CASE("Dormant RA does not die at starvation_ticks_max", "[meristem][quiescence]") {
     Genome g = default_genome();
     g.quiescence_threshold = 5.0f;
