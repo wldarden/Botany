@@ -835,6 +835,40 @@ TEST_CASE("SA auxin production drops when water is low", "[meristem][metabolic]"
     REQUIRE(produced_dry > 0.0f);
 }
 
+TEST_CASE("RA cytokinin production drops sharply when sugar is low", "[meristem][metabolic]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+
+    RootApicalNode* ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
+    });
+    REQUIRE(ra != nullptr);
+
+    // Zero sugar, full water, abundant auxin — CK should drop to ~floor (0.05)
+    ra->chemical(ChemicalID::Sugar) = 0.0f;
+    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->chemical(ChemicalID::Auxin) = 1.0f;  // high auxin to isolate sugar effect
+    ra->tick_cytokinin_produced = 0.0f;
+
+    ra->tick(plant, world);
+    float produced_starved = ra->tick_cytokinin_produced;
+
+    // Full sugar, full water, same auxin — CK should be near max
+    ra->chemical(ChemicalID::Sugar) = 1.0f;  // >> K_sugar (0.05 for CK)
+    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->chemical(ChemicalID::Auxin) = 1.0f;
+    ra->tick_cytokinin_produced = 0.0f;
+
+    ra->tick(plant, world);
+    float produced_fed = ra->tick_cytokinin_produced;
+
+    // CK floor is smaller (0.05) so the gap should be wider than auxin's gap
+    REQUIRE(produced_starved < produced_fed * 0.1f);
+    REQUIRE(produced_starved > 0.0f);  // floor keeps it non-zero
+}
+
 TEST_CASE("RA auxin production drops when sugar is low", "[meristem][metabolic]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
