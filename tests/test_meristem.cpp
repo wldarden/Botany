@@ -9,6 +9,7 @@
 #include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/vascular.h"
+#include "engine/node/meristems/helpers.h"
 
 using namespace botany;
 using Catch::Matchers::WithinAbs;
@@ -727,6 +728,38 @@ TEST_CASE("Elastic recovery stops when offset matches rest_offset", "[meristem][
     // Direction should be essentially unchanged (no recovery needed)
     float dot = glm::dot(glm::normalize(stem->offset), dir_before);
     REQUIRE(dot > 0.999f);
+}
+
+TEST_CASE("metabolic_factor: saturates at high inputs", "[meristem][metabolic]") {
+    using meristem_helpers::metabolic_factor;
+    float mf = metabolic_factor(/*sugar*/ 1000.0f, /*K_s*/ 0.1f, /*floor_s*/ 0.1f,
+                                 /*water*/ 1000.0f, /*K_w*/ 0.1f, /*floor_w*/ 0.1f);
+    REQUIRE_THAT(mf, WithinAbs(1.0f, 1e-3f));
+}
+
+TEST_CASE("metabolic_factor: floor at zero inputs", "[meristem][metabolic]") {
+    using meristem_helpers::metabolic_factor;
+    float mf = metabolic_factor(0.0f, 0.1f, 0.1f, 0.0f, 0.1f, 0.05f);
+    // floor_s * floor_w = 0.1 * 0.05 = 0.005
+    REQUIRE_THAT(mf, WithinAbs(0.005f, 1e-6f));
+}
+
+TEST_CASE("metabolic_factor: half-saturation point", "[meristem][metabolic]") {
+    using meristem_helpers::metabolic_factor;
+    // At sugar = K, sugar term = floor + (1 - floor) * 0.5 = 0.1 + 0.45 = 0.55
+    // Same for water. Product = 0.55 * 0.55 = 0.3025.
+    float mf = metabolic_factor(0.1f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f);
+    REQUIRE_THAT(mf, WithinAbs(0.3025f, 1e-3f));
+}
+
+TEST_CASE("metabolic_factor: stresses compound multiplicatively", "[meristem][metabolic]") {
+    using meristem_helpers::metabolic_factor;
+    // Full sugar, zero water → should reach only water floor (0.1)
+    float mf_dry = metabolic_factor(1000.0f, 0.1f, 0.1f, 0.0f, 0.1f, 0.1f);
+    REQUIRE_THAT(mf_dry, WithinAbs(0.1f, 1e-3f));
+    // Zero sugar, full water → should reach only sugar floor (0.1)
+    float mf_starved = metabolic_factor(0.0f, 0.1f, 0.1f, 1000.0f, 0.1f, 0.1f);
+    REQUIRE_THAT(mf_starved, WithinAbs(0.1f, 1e-3f));
 }
 
 TEST_CASE("has_vasculature uses radius threshold, not node age or bias", "[meristem][vascular]") {

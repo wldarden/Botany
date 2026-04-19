@@ -121,5 +121,21 @@ inline float auxin_growth_factor(float auxin, float max_boost, float half_sat) {
     return 1.0f + max_boost * saturation;
 }
 
+// Multiplicative metabolic gating — captures short-timescale biochemistry +
+// transcription response to sugar and water at a meristem.  Both stresses
+// compound.  Floors encode hormone-specific buffering (conjugate pools for
+// auxin, etc.); caller supplies floor per hormone type.
+//
+// At sugar=0 and water=0, returns floor_s * floor_w (minimum production).
+// At saturation (sugar >> K_s, water >> K_w), returns 1.0 (full production).
+//
+// Used by SA auxin, RA auxin, and RA cytokinin production.
+inline float metabolic_factor(float sugar, float K_sugar, float floor_sugar,
+                              float water, float K_water, float floor_water) {
+    float sf = floor_sugar + (1.0f - floor_sugar) * sugar / (sugar + K_sugar);
+    float wf = floor_water + (1.0f - floor_water) * water / (water + K_water);
+    return sf * wf;
+}
+
 } // namespace meristem_helpers
 } // namespace botany
