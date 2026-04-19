@@ -278,195 +278,107 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         }
     }
 
-    // ── Phase 2: Jacobi simultaneous pipe-network resolution ─────────────────
-    // phloem_iterations inner loops.  Each iteration:
-    //   a) Compute pressure at every vascular node from current sugar state.
-    //   b) Compute desired flow for every edge processed in pre-order.  Pipe
-    //      throughput (velocity × ring_area) and equalization both cap the
-    //      transfer.  Unload permeability throttles how much of `desired`
-    //      crosses the sieve-tube membrane into receiver tissue per tick.
-    //   c) Apply iteration delta.
+    // ── Phase 2: Demand-driven source-to-sink allocation ──────────────────────
+    // Replaces the previous pairwise-Jacobi Münch resolution.  Pairwise
+    // equilibration attenuates sugar signals exponentially along long shoot
+    // chains — observed in a 2596-tick run where the primary SA at the tip
+    // of a 30-stem chain had sugar=0 for 1900+ ticks despite the seed holding
+    // 0.23 g.  The demand-driven pattern (mirroring xylem_resolve) eliminates
+    // hop-by-hop attenuation: sinks pull sugar directly from the plant-wide
+    // supply pool in proportion to their demand.
     //
-    // Transit vs. storage — biologically correct interpretation:
-    // The node's sugar chemical represents BOTH parenchymatic storage AND
-    // sieve-tube transit sugar.  Real phloem sap runs at 150–250 g/dm³ which
-    // far exceeds parenchyma-tissue storage concentration — transit sugar
-    // can legitimately push a node's total above sugar_cap().  No receiver_
-    // room cap here: a high-pressure push can fill an intermediate stem
-    // above cap, and the next iteration's gradient forwards the excess.
-    // Only the sender_remaining cap (sender can't export more than it has)
-    // and the max_equil cap (no overshoot between adjacent nodes) constrain
-    // per-edge flow.  Mass is conserved exactly every edge.
-    for (uint32_t iter = 0; iter < world.phloem_iterations; ++iter) {
+    // Classification (computed once per tick):
+    //   SOURCE (supply):
+    //     - STEM / ROOT / seed with sugar > phloem_reserve — surplus above the
+    //       parenchyma reserve is available to flow to sinks.
+    //   SINK (demand):
+    //     - Active APICAL / ROOT_APICAL wanting to fill to meristem_sink_fraction
+    //       × cap per tick.  Dormant meristems have zero demand.
+    //     - STEM / ROOT / seed with sugar < reserve — wants to refill the
+    //       parenchyma buffer for maintenance.
+    //
+    // LEAF loading was already handled in Phase 1 above; by this point leaf
+    // surplus is in the parent conduit and participates here as STEM supply.
+    //
+    // Mass conservation: Σ source_deduct = delivered = Σ sink_add, by
+    // construction of proportional scales.  Verified every tick by the SUMMARY
+    // row's conservation_error column in phloem_log.csv.
+    std::vector<float> supply(N, 0.0f);
+    std::vector<float> demand(N, 0.0f);
 
-        // a) Pressure at every vascular node
-        std::vector<float> pressure(N, 0.0f);
-        for (int i = 0; i < N; ++i) {
-            if (has_vasculature(*flat[i].node, g))
-                pressure[i] = compute_phloem_pressure(*flat[i].node, g, world);
+    for (int i = 0; i < N; ++i) {
+        Node& n = *flat[i].node;
+        float cap = sugar_cap(n, g);
+        if (cap <= 1e-8f) continue;
+        float reserve = cap * g.phloem_reserve_fraction;
+        float sug = n.chemical(ChemicalID::Sugar);
+
+        if (n.type == NodeType::APICAL) {
+            // Active shoot apicals are sinks; dormant ones are neither.
+            if (n.as_apical()->active) {
+                float target = cap * g.meristem_sink_fraction;
+                demand[i] = std::max(0.0f, target - sug);
+            }
+        } else if (n.type == NodeType::ROOT_APICAL) {
+            if (n.as_root_apical()->active) {
+                float target = cap * g.meristem_sink_fraction;
+                demand[i] = std::max(0.0f, target - sug);
+            }
+        } else if (n.type == NodeType::STEM || n.type == NodeType::ROOT) {
+            // Conduit / storage tissue: surplus above reserve flows, deficit
+            // below reserve pulls.
+            // Seed (STEM with no parent): sugar_cap() inflates the seed cap to
+            // max(child_sum, seed_sugar) so the seed can hold its initial 48g
+            // reserve.  But phloem_reserve_fraction × 48g = 14.4g, which means
+            // a seed with only 10g appears as a SINK even though it's the only
+            // source in the plant.  For the seed we use the network-proportional
+            // cap (sum of children's sugar_cap) instead, so the reserve scales
+            // with the connected network, not the initialization constant.
+            if (n.parent == nullptr) {
+                float network_cap = 0.0f;
+                for (const Node* child : n.children)
+                    network_cap += sugar_cap(*child, g);
+                network_cap = std::max(network_cap, g.sugar_cap_minimum);
+                reserve = network_cap * g.phloem_reserve_fraction;
+            }
+            if (sug > reserve) supply[i] = sug - reserve;
+            else               demand[i] = reserve - sug;
         }
-        if (logging && iter == world.phloem_iterations - 1) {
-            for (int i = 0; i < N; ++i) edge_final_pressure[i] = pressure[i];
-        }
-
-        std::vector<float> iter_delta(N, 0.0f);
-
-        for (int i = 0; i < N; ++i) {
-            if (!has_vasculature(*flat[i].node, g)) continue;
-            Node& cur = *flat[i].node;
-            float cur_vol = node_volume(cur, world);
-            if (cur_vol <= 0.0f) continue;
-
-            // Process each adjacent vascular edge where cur is the high-pressure sender
-            auto process_edge = [&](int j) {
-                if (!has_vasculature(*flat[j].node, g)) return;
-                float dp = pressure[i] - pressure[j];
-                if (dp <= 0.0f) return;  // cur is the high-pressure side
-
-                Node& next     = *flat[j].node;
-                float next_vol = node_volume(next, world);
-                if (next_vol <= 0.0f) return;
-
-                float r_eff     = edge_pipe_radius(cur, next);
-                float ring_area = phloem_ring_area(r_eff, world.phloem_ring_thickness);
-                float velocity  = std::min(dp * g.conductance_per_pressure,
-                                           world.max_phloem_velocity);
-                float flow_vol  = velocity * ring_area;  // dm³/tick
-
-                float cur_conc = cur.chemical(ChemicalID::Sugar) / cur_vol;  // g/dm³
-                float max_vel  = flow_vol * cur_conc;  // g — velocity-limited sugar
-
-                // Equalization: cur cannot drop below the concentration that would
-                // result if both nodes pooled their sugar.  Same principle as the
-                // diffusion equalization clamp in Node::compute_transport_flow().
-                float equil_conc = (cur.chemical(ChemicalID::Sugar) + next.chemical(ChemicalID::Sugar))
-                                   / std::max(cur_vol + next_vol, 1e-8f);
-                float max_equil  = std::max(0.0f,
-                                       cur.chemical(ChemicalID::Sugar) - equil_conc * cur_vol);
-
-                float desired = std::min(max_vel, max_equil);
-                desired = std::min(desired, cur.chemical(ChemicalID::Sugar));  // safety
-
-                // MASS-CONSERVATION: cap desired by sender's RUNNING sugar budget
-                // this iteration — what cur_sugar has left after prior outflows
-                // scheduled earlier in this iteration (iter_delta[i] is negative
-                // when cur is a net sender).
-                float sender_remaining = cur.chemical(ChemicalID::Sugar) + iter_delta[i];
-                desired = std::min(desired, std::max(0.0f, sender_remaining));
-                if (desired <= 0.0f) return;
-
-                // Unloading: fraction of desired that crosses the membrane into next's tissue.
-                // Bidirectional formula: gradient × permeability × transfer_volume.
-                // Membrane permeability is a THROTTLE on the edge — it caps how much
-                // sugar actually transfers this iteration. It MUST NOT be a leak.
-                float next_conc = next.chemical(ChemicalID::Sugar) / next_vol;
-                float grad_unload = std::max(0.0f, cur_conc - next_conc);
-                float perm    = unloading_permeability(next.type, g);
-                float unload  = std::min(grad_unload * perm * desired, desired);
-                if (unload <= 0.0f) return;
-
-                // NO receiver_room cap here — in real phloem the sieve tube
-                // carries sugar through nodes at concentrations far above the
-                // parenchymatic storage cap (sieve sap is ~150–250 g/dm³ sucrose
-                // in a stem whose bulk-tissue concentration is much lower).  The
-                // node's sugar pool represents both parenchymatic storage AND
-                // transit sugar in the sieve tube — it is allowed to temporarily
-                // exceed sugar_cap() when a high-pressure push is in transit.
-                // The next Jacobi iteration will see the elevated concentration
-                // and forward it along the pressure gradient.  Equilibration
-                // (max_equil clamp above) still prevents overshoot between any
-                // two adjacent nodes; the sender_remaining cap still prevents a
-                // sender from pushing more than it holds.  Conservation is the
-                // exact per-edge invariant sender -= X; receiver += X.
-
-                // Mass-conserving edge transfer: sender loses exactly what
-                // receiver gains.  Verified every tick by SUMMARY conservation
-                // row in phloem_log.csv.
-                iter_delta[i] -= unload;
-                iter_delta[j] += unload;
-                if (logging) {
-                    log_flow_out[i] += unload;
-                    log_flow_in[j]  += unload;
-                    // Per-edge tracking: identify edge by whether j is parent of i
-                    // or a child. Sums across all Jacobi iterations.  `desired` is
-                    // logged for diagnostics — it is the pressure-demanded flow
-                    // before membrane throttling; `unload` is what actually moved.
-                    if (flat[i].parent_idx == j) {
-                        edge_desired_to_parent[i] += desired;
-                        edge_unload_to_parent[i]  += unload;
-                    } else {
-                        // j is a child of i. Store totals on the child's row
-                        // so each edge owns one row.
-                        edge_desired_from_parent[j] += desired;
-                        edge_unload_from_parent[j]  += unload;
-                    }
-                }
-            };
-
-            if (flat[i].parent_idx >= 0) process_edge(flat[i].parent_idx);
-            for (int ci : flat[i].child_idxs) process_edge(ci);
-        }
-
-        // c) Apply iteration delta.  Sender cap (sender_remaining in process_edge)
-        // keeps each node's sugar ≥ 0; the max(,0) is a float-rounding safety rail.
-        // No upper cap: intermediate stems may temporarily hold sugar above their
-        // parenchymatic sugar_cap() when sieve-tube transit is in progress.  That
-        // elevated concentration feeds the pressure gradient for the next
-        // iteration, which forwards the excess toward sinks.
-        for (int i = 0; i < N; ++i) {
-            if (std::abs(iter_delta[i]) < 1e-10f) continue;
-            Node& n   = *flat[i].node;
-            float new_val = n.chemical(ChemicalID::Sugar) + iter_delta[i];
-            n.chemical(ChemicalID::Sugar) = std::max(new_val, 0.0f);
-        }
+        // LEAF nodes: participated in Phase 1.  They keep their remaining
+        // sugar for their own use (photosynthesis-triggered growth, respiration).
     }
 
-    // ── Phase 3: Meristem unloading pass ─────────────────────────────────────
-    // Each meristem draws sugar from its parent vascular conduit.  Velocity-capped
-    // + equalization-capped; meristem room cap prevents over-saturation.
+    float total_supply = 0.0f, total_demand = 0.0f;
     for (int i = 0; i < N; ++i) {
-        Node& mer = *flat[i].node;
-        if (mer.type != NodeType::APICAL && mer.type != NodeType::ROOT_APICAL) continue;
-        if (flat[i].parent_idx < 0) continue;
-        Node& parent = *flat[flat[i].parent_idx].node;
-        if (!has_vasculature(parent, g)) continue;
+        total_supply += supply[i];
+        total_demand += demand[i];
+    }
+    float delivered = std::min(total_supply, total_demand);
 
-        float parent_vol = node_volume(parent, world);
-        float mer_vol    = node_volume(mer, world);
-        if (parent_vol <= 0.0f || mer_vol <= 0.0f) continue;
+    if (delivered > 1e-12f) {
+        float supply_scale = (total_supply > 1e-12f) ? delivered / total_supply : 0.0f;
+        float demand_scale = (total_demand > 1e-12f) ? delivered / total_demand : 0.0f;
 
-        float parent_conc = parent.chemical(ChemicalID::Sugar) / parent_vol;
-        float mer_conc    = mer.chemical(ChemicalID::Sugar) / mer_vol;
-        float gradient    = parent_conc - mer_conc;
-        if (gradient <= 0.0f) continue;  // parent not above meristem — no unloading
-
-        float r_eff     = edge_pipe_radius(parent, mer);
-        float ring_area = phloem_ring_area(r_eff, world.phloem_ring_thickness);
-        float velocity  = std::min(gradient * g.conductance_per_pressure,
-                                   world.max_phloem_velocity);
-        float flow_vol  = velocity * ring_area;
-        float max_vel   = flow_vol * parent_conc;
-
-        float equil_conc = (parent.chemical(ChemicalID::Sugar) + mer.chemical(ChemicalID::Sugar))
-                           / std::max(parent_vol + mer_vol, 1e-8f);
-        float max_equil  = std::max(0.0f,
-                               parent.chemical(ChemicalID::Sugar) - equil_conc * parent_vol);
-
-        float unload = std::min(max_vel, max_equil);
-        unload = std::min(unload, parent.chemical(ChemicalID::Sugar));  // safety
-
-        // Meristems and leaves don't have their own distributed vasculature —
-        // they tap the parent conduit's phloem.  Storage cap is the per-type
-        // sugar_cap() (g.sugar_cap_meristem = 0.1 g for meristems).  Draining
-        // ~0.005 g/tick from the parent is enough to fuel normal elongation.
-        float mer_cap  = sugar_cap(mer, g);
-        float mer_room = mer_cap - mer.chemical(ChemicalID::Sugar);
-        unload = std::min(unload, std::max(0.0f, mer_room));
-
-        if (unload > 1e-8f) {
-            parent.chemical(ChemicalID::Sugar) -= unload;
-            mer.chemical(ChemicalID::Sugar)    += unload;
-            if (logging) log_unloaded[flat[i].parent_idx] += unload;
+        for (int i = 0; i < N; ++i) {
+            Node& n = *flat[i].node;
+            if (supply[i] > 0.0f) {
+                float deducted = supply[i] * supply_scale;
+                n.chemical(ChemicalID::Sugar) -= deducted;
+                if (logging) log_flow_out[i] += deducted;
+            }
+            if (demand[i] > 0.0f) {
+                float added = demand[i] * demand_scale;
+                n.chemical(ChemicalID::Sugar) += added;
+                if (logging) log_flow_in[i] += added;
+                // Meristems track "unloaded" separately so the SUMMARY log
+                // still distinguishes meristem-sink delivery from conduit
+                // refill.  Store under the meristem's parent id, matching the
+                // old Phase 3 log convention.
+                if ((n.type == NodeType::APICAL || n.type == NodeType::ROOT_APICAL)
+                    && flat[i].parent_idx >= 0) {
+                    log_unloaded[flat[i].parent_idx] += added;
+                }
+            }
         }
     }
 
