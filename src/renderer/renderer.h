@@ -15,13 +15,10 @@ namespace botany {
 
 class Plant;
 struct Node;
-struct Genome;
 struct TickSnapshot;
 
-// Function that extracts a per-node fullness value [0,1] for overlay coloring.
-// Each accessor is responsible for its own normalization (e.g. sugar/sugar_cap);
-// values outside [0,1] are clamped by the heatmap.
-using ChemicalAccessor = std::function<float(const Node&, const Genome&)>;
+// Function that extracts the chemical value from a node
+using ChemicalAccessor = std::function<float(const Node&)>;
 
 class Renderer {
 public:

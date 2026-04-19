@@ -18,6 +18,10 @@ struct Genome {
     float auxin_threshold;
     float auxin_shade_boost;           // shade-avoidance: production multiplier boost in low light (0 = none)
     float auxin_sugar_half_saturation; // g glucose — sugar level for half-max production (Michaelis-Menten)
+    float auxin_water_half_saturation;      // ml — water level at which auxin production hits half-max. Floor 0.1 is encoded in the formula, not evolvable.
+    float cytokinin_sugar_half_saturation;  // g glucose — sugar level at which CK production hits half-max.
+    float cytokinin_water_half_saturation;  // ml — water level at which CK production hits half-max.
+    float quiescence_threshold;             // ticks — active meristem reverts to dormant after this many consecutive low-sugar ticks (before starvation_ticks_max death).
     float auxin_bias;                  // equilibrium shift for basipetal flow (negative = toward root)
     float leaf_auxin_baseline;            // scaling constant for leaf auxin production (decoupled from apical)
     float leaf_growth_auxin_multiplier;   // fraction of leaf_auxin_baseline produced at max leaf growth
@@ -215,6 +219,10 @@ inline Genome default_genome() {
         .auxin_threshold = 0.15f,
         .auxin_shade_boost = 0.5f,           // shade can increase production by 50%
         .auxin_sugar_half_saturation = 0.3f, // modest sugar needed for decent production
+        .auxin_water_half_saturation = 0.1f,     // matches SA stomatal threshold magnitude — half-max at moderate turgor
+        .cytokinin_sugar_half_saturation = 0.05f, // CK more sensitive to sugar than auxin; sharper response
+        .cytokinin_water_half_saturation = 0.1f,  // matches auxin water sensitivity
+        .quiescence_threshold = 150.0f,           // ~6 days — meristem goes dormant after sustained starvation, well before death (starvation_ticks_max = 2200)
         .auxin_bias = -0.1f,                  // gentle basipetal shift (auxin accumulates toward root)
         .leaf_auxin_baseline = 0.15f,             // same scale as apical, but multiplier keeps it at 10%
         .leaf_growth_auxin_multiplier = 0.1f,     // single leaf at max growth = 10% of apical baseline
