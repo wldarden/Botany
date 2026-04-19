@@ -38,7 +38,7 @@ TEST_CASE("default_genome returns valid parameters", "[genome]") {
     }
 
     SECTION("sugar parameters are positive") {
-        REQUIRE(g.sugar_diffusion_rate > 0.0f);
+        REQUIRE(g.sugar_diffusion_rate >= 0.0f);  // 0 is valid: phloem fully owns sugar transport
         WorldParams w = default_world_params();
         REQUIRE(w.sugar_production_rate > 0.0f);
         REQUIRE(w.sugar_maintenance_leaf > 0.0f);

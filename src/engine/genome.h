@@ -291,7 +291,11 @@ inline Genome default_genome() {
         .tip_offset = 0.01f,
         .growth_noise = 0.4f,               // ~23 degrees — larger than plagiotropism for organic shapes
 
-        .sugar_diffusion_rate = 0.8f,        // high base rate — radius scaling is the real throttle
+        .sugar_diffusion_rate = 0.0f,        // bulk flow (Phase 1 leaf loading + demand-driven Phase 2)
+                                             //   fully owns sugar transport now.  Local diffusion at
+                                             //   0.8 was draining leaves into parent stems before
+                                             //   leaves could grow — see 2026-04-19 sim.
+
         .seed_sugar = 48.0f,                 // ~15 days heterotrophic growth
 
         .sugar_storage_density_wood = 500.0f, // g glucose max / dm³ — high cap so stems can pass sugar through
