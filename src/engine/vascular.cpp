@@ -13,6 +13,7 @@
 #include <cmath>
 #include <algorithm>
 #include <fstream>
+#include <filesystem>
 #include <glm/geometric.hpp>
 
 namespace botany {
@@ -451,6 +452,25 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     int N = static_cast<int>(flat.size());
     if (N == 0) return;
 
+    // ── Logging setup ─────────────────────────────────────────────────────────
+    // Allocate tracking arrays only when phloem_debug_log is enabled so the
+    // normal (non-logging) path has zero overhead.
+    const bool logging = world.phloem_debug_log;
+    std::vector<float> log_pre_sugar;       // sugar at each node before phloem runs
+    std::vector<float> log_loaded;          // sugar loaded from leaf children (indexed by parent)
+    std::vector<float> log_unloaded;        // sugar unloaded to meristem children (indexed by parent)
+    std::vector<float> log_flow_in;         // sugar received via Jacobi (accumulated across iterations)
+    std::vector<float> log_flow_out;        // sugar sent via Jacobi (accumulated across iterations)
+    if (logging) {
+        log_pre_sugar.resize(N, 0.0f);
+        log_loaded.resize(N, 0.0f);
+        log_unloaded.resize(N, 0.0f);
+        log_flow_in.resize(N, 0.0f);
+        log_flow_out.resize(N, 0.0f);
+        for (int i = 0; i < N; ++i)
+            log_pre_sugar[i] = flat[i].node->chemical(ChemicalID::Sugar);
+    }
+
     // ── Phase 1: Leaf loading pass ────────────────────────────────────────────
     // Each leaf transfers sugar into its parent conduit proportional to the
     // concentration gradient × permeability.  Both velocity cap and equalization
@@ -494,6 +514,7 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         if (load > 1e-8f) {
             leaf.chemical(ChemicalID::Sugar)   -= load;
             parent.chemical(ChemicalID::Sugar) += load;
+            if (logging) log_loaded[flat[i].parent_idx] += load;
         }
     }
 
@@ -573,6 +594,10 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 // and doesn't leave the sender's node.
                 iter_delta[i] -= desired;
                 iter_delta[j] += unload;
+                if (logging) {
+                    log_flow_out[i] += desired;
+                    log_flow_in[j]  += unload;
+                }
             };
 
             if (flat[i].parent_idx >= 0) process_edge(flat[i].parent_idx);
@@ -649,6 +674,86 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         if (unload > 1e-8f) {
             parent.chemical(ChemicalID::Sugar) -= unload;
             mer.chemical(ChemicalID::Sugar)    += unload;
+            if (logging) log_unloaded[flat[i].parent_idx] += unload;
+        }
+    }
+
+    // ── Phloem debug log ──────────────────────────────────────────────────────
+    // Writes debug/phloem_log.csv with one row per node and a SUMMARY row.
+    // File is truncated on tick 0 and appended thereafter.
+    // Conservation check: SUMMARY.conservation_error = total_sugar_after - total_sugar_before.
+    if (logging) {
+        std::filesystem::create_directories("debug");
+        auto mode = (world.current_tick == 0)
+            ? (std::ios::out | std::ios::trunc)
+            : (std::ios::out | std::ios::app);
+        std::ofstream csv("debug/phloem_log.csv", mode);
+        if (csv.is_open()) {
+            if (world.current_tick == 0) {
+                csv << "tick,node_id,node_type,parent_id,"
+                       "sugar,volume,concentration,pressure,water_fraction,"
+                       "sugar_loaded_from_leaf,sugar_unloaded_to_meristem,"
+                       "sugar_flow_in,sugar_flow_out,net_flow\n";
+            }
+
+            float total_before = 0.0f;
+            float total_after  = 0.0f;
+            float total_loaded   = 0.0f;
+            float total_unloaded = 0.0f;
+            float total_flow_in  = 0.0f;
+            float total_flow_out = 0.0f;
+
+            for (int i = 0; i < N; ++i) {
+                const Node& n      = *flat[i].node;
+                float pre           = log_pre_sugar[i];
+                float post          = n.chemical(ChemicalID::Sugar);
+                float vol           = node_volume(n, world);
+                float conc          = (vol > 0.0f) ? pre / vol : 0.0f;
+                float pressure      = compute_phloem_pressure(n, g, world);  // uses current sugar
+                float wc            = water_cap(n, g);
+                float wfrac         = (wc > 0.0f)
+                    ? std::clamp(n.chemical(ChemicalID::Water) / wc, 0.0f, 1.0f)
+                    : 0.0f;
+                float loaded        = log_loaded[i];
+                float unloaded      = log_unloaded[i];
+                float fin           = log_flow_in[i];
+                float fout          = log_flow_out[i];
+                float net           = fin - fout;
+                int parent_id = (flat[i].parent_idx >= 0)
+                    ? static_cast<int>(flat[flat[i].parent_idx].node->id)
+                    : -1;
+
+                csv << world.current_tick << ','
+                    << n.id << ','
+                    << node_type_name(n.type) << ','
+                    << parent_id << ','
+                    << pre << ','
+                    << vol << ','
+                    << conc << ','
+                    << pressure << ','
+                    << wfrac << ','
+                    << loaded << ','
+                    << unloaded << ','
+                    << fin << ','
+                    << fout << ','
+                    << net << '\n';
+
+                total_before   += pre;
+                total_after    += post;
+                total_loaded   += loaded;
+                total_unloaded += unloaded;
+                total_flow_in  += fin;
+                total_flow_out += fout;
+            }
+
+            float conservation_error = total_after - total_before;
+            csv << world.current_tick << ",SUMMARY,"
+                << N << ','
+                << total_before << ','
+                << total_loaded << ','
+                << total_unloaded << ','
+                << total_flow_in << ','
+                << conservation_error << '\n';
         }
     }
 }

@@ -485,6 +485,11 @@ int main(int argc, char* argv[]) {
         static bool show_gpu_shadow_debug = false;
         static int debug_slice_idx = 0;
         ImGui::Checkbox("GPU Shadow Debug", &show_gpu_shadow_debug);
+        ImGui::Checkbox("Phloem Debug Log (debug/phloem_log.csv)",
+                        &engine.world_params_mut().phloem_debug_log);
+        if (engine.world_params().phloem_debug_log)
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                               "Logging to debug/phloem_log.csv");
         if (show_gpu_shadow_debug && renderer.light_system().is_initialized()) {
             ImGui::SliderInt("Slice", &debug_slice_idx, 0, LightSystem::NUM_SLICES - 1);
         }

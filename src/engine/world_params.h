@@ -82,6 +82,13 @@ struct WorldParams {
 
     // Debug / diagnostics
     bool vascular_debug_log = false;        // write per-junction vascular flow to debug/vascular_log.csv
+    bool phloem_debug_log   = false;        // write per-node Münch phloem data to debug/phloem_log.csv
+                                            //   columns: tick, node_id, node_type, parent_id,
+                                            //     sugar (pre-phloem), volume, concentration, pressure,
+                                            //     water_fraction, sugar_loaded_from_leaf,
+                                            //     sugar_unloaded_to_meristem, sugar_flow_in,
+                                            //     sugar_flow_out, net_flow
+                                            //   + a SUMMARY row per tick with conservation_error check
     uint32_t current_tick = 0;              // set by caller each tick; used to label vascular log rows
 };
 
