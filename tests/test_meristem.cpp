@@ -797,3 +797,40 @@ TEST_CASE("has_vasculature uses radius threshold, not node age or bias", "[meris
     // Seed itself (no parent) is always vascular.
     REQUIRE(has_vasculature(*seed, g) == true);
 }
+
+TEST_CASE("SA auxin production drops when water is low", "[meristem][metabolic]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+
+    // Find the primary SA (id 1) and give it abundant sugar but no water
+    ApicalNode* sa = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::APICAL && !sa) sa = n.as_apical();
+    });
+    REQUIRE(sa != nullptr);
+    REQUIRE(sa->active);
+
+    // Abundant sugar, zero water: auxin production should be close to sugar-gated
+    // max × water floor (0.1), not full rate.
+    sa->chemical(ChemicalID::Sugar) = 10.0f;   // far above K_sugar
+    sa->chemical(ChemicalID::Water) = 0.0f;
+    sa->tick_auxin_produced = 0.0f;
+
+    plant.tick(world);
+
+    float produced_dry = sa->tick_auxin_produced;
+
+    // Reset and test with full water
+    sa->chemical(ChemicalID::Sugar) = 10.0f;
+    sa->chemical(ChemicalID::Water) = water_cap(*sa, g);
+    sa->tick_auxin_produced = 0.0f;
+
+    plant.tick(world);
+    float produced_wet = sa->tick_auxin_produced;
+
+    // Dry SA should produce significantly less than wet SA (water gate)
+    REQUIRE(produced_dry < produced_wet * 0.5f);
+    // But dry SA should still produce something (floor 0.1)
+    REQUIRE(produced_dry > 0.0f);
+}

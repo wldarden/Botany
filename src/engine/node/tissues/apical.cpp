@@ -38,9 +38,12 @@ void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldPar
     float base = g.apical_auxin_baseline;
     float local_light = estimate_local_light();
     float light_factor = 1.0f + g.auxin_shade_boost * (1.0f - local_light);
-    float sugar = chemical(ChemicalID::Sugar);
-    float sugar_factor = 0.1f + 0.9f * sugar / (sugar + g.auxin_sugar_half_saturation);
-    float modulated_baseline = base * light_factor * sugar_factor;
+    // Metabolic gating: sugar and water both required for full auxin synthesis.
+    // Floor 0.1 matches conjugate-pool buffering — zero metabolism still yields ~1%.
+    float mf = metabolic_factor(
+        chemical(ChemicalID::Sugar), g.auxin_sugar_half_saturation, 0.1f,
+        chemical(ChemicalID::Water), g.auxin_water_half_saturation, 0.1f);
+    float modulated_baseline = base * light_factor * mf;
     float produced = modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
     chemical(ChemicalID::Auxin) += produced;
     tick_auxin_produced += produced;
