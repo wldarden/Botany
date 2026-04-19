@@ -1100,4 +1100,16 @@ TEST_CASE("Plant grows and stays alive for 1000 ticks with metabolic feedback", 
     float ratio = static_cast<float>(root_count) / static_cast<float>(shoot_count);
     REQUIRE(ratio > 0.05f);
     REQUIRE(ratio < 50.0f);
+
+    // Phloem delivery regression check: the primary SA must still have sugar
+    // at tick 1000 and have grown above the seed.  This specifically catches
+    // the long-chain phloem attenuation bug fixed by the demand-driven
+    // rewrite (2026-04-19).
+    ApicalNode* primary_sa = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto sa = n.as_apical(); sa && sa->is_primary) primary_sa = sa;
+    });
+    REQUIRE(primary_sa != nullptr);
+    REQUIRE(primary_sa->position.y > 0.1f);      // grew above the seed
+    REQUIRE(primary_sa->chemical(ChemicalID::Sugar) > 0.0f); // still getting sugar
 }
