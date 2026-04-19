@@ -296,19 +296,25 @@ int main(int argc, char* argv[]) {
         } else {
             ChemicalAccessor accessor;
             if (color_chemical == "auxin") {
-                accessor = [](const Node& n) { return n.chemical(ChemicalID::Auxin); };
+                accessor = [](const Node& n, const Genome&) { return n.chemical(ChemicalID::Auxin); };
             } else if (color_chemical == "cytokinin") {
-                accessor = [](const Node& n) { return n.chemical(ChemicalID::Cytokinin); };
+                accessor = [](const Node& n, const Genome&) { return n.chemical(ChemicalID::Cytokinin); };
             } else if (color_chemical == "sugar") {
-                accessor = [](const Node& n) { return n.chemical(ChemicalID::Sugar); };
+                accessor = [](const Node& n, const Genome& g) {
+                    float cap = sugar_cap(n, g);
+                    return cap > 1e-6f ? n.chemical(ChemicalID::Sugar) / cap : 0.0f;
+                };
             } else if (color_chemical == "gibberellin") {
-                accessor = [](const Node& n) { return n.chemical(ChemicalID::Gibberellin); };
+                accessor = [](const Node& n, const Genome&) { return n.chemical(ChemicalID::Gibberellin); };
             } else if (color_chemical == "ethylene") {
-                accessor = [](const Node& n) { return n.chemical(ChemicalID::Ethylene); };
+                accessor = [](const Node& n, const Genome&) { return n.chemical(ChemicalID::Ethylene); };
             } else if (color_chemical == "water") {
-                accessor = [](const Node& n) { return n.chemical(ChemicalID::Water); };
+                accessor = [](const Node& n, const Genome& g) {
+                    float cap = water_cap(n, g);
+                    return cap > 1e-6f ? n.chemical(ChemicalID::Water) / cap : 0.0f;
+                };
             } else if (color_chemical == "vascular") {
-                accessor = [](const Node& n) { return n.get_parent_auxin_flow_bias(); };
+                accessor = [](const Node& n, const Genome&) { return n.get_parent_auxin_flow_bias(); };
             } else {
                 std::cerr << "Unknown chemical: " << color_chemical
                           << " (available: auxin, cytokinin, sugar, gibberellin, ethylene, water, vascular, type)" << std::endl;
@@ -575,69 +581,74 @@ int main(int argc, char* argv[]) {
             ImGui::SameLine();
             if (ImGui::Button("Auxin")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Auxin); });
+                renderer.set_color_mode([](const Node& n, const Genome&) { return n.chemical(ChemicalID::Auxin); });
                 active_overlay = Overlay::AUXIN;
             }
             ImGui::SameLine();
             if (ImGui::Button("Cytokinin")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Cytokinin); });
+                renderer.set_color_mode([](const Node& n, const Genome&) { return n.chemical(ChemicalID::Cytokinin); });
                 active_overlay = Overlay::CYTOKININ;
             }
             ImGui::SameLine();
             if (ImGui::Button("Sugar")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Sugar); });
+                renderer.set_color_mode([](const Node& n, const Genome& g) {
+                    float cap = sugar_cap(n, g);
+                    return cap > 1e-6f ? n.chemical(ChemicalID::Sugar) / cap : 0.0f;
+                });
                 active_overlay = Overlay::SUGAR;
             }
             ImGui::SameLine();
             if (ImGui::Button("Light")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { auto* l = n.as_leaf(); return l ? l->light_exposure : 0.0f; });
+                renderer.set_color_mode([](const Node& n, const Genome&) { auto* l = n.as_leaf(); return l ? l->light_exposure : 0.0f; });
                 active_overlay = Overlay::LIGHT;
             }
             if (ImGui::Button("GA")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Gibberellin); });
+                renderer.set_color_mode([](const Node& n, const Genome&) { return n.chemical(ChemicalID::Gibberellin); });
                 active_overlay = Overlay::GIBBERELLIN;
             }
             ImGui::SameLine();
             if (ImGui::Button("Ethylene")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Ethylene); });
+                renderer.set_color_mode([](const Node& n, const Genome&) { return n.chemical(ChemicalID::Ethylene); });
                 active_overlay = Overlay::ETHYLENE;
             }
             ImGui::SameLine();
             if (ImGui::Button("Stress")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.stress; });
+                renderer.set_color_mode([](const Node& n, const Genome&) { return n.stress; });
                 active_overlay = Overlay::STRESS;
             }
             ImGui::SameLine();
             if (ImGui::Button("Water")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.chemical(ChemicalID::Water); });
+                renderer.set_color_mode([](const Node& n, const Genome& g) {
+                    float cap = water_cap(n, g);
+                    return cap > 1e-6f ? n.chemical(ChemicalID::Water) / cap : 0.0f;
+                });
                 active_overlay = Overlay::WATER;
             }
             ImGui::SameLine();
             if (ImGui::Button("Growth")) {
                 renderer.set_color_by_type(false);
-                const Genome& og = engine.get_plant(plant_id).genome();
                 const WorldParams& ow = engine.world_params();
-                renderer.set_color_mode([og, ow](const Node& n) -> float {
+                renderer.set_color_mode([ow](const Node& n, const Genome& g) -> float {
                     using namespace meristem_helpers;
                     if (auto* ap = n.as_apical()) {
                         if (!ap->active) return 0.0f;
-                        float max_cost = og.growth_rate * ow.sugar_cost_meristem_growth;
+                        float max_cost = g.growth_rate * ow.sugar_cost_meristem_growth;
                         float gf = growth_fraction(n.chemical(ChemicalID::Sugar), max_cost,
-                                                   n.chemical(ChemicalID::Cytokinin), og.cytokinin_growth_threshold);
-                        float wgf = turgor_fraction(n.chemical(ChemicalID::Water), water_cap(n, og));
+                                                   n.chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
+                        float wgf = turgor_fraction(n.chemical(ChemicalID::Water), water_cap(n, g));
                         return gf * wgf;
                     } else if (auto* ra = n.as_root_apical()) {
                         if (!ra->active) return 0.0f;
-                        float max_cost = og.root_growth_rate * ow.sugar_cost_root_growth;
+                        float max_cost = g.root_growth_rate * ow.sugar_cost_root_growth;
                         float gf = sugar_growth_fraction(n.chemical(ChemicalID::Sugar), max_cost);
-                        float wgf = turgor_fraction(n.chemical(ChemicalID::Water), water_cap(n, og));
+                        float wgf = turgor_fraction(n.chemical(ChemicalID::Water), water_cap(n, g));
                         return gf * wgf;
                     }
                     return 0.0f;  // non-meristems: dark
@@ -647,7 +658,7 @@ int main(int argc, char* argv[]) {
             ImGui::SameLine();
             if (ImGui::Button("Vascular")) {
                 renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.get_parent_auxin_flow_bias(); });
+                renderer.set_color_mode([](const Node& n, const Genome&) { return n.get_parent_auxin_flow_bias(); });
                 active_overlay = Overlay::VASCULAR;
             }
 

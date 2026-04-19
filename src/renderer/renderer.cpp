@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <iostream>
 #include "engine/plant.h"
+#include "engine/genome.h"
 #include "engine/node/tissues/apical.h"
 #include "engine/node/tissues/root_apical.h"
 #include "engine/node/tissues/leaf.h"
@@ -114,30 +115,11 @@ glm::vec3 Renderer::heatmap(float t) const {
 }
 
 void Renderer::draw_plant(const Plant& plant) {
-    // If coloring by chemical, find per-type max values for normalization.
-    // Each tissue category gets its own color scale so leaves don't wash out
-    // relative to sugar-rich stems, etc.
-    float max_leaf = 0.0f, max_root = 0.0f, max_shoot = 0.0f;
-    if (chemical_accessor_) {
-        plant.for_each_node([&](const Node& node) {
-            float v = chemical_accessor_(node);
-            if (node.type == NodeType::LEAF) {
-                if (v > max_leaf) max_leaf = v;
-            } else if (node.type == NodeType::ROOT || node.type == NodeType::ROOT_APICAL) {
-                if (v > max_root) max_root = v;
-            } else {
-                if (v > max_shoot) max_shoot = v;
-            }
-        });
-        if (max_leaf  < 1e-6f) max_leaf  = 1.0f;
-        if (max_root  < 1e-6f) max_root  = 1.0f;
-        if (max_shoot < 1e-6f) max_shoot = 1.0f;
-    }
-    auto max_for = [&](const Node& n) -> float {
-        if (n.type == NodeType::LEAF) return max_leaf;
-        if (n.type == NodeType::ROOT || n.type == NodeType::ROOT_APICAL) return max_root;
-        return max_shoot;
-    };
+    // Chemical overlays use per-node fullness: each accessor returns a [0,1]
+    // value (e.g. sugar/sugar_cap) that feeds the heatmap directly. No cross-
+    // node normalization — a 50%-full leaf always looks the same regardless of
+    // what the hottest node on the plant happens to be.
+    const Genome& genome = plant.genome();
 
     plant.for_each_node([&](const Node& node) {
         if (!node.parent) return;
@@ -153,8 +135,7 @@ void Renderer::draw_plant(const Plant& plant) {
             glm::vec3 vtx_colors[4];
 
             if (chemical_accessor_) {
-                float v = chemical_accessor_(node);
-                leaf_color = heatmap(v / max_for(node));
+                leaf_color = heatmap(chemical_accessor_(node, genome));
                 // Chemical overlay → single color, no per-vertex shading
             } else {
                 glm::vec3 sun_color(0.2f, 0.6f, 0.15f);
@@ -200,8 +181,7 @@ void Renderer::draw_plant(const Plant& plant) {
 
         glm::vec3 color;
         if (chemical_accessor_) {
-            float v = chemical_accessor_(node);
-            color = heatmap(v / max_for(node));
+            color = heatmap(chemical_accessor_(node, genome));
         } else if (color_by_type_) {
             if (node.type == NodeType::APICAL) {
                 color = glm::vec3(1.0f, 0.2f, 0.2f);   // red
