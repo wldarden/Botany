@@ -60,6 +60,13 @@ public:
     float tick_sugar_activity    = 0.0f; // net change from tissue work: positive = produced, negative = spent on growth
     float tick_sugar_transport   = 0.0f; // net change from transport: negative = exported, positive = imported
 
+    // --- Per-tick hormone production (diagnostic only; zeroed at tick start) ---
+    // Tracks only the PRODUCTION step — auxin emitted by apicals/leaves, cytokinin
+    // emitted by root apicals.  Does NOT include transport, diffusion, or decay, so
+    // comparing these to the node's auxin/cyto delta isolates each contribution.
+    float tick_auxin_produced    = 0.0f;
+    float tick_cytokinin_produced = 0.0f;
+
     // --- Grow-before-transport reserve ---
     // Set by compute_growth_reserve() before vascular_transport() runs each tick.
     // Vascular phloem treats this as unavailable supply so nodes have sugar for

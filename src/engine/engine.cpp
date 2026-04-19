@@ -1,8 +1,65 @@
 // src/engine/engine.cpp
 #include "engine/engine.h"
 #include "engine/light.h"
+#include "engine/node/node.h"
+#include "engine/genome.h"
+#include <filesystem>
+#include <fstream>
 
 namespace botany {
+
+namespace {
+
+const char* node_type_str(NodeType t) {
+    switch (t) {
+        case NodeType::STEM:        return "STEM";
+        case NodeType::ROOT:        return "ROOT";
+        case NodeType::LEAF:        return "LEAF";
+        case NodeType::APICAL:      return "SA";
+        case NodeType::ROOT_APICAL: return "RA";
+    }
+    return "?";
+}
+
+// Per-tick canalization logger: one row per parent-child edge.
+// Reads last_auxin_flux (preserved through tick by Plant::tick_tree) and
+// auxin_flow_bias (persistent). File is truncated on tick 0, appended after.
+void write_canalization_log(uint32_t tick, const Plant& plant, const Genome& g) {
+    std::filesystem::create_directories("debug");
+    auto mode = (tick == 0)
+        ? (std::ios::out | std::ios::trunc)
+        : (std::ios::out | std::ios::app);
+    std::ofstream csv("debug/canalization_log.csv", mode);
+    if (!csv.is_open()) return;
+    if (tick == 0) {
+        csv << "tick,parent_id,child_id,child_type,child_radius,"
+               "auxin_flux,auxin_flow_bias,pin_capacity,pin_saturation\n";
+    }
+    plant.for_each_node([&](const Node& parent) {
+        for (const Node* child : parent.children) {
+            float flux = 0.0f;
+            auto fit = parent.last_auxin_flux.find(const_cast<Node*>(child));
+            if (fit != parent.last_auxin_flux.end()) flux = fit->second;
+            float bias = 0.0f;
+            auto bit = parent.auxin_flow_bias.find(const_cast<Node*>(child));
+            if (bit != parent.auxin_flow_bias.end()) bias = bit->second;
+            float r2 = child->radius * child->radius;
+            float capacity = r2 * g.pin_capacity_per_area;
+            float saturation = (capacity > 1e-8f)
+                ? std::min(flux / capacity, 1.0f) : 0.0f;
+            csv << tick << ','
+                << parent.id << ',' << child->id << ','
+                << node_type_str(child->type) << ','
+                << child->radius << ','
+                << flux << ','
+                << bias << ','
+                << capacity << ','
+                << saturation << '\n';
+        }
+    });
+}
+
+} // namespace
 
 PlantID Engine::create_plant(const Genome& genome, glm::vec3 position) {
     PlantID id = static_cast<PlantID>(plants_.size());
@@ -24,6 +81,8 @@ void Engine::tick() {
         }
     }
 
+    world_params_.current_tick = tick_;
+
     {
         ScopedTimer t(perf_log_.stats().plant_tick_ms);
         for (auto& plant : plants_) {
@@ -35,6 +94,12 @@ void Engine::tick() {
         ScopedTimer t(perf_log_.stats().debug_log_ms);
         for (const auto& plant : plants_) {
             debug_log_.log_tick(tick_, *plant, world_params_);
+        }
+    }
+
+    if (world_params_.canalization_debug_log) {
+        for (const auto& plant : plants_) {
+            write_canalization_log(tick_, *plant, plant->genome());
         }
     }
 

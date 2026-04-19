@@ -71,24 +71,49 @@ struct WorldParams {
                                            //   3 = conservative; 5 = aggressive (travels further per tick).
     float phloem_reference_radius = 0.015f;// dm — reference radius (superseded by velocity-capped model,
                                            //   retained for reference; not used in phloem_resolve).
-    float phloem_ring_thickness   = 0.002f;// dm (= 0.2 mm) — thickness of the living phloem+cambium ring.
-                                           //   Used in phloem_ring_area(r, t) = π × (2r×t − t²).
+    float phloem_ring_thickness   = 0.005f;// dm (= 0.5 mm) — thickness of the active conducting layer.
+                                           //   Models sieve tubes + companion cells + inner bark + cambium,
+                                           //   not just cambium.  Used in phloem_ring_area(r, t) = π × (2r×t − t²),
+                                           //   with t clamped to r so thin young nodes never produce negative area.
                                            //   Used ONLY for pipe capacity (flow_vol = velocity × ring_area).
-                                           //   Real dicots: ~0.1–0.5 mm; constant regardless of stem diameter.
-    float max_sugar_concentration = 300.0f;// g/dm³ — upper bulk-concentration cap (~30% sucrose solution).
-                                           //   Sugar cap per node = node_volume(n) × max_sugar_concentration.
+                                           //   Real dicots: 0.3–2 mm depending on stem age.
     float leaf_thickness          = 0.003f;// dm — leaf mesophyll depth for node_volume of LEAF nodes.
                                            //   node_volume(leaf) = leaf_size² × leaf_thickness.
 
+    // Xylem (pressure-flow, root→shoot) parameters
+    float max_xylem_velocity   = 30.0f;    // dm/tick (~3 m/hr) — physical upper bound on xylem sap velocity.
+                                           //   Real xylem moves water at 1–15 m/hr in trees (much faster
+                                           //   than phloem).  We keep the cap generous; the driving gradient
+                                           //   (water_fraction differential) is small, so flows stay modest.
+    uint32_t xylem_iterations  = 3;        // inner Jacobi iterations per xylem_resolve call.
+                                           //   Like phloem_iterations; 3 is a safe default.
+
     // Debug / diagnostics
     bool vascular_debug_log = false;        // write per-junction vascular flow to debug/vascular_log.csv
-    bool phloem_debug_log   = false;        // write per-node Münch phloem data to debug/phloem_log.csv
-                                            //   columns: tick, node_id, node_type, parent_id,
+    bool phloem_debug_log   = true;         // write per-node Münch phloem data to debug/phloem_log.csv
+                                            //   + per-edge flows to debug/phloem_edge_log.csv
+                                            //   columns (phloem_log):
+                                            //     tick, node_id, node_type, parent_id,
                                             //     sugar (pre-phloem), volume, concentration, pressure,
                                             //     water_fraction, sugar_loaded_from_leaf,
                                             //     sugar_unloaded_to_meristem, sugar_flow_in,
                                             //     sugar_flow_out, net_flow
                                             //   + a SUMMARY row per tick with conservation_error check
+                                            //   columns (phloem_edge_log):
+                                            //     tick, parent_id, child_id, child_type,
+                                            //     pressure_parent, pressure_child,
+                                            //     conc_parent, conc_child,
+                                            //     desired_total, unload_total (summed across Jacobi iters)
+    bool canalization_debug_log = true;     // write per-edge PIN/canalization data to debug/canalization_log.csv
+                                            //   columns: tick, parent_id, child_id, child_type,
+                                            //     child_radius, auxin_flux, auxin_flow_bias,
+                                            //     pin_capacity, pin_saturation
+    bool xylem_debug_log = true;            // write per-node xylem (water + cytokinin) flow to debug/xylem_log.csv
+                                            //   columns: tick, chemical, node_id, node_type, parent_id,
+                                            //     amount_before, amount_after, supply_subtree, demand_subtree,
+                                            //     local_supply_deducted, local_demand_delivered, net_change
+                                            //   + SUMMARY row per (tick, chemical) with conservation_error check
+                                            //   so any leak is caught within one run
     uint32_t current_tick = 0;              // set by caller each tick; used to label vascular log rows
 };
 
@@ -121,9 +146,10 @@ inline WorldParams default_world_params() {
         .max_phloem_velocity     = 10.0f,
         .phloem_iterations       = 3,
         .phloem_reference_radius = 0.015f,
-        .phloem_ring_thickness   = 0.002f,
-        .max_sugar_concentration = 300.0f,
+        .phloem_ring_thickness   = 0.005f,
         .leaf_thickness          = 0.003f,
+        .max_xylem_velocity      = 30.0f,
+        .xylem_iterations        = 3,
     };
 }
 

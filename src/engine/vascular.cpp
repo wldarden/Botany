@@ -80,295 +80,35 @@ static const char* node_type_name(NodeType t) {
     }
 }
 
-static void run_vascular(std::vector<VascNodeInfo>& flat,
-                         ChemicalID chem_id,
-                         float conductance,
-                         const Genome& g,
-                         std::ofstream* log,
-                         uint32_t current_tick = 0) {
-    if (flat.empty()) return;
-
-    // --- Phase 1: Post-order (leaves→seed) ---
-    // Walk backwards through the pre-order array = post-order.
-    for (int i = static_cast<int>(flat.size()) - 1; i >= 0; --i) {
-        auto& info = flat[i];
-        Node& n = *info.node;
-
-        // Determine role: source, sink, or conduit
-        info.is_conduit = has_vasculature(n, g);
-        if (info.is_conduit) {
-            info.capacity = pipe_capacity(n, conductance);
-        }
-
-        // Classify source/sink based on chemical and node type
-        if (chem_id == ChemicalID::Sugar) {
-            // Phloem: leaves and seed reserves are sources, growing tips are sinks
-            if (!n.parent) {
-                // Seed: mobilize stored reserves above the phloem reserve floor.
-                // The seed's stored sugar is trapped by the vascular skip logic
-                // (seed→STEM local diffusion is blocked because both have vasculature),
-                // so the phloem pass is the only path out. Without this, 44g of seed
-                // sugar sits inert while the plant starves.
-                float cap = sugar_cap(n, g);
-                float reserve = cap * g.phloem_reserve_fraction;
-                float surplus = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
-                info.supply += surplus;
-            } else if (n.type == NodeType::LEAF) {
-                float cap = sugar_cap(n, g);
-                float reserve = cap * g.phloem_reserve_fraction;
-                // Also protect sugar reserved for local growth (set by pre_transport_growth()).
-                // This ensures leaves have sugar for expansion when update_tissue() runs later.
-                float surplus = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
-                info.supply += surplus;
-            } else if (n.type == NodeType::APICAL || n.type == NodeType::ROOT_APICAL) {
-                // Only ACTIVE meristems are phloem sinks. Dormant lateral buds
-                // (active=false) rely on local diffusion from their parent conduit
-                // node — registering them as vascular sinks bleeds sugar away from
-                // the active growing tip at every level of a long chain, starving it.
-                bool is_active = (n.type == NodeType::ROOT_APICAL)
-                    ? n.as_root_apical()->active
-                    : n.as_apical()->active;
-                if (is_active) {
-                    float cap = sugar_cap(n, g);
-                    // Bound per-tick demand to cap×meristem_sink_fraction rather than
-                    // the full cap−current deficit. A hungry meristem with 2.0g cap
-                    // would otherwise demand 2.0g/tick — more than the whole plant
-                    // produces — starving leaves before they can expand. The bounded
-                    // pull matches actual elongation cost (~0.05g/tick) with headroom.
-                    float per_tick_max = cap * g.meristem_sink_fraction;
-                    float deficit = std::max(0.0f, per_tick_max - n.chemical(chem_id));
-                    info.demand += deficit;
-                }
-                // Inactive buds intentionally do NOT fall through to the starvation
-                // check below — they should not compete for phloem at all.
-            } else if (n.starvation_ticks > 0) {
-                // Starving nodes are emergency sinks
-                float cap = sugar_cap(n, g);
-                info.demand += std::max(0.0f, cap * 0.5f - n.chemical(chem_id));
-            }
-        } else {
-            // Xylem: roots are sources, leaves and shoot tips are sinks
-            if (n.type == NodeType::ROOT || n.type == NodeType::ROOT_APICAL) {
-                float surplus = std::max(0.0f, n.chemical(chem_id) * 0.5f);
-                info.supply += surplus;
-            } else if (n.type == NodeType::LEAF) {
-                if (chem_id == ChemicalID::Water) {
-                    float cap = water_cap(n, g);
-                    float deficit = std::max(0.0f, cap - n.chemical(chem_id));
-                    info.demand += deficit;
-                }
-                // Cytokinin: leaves are NOT xylem sinks. They receive cytokinin
-                // passively via local diffusion from their parent stem. Leaf CKX
-                // enzymes actively degrade it (handled by decay).
-            } else if (n.type == NodeType::APICAL) {
-                if (chem_id == ChemicalID::Water) {
-                    float cap = water_cap(n, g);
-                    info.demand += std::max(0.0f, cap - n.chemical(chem_id));
-                } else {
-                    // Cytokinin: shoot tips pull only what they're missing — deficit-based.
-                    // Stops pulling once above cytokinin_growth_threshold (Km), so
-                    // well-supplied apicals don't crowd out farther ones.
-                    info.demand += std::max(0.0f, g.cytokinin_growth_threshold - n.chemical(ChemicalID::Cytokinin));
-                }
-            }
-        }
-
-        // Propagate subtree supply AND demand separately to parent.
-        // No within-subtree netting — the seed sees total supply and total
-        // demand from the whole tree, so cross-branch flow works correctly
-        // (e.g., leaf sugar reaches root tips via the seed junction).
-        if (info.parent_idx >= 0) {
-            auto& parent_info = flat[info.parent_idx];
-            if (info.is_conduit) {
-                parent_info.supply += std::min(info.supply, info.capacity);
-                parent_info.demand += std::min(info.demand, info.capacity);
-            } else {
-                parent_info.supply += info.supply;
-                parent_info.demand += info.demand;
-            }
-        }
-    }
-
-    // --- Phase 2: Pre-order (seed→leaves) ---
-    // Distribute actual flow from seed outward.
-    // Seed (index 0) has the total supply/demand of the whole tree.
-    float seed_available = std::min(flat[0].supply, flat[0].demand);
-
-    for (int i = 0; i < static_cast<int>(flat.size()); ++i) {
-        auto& info = flat[i];
-        Node& n = *info.node;
-
-        // How much flow is available at this node?
-        float available;
-        if (i == 0) {
-            available = seed_available;
-        } else {
-            // Inherited from parent during its distribution pass
-            available = info.supply;  // reused as "flow arriving from parent"
-        }
-
-        // Deduct from local source if this node is one
-        if (info.supply > 0 && available > 0) {
-            // This node is a source — how much of the available flow is sourced here?
-            // Compute what this node itself supplies (not children)
-            float local_supply = 0.0f;
-            if (chem_id == ChemicalID::Sugar && !n.parent) {
-                // Seed: deduct mobilized reserves (mirrors Phase 1 classification).
-                float cap = sugar_cap(n, g);
-                float reserve = cap * g.phloem_reserve_fraction;
-                local_supply = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
-            } else if (chem_id == ChemicalID::Sugar && n.type == NodeType::LEAF) {
-                float cap = sugar_cap(n, g);
-                float reserve = cap * g.phloem_reserve_fraction;
-                local_supply = std::max(0.0f, n.chemical(chem_id) - reserve - n.sugar_reserved_for_growth);
-            } else if (chem_id != ChemicalID::Sugar &&
-                       (n.type == NodeType::ROOT || n.type == NodeType::ROOT_APICAL)) {
-                local_supply = std::max(0.0f, n.chemical(chem_id) * 0.5f);
-            }
-
-            if (local_supply > 0) {
-                float deducted = std::min(local_supply, available);
-                n.chemical(chem_id) -= deducted;
-            }
-        }
-
-        // Deliver to local sink if this node is one
-        float local_demand = 0.0f;
-        if (chem_id == ChemicalID::Sugar) {
-            if (n.type == NodeType::APICAL || n.type == NodeType::ROOT_APICAL) {
-                // Mirror Phase 1: only deliver to active meristems via the vascular
-                // pass. Inactive buds receive sugar through local diffusion instead.
-                bool is_active = (n.type == NodeType::ROOT_APICAL)
-                    ? n.as_root_apical()->active
-                    : n.as_apical()->active;
-                if (is_active) {
-                    float cap = sugar_cap(n, g);
-                    // Mirror Phase 1 cap: deliver at most cap×meristem_sink_fraction per tick.
-                    float per_tick_max = cap * g.meristem_sink_fraction;
-                    local_demand = std::max(0.0f, per_tick_max - n.chemical(chem_id));
-                }
-            } else if (n.starvation_ticks > 0) {
-                float cap = sugar_cap(n, g);
-                local_demand = std::max(0.0f, cap * 0.5f - n.chemical(chem_id));
-            }
-        } else if (n.type == NodeType::LEAF) {
-            // Leaves are xylem sinks for water only, not cytokinin
-            if (chem_id == ChemicalID::Water) {
-                float cap = water_cap(n, g);
-                local_demand = std::max(0.0f, cap - n.chemical(chem_id));
-            }
-        } else if (n.type == NodeType::APICAL) {
-            if (chem_id == ChemicalID::Water) {
-                float cap = water_cap(n, g);
-                local_demand = std::max(0.0f, cap - n.chemical(chem_id));
-            } else {
-                // Cytokinin: shoot tips are the primary sink
-                local_demand = 0.05f;
-            }
-        }
-
-        float delivered = std::min(available, local_demand);
-        if (delivered > 0) {
-            n.chemical(chem_id) += delivered;
-            available -= delivered;
-        }
-
-        // Distribute remaining flow to children by conductance weight, with demand
-        // as a ceiling. Conductance weight = pipe_capacity × (1 + canalization_weight × bias).
-        // Bias is auxin_flow_bias on the parent-to-child connection: connections where
-        // auxin has flowed repeatedly (higher PIN saturation) carry proportionally more flow.
-        // When a child is satisfied (allocation ≥ demand), its surplus redistributes to
-        // remaining siblings by conductance proportions. Iterate until budget exhausted or
-        // all children satisfied.
-        if (available > 0 && !info.child_idxs.empty()) {
-            int n_ch = static_cast<int>(info.child_idxs.size());
-
-            // Compute conductance weights and demand+pipe ceilings for each child.
-            std::vector<float> weights(n_ch);
-            std::vector<float> ceilings(n_ch);
-            float total_weight = 0.0f;
-            for (int k = 0; k < n_ch; ++k) {
-                int ci = info.child_idxs[k];
-                float cap = pipe_capacity(*flat[ci].node, conductance);
-                auto it = info.node->auxin_flow_bias.find(flat[ci].node);
-                float bias = (it != info.node->auxin_flow_bias.end()) ? it->second : 0.0f;
-                weights[k] = cap * (1.0f + g.canalization_weight * bias);
-                total_weight += weights[k];
-                ceilings[k] = flat[ci].demand;
-                if (flat[ci].is_conduit)
-                    ceilings[k] = std::min(ceilings[k], flat[ci].capacity);
-            }
-
-            if (total_weight > 1e-8f) {
-                // Iterative water-filling: each round allocates proportionally by
-                // conductance weight, caps any child that hits its ceiling, then
-                // redistributes the unclaimed surplus among the remaining children.
-                std::vector<float> alloc(n_ch, 0.0f);
-                std::vector<bool> done(n_ch, false);
-                float budget = available;
-
-                for (int iter = 0; iter <= n_ch; ++iter) {
-                    float active_w = 0.0f;
-                    for (int k = 0; k < n_ch; ++k)
-                        if (!done[k]) active_w += weights[k];
-                    if (active_w <= 1e-8f || budget <= 1e-8f) break;
-
-                    bool any_capped = false;
-                    for (int k = 0; k < n_ch; ++k) {
-                        if (done[k]) continue;
-                        float share = budget * (weights[k] / active_w);
-                        if (share >= ceilings[k]) {
-                            alloc[k] = ceilings[k];
-                            done[k] = true;
-                            any_capped = true;
-                        }
-                    }
-                    if (!any_capped) {
-                        // No child hit its ceiling — distribute remaining budget and finish.
-                        for (int k = 0; k < n_ch; ++k)
-                            if (!done[k])
-                                alloc[k] = budget * (weights[k] / active_w);
-                        break;
-                    }
-                    // Recompute remaining budget (available minus all capped allocations).
-                    budget = available;
-                    for (int k = 0; k < n_ch; ++k)
-                        budget -= alloc[k];
-                    if (budget <= 1e-8f) break;
-                }
-
-                for (int k = 0; k < n_ch; ++k) {
-                    flat[info.child_idxs[k]].supply = alloc[k];
-
-                    if (log) {
-                        int ci = info.child_idxs[k];
-                        Node* child = flat[ci].node;
-                        float bias = 0.0f;
-                        auto it = info.node->auxin_flow_bias.find(child);
-                        if (it != info.node->auxin_flow_bias.end()) bias = it->second;
-                        *log << current_tick << ','
-                             << info.node->id << ',' << child->id << ','
-                             << node_type_name(child->type) << ','
-                             << chem_name(chem_id) << ','
-                             << ceilings[k] << ','
-                             << weights[k] << ','
-                             << alloc[k] << ','
-                             << bias << '\n';
-                    }
-                }
-            }
-        }
-    }
-}
 
 // ── Münch pressure-flow phloem helpers ────────────────────────────────────────
 
 // Phloem ring cross-section area — used ONLY for pipe capacity (flow_vol = velocity × ring_area).
-// Living phloem+cambium layer; heartwood excluded. Scales linearly with r.
-// Real phloem ring: ~0.1–0.5 mm thick regardless of stem diameter.
+// Represents the full active conducting layer: sieve tubes + companion cells + inner
+// bark + cambium. Heartwood excluded. Scales linearly with r.
+// t is clamped to r so tiny young nodes (small radius) cannot produce negative ring area
+// when the fixed ring thickness temporarily exceeds their outer radius.
 static float phloem_ring_area(float r, float t) {
     constexpr float kPi = 3.14159265f;
+    t = std::min(t, r);
     return kPi * (2.0f * r * t - t * t);
+}
+
+// Effective pipe radius for an edge between two nodes.  STEM/ROOT nodes carry
+// real vasculature; LEAF nodes intentionally have radius == 0 (they track
+// leaf_size instead), and meristems have only tiny tip radii.  For edges
+// involving leaves/meristems the pipe width is determined by the conduit side
+// — the leaf or meristem taps into the parent stem's vascular bundle rather
+// than carrying its own.  For conduit↔conduit edges the bottleneck is min(both).
+static float edge_pipe_radius(const Node& a, const Node& b) {
+    auto is_conduit = [](const Node& n) {
+        return n.type == NodeType::STEM || n.type == NodeType::ROOT;
+    };
+    bool ac = is_conduit(a), bc = is_conduit(b);
+    if (ac && bc) return std::min(a.radius, b.radius);
+    if (ac)       return a.radius;
+    if (bc)       return b.radius;
+    return std::max({a.radius, b.radius, 1e-4f});  // degenerate fallback
 }
 
 // Total node volume — used for concentration (pressure) and sugar cap.
@@ -461,12 +201,27 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     std::vector<float> log_unloaded;        // sugar unloaded to meristem children (indexed by parent)
     std::vector<float> log_flow_in;         // sugar received via Jacobi (accumulated across iterations)
     std::vector<float> log_flow_out;        // sugar sent via Jacobi (accumulated across iterations)
+
+    // Per-edge Jacobi totals for phloem_edge_log.csv.
+    // Edge key = child index (each non-seed node has exactly one parent_idx).
+    // desired = pressure-driven flow out of sender; unload = what crossed the
+    // membrane into receiver. Both summed across phloem_iterations.
+    std::vector<float> edge_desired_to_parent;
+    std::vector<float> edge_desired_from_parent;
+    std::vector<float> edge_unload_to_parent;
+    std::vector<float> edge_unload_from_parent;
+    std::vector<float> edge_final_pressure;  // last-iter pressure at each node
     if (logging) {
         log_pre_sugar.resize(N, 0.0f);
         log_loaded.resize(N, 0.0f);
         log_unloaded.resize(N, 0.0f);
         log_flow_in.resize(N, 0.0f);
         log_flow_out.resize(N, 0.0f);
+        edge_desired_to_parent.resize(N, 0.0f);
+        edge_desired_from_parent.resize(N, 0.0f);
+        edge_unload_to_parent.resize(N, 0.0f);
+        edge_unload_from_parent.resize(N, 0.0f);
+        edge_final_pressure.resize(N, 0.0f);
         for (int i = 0; i < N; ++i)
             log_pre_sugar[i] = flat[i].node->chemical(ChemicalID::Sugar);
     }
@@ -492,7 +247,7 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         float gradient    = leaf_conc - parent_conc;
         if (gradient <= 0.0f) continue;  // leaf not above parent — no loading
 
-        float r_eff      = std::min(leaf.radius, parent.radius);
+        float r_eff      = edge_pipe_radius(leaf, parent);
         float ring_area  = phloem_ring_area(r_eff, world.phloem_ring_thickness);
         float velocity   = std::min(gradient * g.conductance_per_pressure,
                                     world.max_phloem_velocity);
@@ -507,7 +262,12 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         float load = std::min(max_vel, max_equil);
         load = std::min(load, leaf.chemical(ChemicalID::Sugar));  // safety
 
-        float parent_cap  = parent_vol * world.max_sugar_concentration;
+        // Storage cap for the parent conduit uses the per-type sugar_cap() model
+        // (stem = volume × sugar_storage_density_wood, leaf = area × leaf-density,
+        // seed = max of children-sum and seed_sugar, meristem = fixed g.sugar_cap_meristem).
+        // Keeps phloem caps consistent with the rest of the sim instead of using a
+        // volumetric-only cap that made young internodes choke at ~0.002 g.
+        float parent_cap  = sugar_cap(parent, g);
         float parent_room = parent_cap - parent.chemical(ChemicalID::Sugar);
         load = std::min(load, std::max(0.0f, parent_room));
 
@@ -539,8 +299,27 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             if (has_vasculature(*flat[i].node, g))
                 pressure[i] = compute_phloem_pressure(*flat[i].node, g, world);
         }
+        if (logging && iter == world.phloem_iterations - 1) {
+            for (int i = 0; i < N; ++i) edge_final_pressure[i] = pressure[i];
+        }
 
-        // b) Desired flow for every edge simultaneously (reads start-of-iteration state)
+        // Precompute per-node caps so edge-time room checks are cheap.
+        // Uses sugar_cap() (per-type storage model) rather than node_volume ×
+        // concentration, so each node type gets the right storage capacity:
+        // - seed: max of Σ children caps and seed_sugar (fits initial reserve)
+        // - STEM/ROOT: volume × sugar_storage_density_wood
+        // - LEAF:   area × sugar_storage_density_leaf
+        // - meristems: fixed g.sugar_cap_meristem
+        std::vector<float> node_cap(N, 0.0f);
+        for (int i = 0; i < N; ++i) {
+            node_cap[i] = sugar_cap(*flat[i].node, g);
+        }
+
+        // b) Desired flow for every edge (processed in pre-order).  This is
+        // Gauss-Seidel-like within one iteration: each edge sees iter_delta
+        // accumulated so far, so running-budget checks keep mass conservation
+        // an exact invariant.  Across iterations the system still converges
+        // like Jacobi (each outer iter recomputes pressures from scratch).
         std::vector<float> iter_delta(N, 0.0f);
 
         for (int i = 0; i < N; ++i) {
@@ -559,7 +338,7 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 float next_vol = node_volume(next, world);
                 if (next_vol <= 0.0f) return;
 
-                float r_eff     = std::min(cur.radius, next.radius);
+                float r_eff     = edge_pipe_radius(cur, next);
                 float ring_area = phloem_ring_area(r_eff, world.phloem_ring_thickness);
                 float velocity  = std::min(dp * g.conductance_per_pressure,
                                            world.max_phloem_velocity);
@@ -579,24 +358,56 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 float desired = std::min(max_vel, max_equil);
                 desired = std::min(desired, cur.chemical(ChemicalID::Sugar));  // safety
 
+                // MASS-CONSERVATION: cap desired by sender's RUNNING sugar budget
+                // this iteration — what cur_sugar has left after prior outflows
+                // scheduled earlier in this iteration (iter_delta[i] is negative
+                // when cur is a net sender).
+                float sender_remaining = cur.chemical(ChemicalID::Sugar) + iter_delta[i];
+                desired = std::min(desired, std::max(0.0f, sender_remaining));
+                if (desired <= 0.0f) return;
+
                 // Unloading: fraction of desired that crosses the membrane into next's tissue.
                 // Bidirectional formula: gradient × permeability × transfer_volume.
+                // Membrane permeability is a THROTTLE on the edge — it caps how much
+                // sugar actually transfers this iteration. It MUST NOT be a leak.
                 float next_conc = next.chemical(ChemicalID::Sugar) / next_vol;
                 float grad_unload = std::max(0.0f, cur_conc - next_conc);
                 float perm    = unloading_permeability(next.type, g);
                 float unload  = std::min(grad_unload * perm * desired, desired);
 
-                // sender pays full desired_sugar; receiver gets only unloaded fraction.
-                // transit remainder (desired - unload) stays in sender's sieve tube:
-                // it is credited back implicitly (sender delta = -desired + transit_back =
-                // effectively -unload net), but for simplicity we track it in the delta
-                // as: sender -= desired, receiver += unload.  Transit stays in the pipe
-                // and doesn't leave the sender's node.
-                iter_delta[i] -= desired;
+                // MASS-CONSERVATION: cap unload by receiver's RUNNING room budget.
+                // Without this, tiny new child nodes (cap ~0.002 g for a fresh
+                // internode) silently swallow huge inflows via the apply-step
+                // upper clamp — the most recent sugar-conservation leak (tick 24
+                // destroyed 47.66 g of the seed's 48 g when topology expanded).
+                float receiver_room = std::max(0.0f,
+                    node_cap[j] - next.chemical(ChemicalID::Sugar) - iter_delta[j]);
+                unload = std::min(unload, receiver_room);
+                if (unload <= 0.0f) return;
+
+                // Mass-conserving edge transfer: sender loses exactly what receiver
+                // gains.  With running-budget caps above, this delta can no longer
+                // push the sender below 0 or the receiver above cap — conservation
+                // is an exact per-iter invariant.  Verified by SUMMARY row in
+                // phloem_log.csv (conservation_error must stay ≈ 0 every tick).
+                iter_delta[i] -= unload;
                 iter_delta[j] += unload;
                 if (logging) {
-                    log_flow_out[i] += desired;
+                    log_flow_out[i] += unload;
                     log_flow_in[j]  += unload;
+                    // Per-edge tracking: identify edge by whether j is parent of i
+                    // or a child. Sums across all Jacobi iterations.  `desired` is
+                    // logged for diagnostics — it is the pressure-demanded flow
+                    // before membrane throttling; `unload` is what actually moved.
+                    if (flat[i].parent_idx == j) {
+                        edge_desired_to_parent[i] += desired;
+                        edge_unload_to_parent[i]  += unload;
+                    } else {
+                        // j is a child of i. Store totals on the child's row
+                        // so each edge owns one row.
+                        edge_desired_from_parent[j] += desired;
+                        edge_unload_from_parent[j]  += unload;
+                    }
                 }
             };
 
@@ -604,32 +415,16 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             for (int ci : flat[i].child_idxs) process_edge(ci);
         }
 
-        // c) Fairness scaling: prevent any node from sending more than it has.
-        for (int i = 0; i < N; ++i) {
-            if (iter_delta[i] >= 0.0f) continue;  // net receiver — no scaling needed
-            float available  = flat[i].node->chemical(ChemicalID::Sugar);
-            float total_out  = -iter_delta[i];
-            if (total_out > available + 1e-8f) {
-                float scale = available / total_out;
-                iter_delta[i] = -available;
-                // Scale corresponding inflows proportionally.  Because each edge
-                // contributes to exactly one receiver's delta (unload fraction),
-                // we approximate by clamping at the apply step.  The cap at (d) is
-                // the hard safety net; per-sender scaling here reduces error.
-                // Note: iter_delta[j] for receivers from this sender are already set.
-                // A second pass to re-scale those entries is the refinement; the clamp
-                // below handles conservation in practice.
-            }
-        }
-
-        // d) Apply iteration delta — clamp to [0, node_cap]
+        // c) Apply iteration delta.  Running-budget caps in process_edge guarantee
+        // every delta already respects sender availability and receiver room, so
+        // no clamp truncation is needed (and any truncation here would be a leak).
+        // The std::max(..., 0.0f) is a float-rounding safety rail only — it cannot
+        // fire for more than ~1e-6 g given the caps above.
         for (int i = 0; i < N; ++i) {
             if (std::abs(iter_delta[i]) < 1e-10f) continue;
             Node& n   = *flat[i].node;
-            float cap = node_volume(n, world) * world.max_sugar_concentration;
-            float new_val = std::clamp(
-                n.chemical(ChemicalID::Sugar) + iter_delta[i], 0.0f, cap);
-            n.chemical(ChemicalID::Sugar) = new_val;
+            float new_val = n.chemical(ChemicalID::Sugar) + iter_delta[i];
+            n.chemical(ChemicalID::Sugar) = std::max(new_val, 0.0f);
         }
     }
 
@@ -652,7 +447,7 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         float gradient    = parent_conc - mer_conc;
         if (gradient <= 0.0f) continue;  // parent not above meristem — no unloading
 
-        float r_eff     = std::min(parent.radius, mer.radius);
+        float r_eff     = edge_pipe_radius(parent, mer);
         float ring_area = phloem_ring_area(r_eff, world.phloem_ring_thickness);
         float velocity  = std::min(gradient * g.conductance_per_pressure,
                                    world.max_phloem_velocity);
@@ -667,7 +462,11 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         float unload = std::min(max_vel, max_equil);
         unload = std::min(unload, parent.chemical(ChemicalID::Sugar));  // safety
 
-        float mer_cap  = mer_vol * world.max_sugar_concentration;
+        // Meristems and leaves don't have their own distributed vasculature —
+        // they tap the parent conduit's phloem.  Storage cap is the per-type
+        // sugar_cap() (g.sugar_cap_meristem = 0.1 g for meristems).  Draining
+        // ~0.005 g/tick from the parent is enough to fuel normal elongation.
+        float mer_cap  = sugar_cap(mer, g);
         float mer_room = mer_cap - mer.chemical(ChemicalID::Sugar);
         unload = std::min(unload, std::max(0.0f, mer_room));
 
@@ -755,6 +554,284 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 << total_flow_in << ','
                 << conservation_error << '\n';
         }
+
+        // ── Per-edge phloem log ───────────────────────────────────────────
+        // One row per non-seed node: flow between it and its parent, summed
+        // across all Jacobi iterations. edge_desired_to_parent[i] = flow from
+        // i toward its parent (i was sender). edge_desired_from_parent[i] =
+        // flow from parent into i (parent was sender).
+        auto edge_mode = (world.current_tick == 0)
+            ? (std::ios::out | std::ios::trunc)
+            : (std::ios::out | std::ios::app);
+        std::ofstream ecsv("debug/phloem_edge_log.csv", edge_mode);
+        if (ecsv.is_open()) {
+            if (world.current_tick == 0) {
+                ecsv << "tick,parent_id,child_id,child_type,"
+                        "pressure_parent,pressure_child,"
+                        "conc_parent,conc_child,"
+                        "desired_to_parent,unload_to_parent,"
+                        "desired_from_parent,unload_from_parent,"
+                        "net_child_gain\n";
+            }
+            for (int i = 1; i < N; ++i) {  // skip seed (no parent edge)
+                int pi = flat[i].parent_idx;
+                if (pi < 0) continue;
+                const Node& parent = *flat[pi].node;
+                const Node& child  = *flat[i].node;
+                float p_vol = node_volume(parent, world);
+                float c_vol = node_volume(child,  world);
+                float p_conc = (p_vol > 0.0f) ? parent.chemical(ChemicalID::Sugar) / p_vol : 0.0f;
+                float c_conc = (c_vol > 0.0f) ? child.chemical(ChemicalID::Sugar)  / c_vol : 0.0f;
+                float net_child_gain = edge_unload_from_parent[i] - edge_desired_to_parent[i];
+                ecsv << world.current_tick << ','
+                     << parent.id << ',' << child.id << ','
+                     << node_type_name(child.type) << ','
+                     << edge_final_pressure[pi] << ','
+                     << edge_final_pressure[i]  << ','
+                     << p_conc << ',' << c_conc << ','
+                     << edge_desired_to_parent[i] << ','
+                     << edge_unload_to_parent[i]  << ','
+                     << edge_desired_from_parent[i] << ','
+                     << edge_unload_from_parent[i]  << ','
+                     << net_child_gain << '\n';
+            }
+        }
+    }
+}
+
+// ── xylem_resolve: mass-conserving Jacobi pressure-flow for water + cytokinin ──
+//
+// Mirrors phloem_resolve in structure: flat pre-order traversal, Jacobi outer
+// iterations, per-edge mass-conserving transfer with running-budget caps on both
+// sender and receiver.  Key differences from phloem_resolve:
+//
+//   • Driving "pressure" is water_fraction = water / water_cap (dimensionless, 0–1).
+//     No osmotic-coefficient multiplier — dp = frac_sender − frac_receiver directly
+//     drives flow.  This is a pragmatic proxy for xylem water potential: the
+//     thirstiest node pulls the hardest.  Leaves transpire → frac drops → they
+//     pull from stems → stems pull from roots → roots absorb from soil.
+//
+//   • Pipe area = full node cross-section (π·r²) rather than a thin ring.
+//     In real stems the xylem (dead wood vessels) occupies the bulk of the cross
+//     section, whereas phloem is a thin living layer.  So xylem throughput
+//     scales with r² instead of r.
+//
+//   • Two separate passes: water first (driven by its own fraction gradient),
+//     then cytokinin (driven by the same water gradient; amount moved per edge
+//     = flow_vol × sender_cyto_per_water).  Cyto rides the xylem stream.
+//
+//   • Leaves, meristems, and all other nodes participate — there is no Phase-1
+//     loading or Phase-3 unloading like phloem.  The whole network is one pipe.
+//     Transpiration at leaves is modeled elsewhere (LeafNode::transpire) as a
+//     direct subtraction from leaf water; that creates the gradient this pass
+//     resolves.
+void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
+    Node* seed = plant.seed_mut();
+    if (!seed) return;
+
+    std::vector<VascNodeInfo> flat;
+    flat.reserve(plant.node_count());
+    build_flat(seed, -1, flat);
+    const int N = static_cast<int>(flat.size());
+    if (N == 0) return;
+
+    // Logging arrays — capture pre-amounts so SUMMARY rows show conservation.
+    const bool logging = world.xylem_debug_log;
+    std::vector<float> pre_water(N, 0.0f), pre_cyto(N, 0.0f);
+    std::vector<float> edge_water_up(N, 0.0f);   // water flowing from i to parent(i)
+    std::vector<float> edge_water_down(N, 0.0f); // water flowing from i to children (+ sum over children)
+    std::vector<float> edge_cyto_up(N, 0.0f);
+    std::vector<float> edge_cyto_down(N, 0.0f);
+    if (logging) {
+        for (int i = 0; i < N; ++i) {
+            pre_water[i] = flat[i].node->chemical(ChemicalID::Water);
+            pre_cyto[i]  = flat[i].node->chemical(ChemicalID::Cytokinin);
+        }
+    }
+
+    // ── Pre-compute water caps (same for both passes; unchanged across iters) ──
+    std::vector<float> wcap(N, 0.0f);
+    for (int i = 0; i < N; ++i) wcap[i] = water_cap(*flat[i].node, g);
+
+    // ── Water pass ─────────────────────────────────────────────────────────────
+    for (uint32_t iter = 0; iter < world.xylem_iterations; ++iter) {
+        // Compute water_fraction at every node (the "pressure" proxy).
+        std::vector<float> wfrac(N, 0.0f);
+        for (int i = 0; i < N; ++i) {
+            if (wcap[i] > 0.0f)
+                wfrac[i] = flat[i].node->chemical(ChemicalID::Water) / wcap[i];
+        }
+
+        std::vector<float> iter_delta(N, 0.0f);
+
+        for (int i = 0; i < N; ++i) {
+            Node& cur = *flat[i].node;
+
+            auto process_edge = [&](int j) {
+                Node& next = *flat[j].node;
+                float dp = wfrac[i] - wfrac[j];
+                if (dp <= 1e-6f) return;  // cur must be the fuller (higher-frac) side
+
+                float r_eff    = edge_pipe_radius(cur, next);
+                float pipe_area = 3.14159265f * r_eff * r_eff;  // full cross-section
+                float velocity  = std::min(dp * g.xylem_conductance_per_pressure,
+                                           world.max_xylem_velocity);
+                float flow_vol  = velocity * pipe_area;  // dm³/tick
+
+                // Equalization cap — cur cannot drop below the fraction that
+                // would result if both nodes pooled their water.  Prevents
+                // oscillation from overshoot.
+                float total_water = cur.chemical(ChemicalID::Water) + next.chemical(ChemicalID::Water);
+                float total_cap   = wcap[i] + wcap[j];
+                float equil_frac  = (total_cap > 1e-8f) ? total_water / total_cap : 0.0f;
+                float max_equil   = std::max(0.0f,
+                    cur.chemical(ChemicalID::Water) - equil_frac * wcap[i]);
+
+                float desired = std::min(flow_vol, max_equil);
+
+                // Running-budget caps — same invariant as phloem_resolve.  Per-edge
+                // mass conservation means conservation_error stays ≈ 0 every tick.
+                float sender_remaining = cur.chemical(ChemicalID::Water) + iter_delta[i];
+                desired = std::min(desired, std::max(0.0f, sender_remaining));
+                if (desired <= 0.0f) return;
+
+                float receiver_room = std::max(0.0f,
+                    wcap[j] - next.chemical(ChemicalID::Water) - iter_delta[j]);
+                desired = std::min(desired, receiver_room);
+                if (desired <= 0.0f) return;
+
+                iter_delta[i] -= desired;
+                iter_delta[j] += desired;
+                if (logging) {
+                    if (flat[i].parent_idx == j) edge_water_up[i] += desired;
+                    else                         edge_water_down[i] += desired;
+                }
+            };
+
+            if (flat[i].parent_idx >= 0) process_edge(flat[i].parent_idx);
+            for (int ci : flat[i].child_idxs) process_edge(ci);
+        }
+
+        // Apply — running caps guarantee [0, cap], but the max(,0) is a
+        // float-rounding safety rail (cannot fire for >~1e-6 ml).
+        for (int i = 0; i < N; ++i) {
+            if (std::abs(iter_delta[i]) < 1e-10f) continue;
+            Node& n = *flat[i].node;
+            n.chemical(ChemicalID::Water) = std::max(n.chemical(ChemicalID::Water) + iter_delta[i], 0.0f);
+        }
+    }
+
+    // ── Cytokinin pass ────────────────────────────────────────────────────────
+    // Cytokinin rides in the water stream.  Drive = same water_fraction gradient
+    // (cyto goes wherever water goes).  Mass per edge = flow_vol × sender's
+    // cyto-per-water concentration.  Mass-conserving via the same running caps.
+    for (uint32_t iter = 0; iter < world.xylem_iterations; ++iter) {
+        std::vector<float> wfrac(N, 0.0f);
+        for (int i = 0; i < N; ++i) {
+            if (wcap[i] > 0.0f)
+                wfrac[i] = flat[i].node->chemical(ChemicalID::Water) / wcap[i];
+        }
+
+        std::vector<float> iter_delta(N, 0.0f);
+
+        for (int i = 0; i < N; ++i) {
+            Node& cur = *flat[i].node;
+
+            auto process_edge = [&](int j) {
+                Node& next = *flat[j].node;
+                float dp = wfrac[i] - wfrac[j];
+                if (dp <= 1e-6f) return;
+
+                float cur_water = cur.chemical(ChemicalID::Water);
+                if (cur_water <= 1e-8f) return;
+                float cyto_per_water = cur.chemical(ChemicalID::Cytokinin) / cur_water;
+                if (cyto_per_water <= 0.0f) return;
+
+                float r_eff     = edge_pipe_radius(cur, next);
+                float pipe_area = 3.14159265f * r_eff * r_eff;
+                float velocity  = std::min(dp * g.xylem_conductance_per_pressure,
+                                           world.max_xylem_velocity);
+                float flow_vol  = velocity * pipe_area;  // dm³/tick
+
+                float desired = flow_vol * cyto_per_water;  // mass of cyto carried
+
+                float sender_remaining = cur.chemical(ChemicalID::Cytokinin) + iter_delta[i];
+                desired = std::min(desired, std::max(0.0f, sender_remaining));
+                if (desired <= 0.0f) return;
+
+                // Cytokinin has no storage cap (signal molecule) — receiver accepts
+                // whatever arrives.  Decay (Node::decay_chemicals) prevents
+                // unbounded accumulation.
+                iter_delta[i] -= desired;
+                iter_delta[j] += desired;
+                if (logging) {
+                    if (flat[i].parent_idx == j) edge_cyto_up[i] += desired;
+                    else                         edge_cyto_down[i] += desired;
+                }
+            };
+
+            if (flat[i].parent_idx >= 0) process_edge(flat[i].parent_idx);
+            for (int ci : flat[i].child_idxs) process_edge(ci);
+        }
+
+        for (int i = 0; i < N; ++i) {
+            if (std::abs(iter_delta[i]) < 1e-10f) continue;
+            Node& n = *flat[i].node;
+            n.chemical(ChemicalID::Cytokinin) = std::max(
+                n.chemical(ChemicalID::Cytokinin) + iter_delta[i], 0.0f);
+        }
+    }
+
+    // ── Conservation log ──────────────────────────────────────────────────────
+    // One row per (node, chemical) with before/after and net change.  SUMMARY
+    // row per (tick, chemical) with conservation_error = total_after − total_before.
+    // With the running-budget caps above, conservation_error should stay within
+    // float rounding (~1e-6 ml) every tick.
+    if (logging) {
+        std::filesystem::create_directories("debug");
+        bool fresh_file = (world.current_tick == 0);
+        auto mode = fresh_file
+            ? (std::ios::out | std::ios::trunc)
+            : (std::ios::out | std::ios::app);
+        std::ofstream csv("debug/xylem_log.csv", mode);
+        if (csv.is_open()) {
+            if (fresh_file) {
+                csv << "tick,chemical,node_id,node_type,parent_id,"
+                       "amount_before,amount_after,edge_flow_up,edge_flow_down,"
+                       "net_change\n";
+            }
+
+            auto write_rows = [&](ChemicalID chem, const std::vector<float>& pre,
+                                  const std::vector<float>& eup,
+                                  const std::vector<float>& edown) {
+                float total_before = 0.0f, total_after = 0.0f;
+                for (int i = 0; i < N; ++i) {
+                    const Node& n = *flat[i].node;
+                    float before = pre[i];
+                    float after  = n.chemical(chem);
+                    int parent_id = (flat[i].parent_idx >= 0)
+                        ? static_cast<int>(flat[flat[i].parent_idx].node->id)
+                        : -1;
+                    csv << world.current_tick << ','
+                        << chem_name(chem) << ','
+                        << n.id << ','
+                        << node_type_name(n.type) << ','
+                        << parent_id << ','
+                        << before << ',' << after << ','
+                        << eup[i] << ',' << edown[i] << ','
+                        << (after - before) << '\n';
+                    total_before += before;
+                    total_after  += after;
+                }
+                csv << world.current_tick << ',' << chem_name(chem) << ",SUMMARY,,"
+                    << N << ','
+                    << total_before << ',' << total_after << ",,,"
+                    << (total_after - total_before) << '\n';
+            };
+
+            write_rows(ChemicalID::Water,     pre_water, edge_water_up, edge_water_down);
+            write_rows(ChemicalID::Cytokinin, pre_cyto,  edge_cyto_up,  edge_cyto_down);
+        }
     }
 }
 
@@ -762,51 +839,11 @@ void vascular_transport(Plant& plant, const Genome& g, const WorldParams& world)
     Node* seed = plant.seed_mut();
     if (!seed) return;
 
-    // Build flat pre-order array of nodes
-    std::vector<VascNodeInfo> flat;
-    flat.reserve(plant.node_count());
-    build_flat(seed, -1, flat);
-
-    // Optional per-junction debug log.
-    // On tick 0 the file is truncated (new run); subsequent ticks append.
-    std::ofstream log_file;
-    std::ofstream* log = nullptr;
-    if (world.vascular_debug_log) {
-        auto mode = (world.current_tick == 0)
-            ? (std::ios::out | std::ios::trunc)
-            : (std::ios::out | std::ios::app);
-        log_file.open("debug/vascular_log.csv", mode);
-        if (log_file.is_open()) {
-            if (world.current_tick == 0)
-                log_file << "tick,junction_node_id,child_node_id,child_type,"
-                            "chemical,demand,conductance_weight,delivered,"
-                            "auxin_flow_bias\n";
-            log = &log_file;
-        }
-    }
-
     // Phloem: Münch pressure-flow (Jacobi resolve with velocity + equalization caps).
-    // phloem_resolve builds its own flat array and handles leaf loading + pipe
-    // network + meristem unloading in three sequential passes.
     phloem_resolve(plant, g, world);
 
-    // Reset supply/demand for xylem pass (flat was already built above for logging)
-    for (auto& info : flat) {
-        info.supply = 0.0f;
-        info.demand = 0.0f;
-    }
-
-    // Xylem: water from roots to shoots
-    run_vascular(flat, ChemicalID::Water, g.xylem_conductance, g, log, world.current_tick);
-
-    // Reset for cytokinin
-    for (auto& info : flat) {
-        info.supply = 0.0f;
-        info.demand = 0.0f;
-    }
-
-    // Xylem: cytokinin from roots to shoots (carried in water stream)
-    run_vascular(flat, ChemicalID::Cytokinin, g.xylem_conductance, g, log, world.current_tick);
+    // Xylem: water + cytokinin pressure-flow (mass-conserving Jacobi).
+    xylem_resolve(plant, g, world);
 }
 
 } // namespace botany

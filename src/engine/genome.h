@@ -188,6 +188,12 @@ struct Genome {
                                           // velocity = min(dp × conductance_per_pressure, max_phloem_velocity).
                                           // At gradient=20 g/dm³: vel=10 dm/tick (at cap).
                                           // Replaces phloem_conductance for the Jacobi resolve pass.
+    float xylem_conductance_per_pressure; // dm/tick per unit water-fraction gradient — xylem analogue
+                                          // of conductance_per_pressure. Driving "pressure" is just the
+                                          // dimensionless water_fraction differential dp = frac_src − frac_dst.
+                                          // velocity = min(dp × xylem_conductance_per_pressure, max_xylem_velocity).
+                                          // Real xylem conductivity >> phloem (open vessels vs. sieve tubes),
+                                          // so this is large — at dp=0.3, vel ≈ 30 dm/tick (at cap).
     float phloem_unloading_meristem;      // permeability for APICAL and ROOT_APICAL sink nodes.
                                           // Fraction of (gradient × desired_sugar) that crosses the
                                           // sieve tube membrane into local tissue per tick.
@@ -354,6 +360,7 @@ inline Genome default_genome() {
         // Münch pressure-flow phloem
         .phloem_osmotic_coefficient = 1.0f,   // 1:1 mapping from concentration to pressure (calibrate via conductance_per_pressure)
         .conductance_per_pressure   = 0.5f,   // at gradient=20 g/dm³: vel=10 dm/tick (at cap); at 5 g/dm³: 2.5 dm/tick
+        .xylem_conductance_per_pressure = 100.0f, // at dp=0.3: vel=30 dm/tick (at cap); xylem is much more conductive than phloem
         .phloem_unloading_meristem  = 0.08f,  // active sink — covers growth cost (~0.015g/tick) plus maintenance
         .phloem_unloading_leaf      = 0.10f,  // efficient loader/unloader; mature leaf clears surplus in ~1 tick
         .phloem_unloading_root      = 0.008f, // 4× more permeable than stem — ray parenchyma and root hairs

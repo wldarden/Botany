@@ -22,6 +22,7 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // a local auxin maximum via PIN-mediated recycling regardless of growth state.
     // Dormant buds need this to self-supply the auxin required for can_activate().
     chemical(ChemicalID::Auxin) += g.root_tip_auxin_production_rate;
+    tick_auxin_produced += g.root_tip_auxin_production_rate;
 
     if (!active) {
         if (can_activate(g, world)) activate(g, world);
@@ -35,7 +36,9 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // only inside the active branch.
     // Gate by local auxin — the genome comment says "cytokinin per unit auxin".
     // Root apicals with more auxin (PIN-delivered + self-produced) signal more strongly.
-    chemical(ChemicalID::Cytokinin) += g.root_cytokinin_production_rate * chemical(ChemicalID::Auxin);
+    float cyto_produced = g.root_cytokinin_production_rate * chemical(ChemicalID::Auxin);
+    chemical(ChemicalID::Cytokinin) += cyto_produced;
+    tick_cytokinin_produced += cyto_produced;
 
     ticks_since_last_node++;
     elongate(g, world);

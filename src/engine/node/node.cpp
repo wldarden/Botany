@@ -575,10 +575,9 @@ void Node::update_canalization(const Genome& g) {
         flow_bias += (saturation - flow_bias) * g.smoothing_rate;
     }
 
-    // Clear AFTER canalization reads, not at start of transport_with_children.
-    // PIN writes into last_auxin_flux before the DFS walk; diffusion accumulates
-    // during the walk. Both must be summed before canalization reads the map.
-    last_auxin_flux.clear();
+    // NOTE: last_auxin_flux is cleared at the start of Plant::tick_tree() rather
+    // than here, so flux values survive the full tick and can be read by the
+    // post-tick canalization logger in engine.cpp.
 }
 
 void Node::decay_chemicals(const Genome& g) {

@@ -152,6 +152,17 @@ void Plant::pre_transport_growth(const WorldParams& world) {
 }
 
 void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
+    // Clear last_auxin_flux on every node before anything writes to it this tick.
+    // PIN writes first, then per-node diffusion accumulates during the DFS walk,
+    // and update_canalization reads. The post-tick logger in engine.cpp reads the
+    // same map, so we must NOT clear in update_canalization — clear once here.
+    // Also reset per-tick hormone production counters (diagnostic only).
+    for (auto& n : nodes_) {
+        n->last_auxin_flux.clear();
+        n->tick_auxin_produced = 0.0f;
+        n->tick_cytokinin_produced = 0.0f;
+    }
+
     pre_transport_growth(world);                // nodes claim sugar for growth before vascular
     vascular_transport(*this, genome_, world);  // bulk flow for sugar/water/cytokinin
     pin_transport(*this, genome_);              // PIN-mediated polar auxin transport

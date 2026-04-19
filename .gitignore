@@ -6,7 +6,7 @@ compile_commands.json
 .claude/
 .idea/
 imgui.ini
-debug_log.csv
 recording.bin
 test.bin
 best_genome.txt
+debug/

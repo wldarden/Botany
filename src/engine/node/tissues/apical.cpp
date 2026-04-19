@@ -41,7 +41,9 @@ void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldPar
     float sugar = chemical(ChemicalID::Sugar);
     float sugar_factor = 0.1f + 0.9f * sugar / (sugar + g.auxin_sugar_half_saturation);
     float modulated_baseline = base * light_factor * sugar_factor;
-    chemical(ChemicalID::Auxin) += modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
+    float produced = modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
+    chemical(ChemicalID::Auxin) += produced;
+    tick_auxin_produced += produced;
 }
 
 void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams& world) {

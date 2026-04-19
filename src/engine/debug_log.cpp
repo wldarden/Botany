@@ -6,11 +6,16 @@
 #include "engine/node/tissues/leaf.h"
 #include "engine/chemical/chemical.h"
 #include <iomanip>
+#include <filesystem>
 #include <glm/geometric.hpp>
 
 namespace botany {
 
 void DebugLog::open(const std::string& path) {
+    std::filesystem::path p(path);
+    if (p.has_parent_path()) {
+        std::filesystem::create_directories(p.parent_path());
+    }
     file_.open(path);
     header_written_ = false;
 }
@@ -26,6 +31,7 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
         file_ << "tick,node_id,parent_id,type,age,children,"
               << "sugar,sugar_cap,maintenance,production,"
               << "auxin,cytokinin,gibberellin,ethylene,stress_hormone,"
+              << "auxin_produced,cytokinin_produced,"
               << "light_exposure,leaf_size,angle_eff,senescence,"
               << "starvation_ticks,pos_x,pos_y,pos_z,radius,"
               << "total_mass,stress\n";
@@ -82,6 +88,8 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
               << node.chemical(ChemicalID::Gibberellin) << ","
               << node.chemical(ChemicalID::Ethylene) << ","
               << node.chemical(ChemicalID::Stress) << ","
+              << node.tick_auxin_produced << ","
+              << node.tick_cytokinin_produced << ","
               << light_exp << "," << leaf_sz << "," << angle_eff << ","
               << senescence << ","
               << node.starvation_ticks << ","

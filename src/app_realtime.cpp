@@ -272,7 +272,7 @@ int main(int argc, char* argv[]) {
 
     Genome g = default_genome();
     PlantID plant_id = engine.create_plant(g, glm::vec3(0.0f));
-    engine.debug_log().open("debug_log.csv");
+    engine.debug_log().open("debug/debug_log.csv");
     if (log_perf) {
         engine.perf_log().open("perf_log.csv");
         std::cout << "Performance logging enabled -> perf_log.csv" << std::endl;

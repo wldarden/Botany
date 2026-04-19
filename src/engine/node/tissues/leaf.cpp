@@ -164,7 +164,9 @@ void LeafNode::expand(const Genome& g, const WorldParams& world) {
     // Auxin production: growing leaves produce auxin proportional to growth rate.
     // No growth (full size, stressed, starved) → zero auxin.
     float growth_fraction = growth / g.leaf_growth_rate;
-    chemical(ChemicalID::Auxin) += growth_fraction * g.leaf_growth_auxin_multiplier * g.leaf_auxin_baseline;
+    float produced = growth_fraction * g.leaf_growth_auxin_multiplier * g.leaf_auxin_baseline;
+    chemical(ChemicalID::Auxin) += produced;
+    tick_auxin_produced += produced;
 
     // Extend petiole proportionally as leaf grows
     // Target offset length = base_offset + petiole_length * (leaf_size / max_leaf_size)

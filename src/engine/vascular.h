@@ -23,6 +23,12 @@ void vascular_transport(Plant& plant, const Genome& g, const WorldParams& world)
 // meristem unloading (post-Jacobi).  Called from vascular_transport().
 void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world);
 
+// Xylem pressure-flow resolve.  Mass-conserving Jacobi pass for water and
+// cytokinin, driven by water-fraction gradient (dp = frac_src − frac_dst).
+// Cytokinin rides the water stream: cyto flow per edge = water_flow × sender
+// cytokinin concentration in water.  Called from vascular_transport().
+void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world);
+
 // Is this chemical transported via vasculature (bulk flow)?
 inline bool is_vascular_chemical(ChemicalID id) {
     return id == ChemicalID::Sugar || id == ChemicalID::Water || id == ChemicalID::Cytokinin;
