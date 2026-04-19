@@ -45,9 +45,20 @@ public:
 
     uint32_t next_id() { return next_id_++; }
 
+    // Per-tick primary-meristem trackers.  Reset to -1 at the start of each
+    // tick; set to the observing meristem's id when a primary SA/RA is seen
+    // during tick_tree's DFS walk (cheap, piggybacked on existing traversal).
+    // After the walk, if either is still -1 the original primary died this
+    // tick (or earlier) — triggers a one-time re-promotion pass that picks
+    // the surviving non-primary meristem with the strongest canalization
+    // path back to the seed.  Public because the meristem tick sets them.
+    int32_t primary_sa_id_this_tick = -1;
+    int32_t primary_ra_id_this_tick = -1;
+
 private:
     void tick_tree(const WorldParams& world, PerfStats* perf);
     void pre_transport_growth(const WorldParams& world);
+    void promote_primary_meristems();  // called after tick_tree walk if a primary is missing
     Genome genome_;
     uint32_t next_id_ = 0;
     uint32_t root_meristem_count_ = 0;

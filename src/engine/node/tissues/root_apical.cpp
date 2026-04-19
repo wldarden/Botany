@@ -16,6 +16,11 @@ RootApicalNode::RootApicalNode(uint32_t id, glm::vec3 position, float radius)
 void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
+    // Record presence of primary root meristem for this tick's tracker.
+    // Piggyback on the DFS walk (no extra traversal).  If the tracker is
+    // still -1 at end of tick_tree, the primary died and promotion runs.
+    if (is_primary) plant.primary_ra_id_this_tick = static_cast<int32_t>(id);
+
     absorb_water(g, world);
 
     // Quiescence: active meristem reverts to dormant after sustained sugar
@@ -23,7 +28,9 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // survive weeks of stress by going quiescent, reactivate later via
     // normal can_activate() when sugar returns.  Runs before the active
     // check so the newly-dormant RA is handled by the dormant branch below.
-    if (active && starvation_ticks >= static_cast<uint32_t>(g.quiescence_threshold)) {
+    // EXCEPT: primary meristems never quiesce (same rule as ApicalNode) —
+    // they sustain themselves at metabolic_factor floor or die normally.
+    if (active && !is_primary && starvation_ticks >= static_cast<uint32_t>(g.quiescence_threshold)) {
         active = false;
         starvation_ticks = 0;  // dormant meristem pays no maintenance; clean slate for reactivation
     }

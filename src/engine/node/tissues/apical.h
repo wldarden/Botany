@@ -14,6 +14,7 @@ public:
 
     // --- Meristem state ---
     bool active = true; // false = dormant bud, true = actively growing
+    bool is_primary = false; // true = plant's primary shoot apex (never quiesces; can be re-promoted from lateral if original dies)
     glm::vec3 growth_dir = glm::vec3(0.0f);
     glm::vec3 set_point_dir = glm::vec3(0.0f, 1.0f, 0.0f); // preferred angle (vertical for trunk, branch angle for branches)
     uint32_t phyllotaxis_index = 0;

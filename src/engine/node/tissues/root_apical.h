@@ -14,6 +14,7 @@ public:
 
     // --- Meristem state ---
     bool active = true; // false = dormant bud, true = actively growing
+    bool is_primary = false; // true = plant's primary root apex (never quiesces; can be re-promoted from lateral if original dies)
     glm::vec3 growth_dir = glm::vec3(0.0f);
     uint32_t ticks_since_last_node = 0;
 

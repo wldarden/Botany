@@ -22,6 +22,8 @@ struct Genome {
     float cytokinin_sugar_half_saturation;  // g glucose — sugar level at which CK production hits half-max.
     float cytokinin_water_half_saturation;  // ml — water level at which CK production hits half-max.
     float quiescence_threshold;             // ticks — active meristem reverts to dormant after this many consecutive low-sugar ticks (before starvation_ticks_max death).
+    uint32_t starvation_ticks_max_stem;     // ticks — STEM nodes (non-meristem woody tissue) survive this many consecutive zero-sugar ticks before death. Stand-in until starch reserves are modeled.
+    uint32_t starvation_ticks_max_root;     // ticks — ROOT nodes (non-meristem root tissue) survive this many consecutive zero-sugar ticks before death. Fine roots have less reserve than trunk.
     float auxin_bias;                  // equilibrium shift for basipetal flow (negative = toward root)
     float leaf_auxin_baseline;            // scaling constant for leaf auxin production (decoupled from apical)
     float leaf_growth_auxin_multiplier;   // fraction of leaf_auxin_baseline produced at max leaf growth
@@ -223,6 +225,8 @@ inline Genome default_genome() {
         .cytokinin_sugar_half_saturation = 0.05f, // CK more sensitive to sugar than auxin; sharper response
         .cytokinin_water_half_saturation = 0.1f,  // matches auxin water sensitivity
         .quiescence_threshold = 150.0f,           // ~6 days — meristem goes dormant after sustained starvation, well before death (starvation_ticks_max = 2200)
+        .starvation_ticks_max_stem = 8000,        // ~333 days — woody trunks carry significant parenchyma starch reserves
+        .starvation_ticks_max_root = 6000,        // ~250 days — root tissue reserves somewhat less than trunk; fine roots die faster than woody roots
         .auxin_bias = -0.1f,                  // gentle basipetal shift (auxin accumulates toward root)
         .leaf_auxin_baseline = 0.15f,             // same scale as apical, but multiplier keeps it at 10%
         .leaf_growth_auxin_multiplier = 0.1f,     // single leaf at max growth = 10% of apical baseline

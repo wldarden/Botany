@@ -286,6 +286,10 @@ TEST_CASE("Starvation ticks reset when sugar is available", "[sugar]") {
 
 TEST_CASE("Starved non-seed nodes are pruned after max starvation ticks", "[sugar]") {
     Genome g = default_genome();
+    // STEM nodes now use g.starvation_ticks_max_stem (default ~8000) for their
+    // death threshold rather than the world default.  Lower it so the test can
+    // observe a death without simulating thousands of ticks.
+    g.starvation_ticks_max_stem = 50;
     Plant plant(g, glm::vec3(0.0f));
 
     // Create a child node and starve it
@@ -323,6 +327,8 @@ TEST_CASE("Seed node is never pruned even when starved", "[sugar]") {
 
 TEST_CASE("Subtree removal cleans up all descendants", "[sugar]") {
     Genome g = default_genome();
+    // STEM nodes use g.starvation_ticks_max_stem; lower it for the test.
+    g.starvation_ticks_max_stem = 50;
     Plant plant(g, glm::vec3(0.0f));
 
     // Create a chain: seed -> A -> B -> C

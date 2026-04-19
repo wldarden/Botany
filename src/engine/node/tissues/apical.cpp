@@ -17,9 +17,20 @@ ApicalNode::ApicalNode(uint32_t id, glm::vec3 position, float radius)
 void ApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     const Genome& g = plant.genome();
 
+    // Record presence of primary shoot meristem for this tick's tracker.
+    // Piggyback on the DFS walk — no extra traversal.  If this tracker is
+    // still -1 at end of tick_tree, Plant::promote_primary_meristems runs
+    // and picks a new primary from the surviving laterals.
+    if (is_primary) plant.primary_sa_id_this_tick = static_cast<int32_t>(id);
+
     // Quiescence: active meristem reverts to dormant after sustained sugar
     // starvation rather than dying.  Symmetric with RA quiescence.
-    if (active && starvation_ticks >= static_cast<uint32_t>(g.quiescence_threshold)) {
+    // EXCEPT: primary meristems never quiesce — they sustain themselves at
+    // metabolic_factor floor production (10% auxin, 5% CK at full starvation)
+    // or die via normal starvation.  Only lateral (axillary) buds can quiesce.
+    // Prevents the hormone deadlock where all meristems dormant simultaneously
+    // = no hormone production anywhere = nothing can reactivate.
+    if (active && !is_primary && starvation_ticks >= static_cast<uint32_t>(g.quiescence_threshold)) {
         active = false;
         starvation_ticks = 0;
     }

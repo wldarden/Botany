@@ -134,7 +134,18 @@ bool Node::check_starvation(Plant& plant, const WorldParams& world) {
     if (chemical(ChemicalID::Sugar) <= 0.0f) starvation_ticks++;
     else starvation_ticks = 0;
 
-    if (starvation_ticks >= world.starvation_ticks_max && parent) {
+    // Type-specific death threshold.  Meristems (APICAL, ROOT_APICAL) use the
+    // base world threshold and are further protected by quiescence (see
+    // update_tissue).  Non-meristem woody tissue (STEM, ROOT) survives much
+    // longer on stored parenchyma reserves — modeled here as a flat longer
+    // threshold until starch reserves are properly simulated.  LEAF uses the
+    // base threshold since leaves don't store starch reserves meaningfully.
+    const Genome& g = plant.genome();
+    uint32_t death_threshold = world.starvation_ticks_max;
+    if (type == NodeType::STEM)      death_threshold = g.starvation_ticks_max_stem;
+    else if (type == NodeType::ROOT) death_threshold = g.starvation_ticks_max_root;
+
+    if (starvation_ticks >= death_threshold && parent) {
         die(plant);
         return true;
     }

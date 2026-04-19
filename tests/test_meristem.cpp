@@ -903,22 +903,25 @@ TEST_CASE("RA auxin production drops when sugar is low", "[meristem][metabolic]"
     REQUIRE(produced_starved > 0.0f);  // floor keeps it non-zero
 }
 
-TEST_CASE("Active RA reverts to dormant after quiescence_threshold ticks of starvation", "[meristem][quiescence]") {
+TEST_CASE("Lateral RA (non-primary) reverts to dormant after quiescence_threshold ticks of starvation", "[meristem][quiescence]") {
     Genome g = default_genome();
     // Speed up the test: lower quiescence threshold
     g.quiescence_threshold = 10.0f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world;
 
-    RootApicalNode* ra = nullptr;
-    plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
-    });
+    // Create a lateral RA manually.  is_primary defaults to false, so this
+    // bud can quiesce while the plant-constructor primary RA keeps running.
+    Node* lateral = plant.create_node(NodeType::ROOT_APICAL, glm::vec3(0.02f, -0.02f, 0.0f), g.root_initial_radius);
+    plant.seed_mut()->add_child(lateral);
+    RootApicalNode* ra = lateral->as_root_apical();
     REQUIRE(ra != nullptr);
     REQUIRE(ra->active);
+    REQUIRE_FALSE(ra->is_primary);
 
-    // Starve the RA — zero ALL nodes' sugar each tick so seed reserves can't
-    // bleed into the RA via transport and reset its starvation_ticks counter.
+    // Starve all meristems' sugar each tick.  The primary RA never quiesces
+    // (will die if sustained, but not in this short window).  The lateral
+    // RA quiesces at the threshold — that's what we're asserting.
     for (int i = 0; i < 15; ++i) {
         plant.for_each_node_mut([&](Node& n) {
             n.chemical(ChemicalID::Sugar) = 0.0f;
@@ -926,7 +929,6 @@ TEST_CASE("Active RA reverts to dormant after quiescence_threshold ticks of star
         plant.tick(world);
     }
 
-    // After 10+ ticks of starvation it should have gone dormant
     REQUIRE_FALSE(ra->active);
     // starvation_ticks is reset in the dormant branch of update_tissue, then
     // check_starvation() increments it once at end of tick (sugar still 0).
@@ -934,21 +936,21 @@ TEST_CASE("Active RA reverts to dormant after quiescence_threshold ticks of star
     REQUIRE(ra->starvation_ticks <= 1u);
 }
 
-TEST_CASE("Active SA reverts to dormant after quiescence_threshold ticks of starvation", "[meristem][quiescence]") {
+TEST_CASE("Lateral SA (non-primary) reverts to dormant after quiescence_threshold ticks of starvation", "[meristem][quiescence]") {
     Genome g = default_genome();
     g.quiescence_threshold = 10.0f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world;
 
-    ApicalNode* sa = nullptr;
-    plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::APICAL && !sa) sa = n.as_apical();
-    });
+    // Create a lateral SA manually.  is_primary defaults to false.
+    Node* lateral = plant.create_node(NodeType::APICAL, glm::vec3(0.02f, 0.02f, 0.0f), g.initial_radius);
+    plant.seed_mut()->add_child(lateral);
+    ApicalNode* sa = lateral->as_apical();
     REQUIRE(sa != nullptr);
     REQUIRE(sa->active);
+    REQUIRE_FALSE(sa->is_primary);
 
     for (int i = 0; i < 15; ++i) {
-        // Zero ALL nodes' sugar so local diffusion from seed doesn't refill SA.
         plant.for_each_node_mut([&](Node& n) {
             n.chemical(ChemicalID::Sugar) = 0.0f;
         });
@@ -956,28 +958,24 @@ TEST_CASE("Active SA reverts to dormant after quiescence_threshold ticks of star
     }
 
     REQUIRE_FALSE(sa->active);
-    // starvation_ticks is reset in the quiescence flip and again in the dormant
-    // branch, but check_starvation runs after update_tissue and increments if
-    // sugar <= 0. So it can be 0 or 1 at any given observation point.
     REQUIRE(sa->starvation_ticks <= 1u);
 }
 
-TEST_CASE("Dormant RA does not die at starvation_ticks_max", "[meristem][quiescence]") {
+TEST_CASE("Dormant lateral RA does not die at starvation_ticks_max", "[meristem][quiescence]") {
     Genome g = default_genome();
     g.quiescence_threshold = 5.0f;
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world;
     world.starvation_ticks_max = 20;  // also speed up the death check
 
-    RootApicalNode* ra = nullptr;
-    plant.for_each_node_mut([&](Node& n) {
-        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
-    });
+    // Manual lateral RA so it can quiesce (default is_primary=false).
+    Node* lateral = plant.create_node(NodeType::ROOT_APICAL, glm::vec3(0.02f, -0.02f, 0.0f), g.root_initial_radius);
+    plant.seed_mut()->add_child(lateral);
+    RootApicalNode* ra = lateral->as_root_apical();
     REQUIRE(ra != nullptr);
-
     uint32_t ra_id = ra->id;
 
-    // Starve long enough that without quiescence, it would die
+    // Starve long enough that without quiescence, the lateral would die
     for (int i = 0; i < 40; ++i) {
         plant.for_each_node_mut([&](Node& n) {
             n.chemical(ChemicalID::Sugar) = 0.0f;
@@ -985,12 +983,86 @@ TEST_CASE("Dormant RA does not die at starvation_ticks_max", "[meristem][quiesce
         plant.tick(world);
     }
 
-    // The RA should still exist (went quiescent, didn't die)
+    // The lateral RA should still exist (went quiescent, didn't die)
     bool ra_still_alive = false;
     plant.for_each_node([&](const Node& n) {
         if (n.id == ra_id) ra_still_alive = true;
     });
     REQUIRE(ra_still_alive);
+}
+
+TEST_CASE("Primary meristem does not quiesce under starvation", "[meristem][quiescence][primary]") {
+    Genome g = default_genome();
+    g.quiescence_threshold = 10.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+
+    // Primary SA and primary RA are set by Plant constructor.
+    ApicalNode* primary_sa = nullptr;
+    RootApicalNode* primary_ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto sa = n.as_apical(); sa && sa->is_primary && !primary_sa) primary_sa = sa;
+        if (auto ra = n.as_root_apical(); ra && ra->is_primary && !primary_ra) primary_ra = ra;
+    });
+    REQUIRE(primary_sa != nullptr);
+    REQUIRE(primary_ra != nullptr);
+
+    // Starve hard — much longer than quiescence_threshold but well short of death.
+    for (int i = 0; i < 30; ++i) {
+        plant.for_each_node_mut([&](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 0.0f;
+        });
+        plant.tick(world);
+    }
+
+    // Primaries stay active even through prolonged starvation.  They would
+    // eventually die via check_starvation hitting starvation_ticks_max —
+    // that's biologically correct, not a bug — but they never go dormant.
+    REQUIRE(primary_sa->active);
+    REQUIRE(primary_ra->active);
+    REQUIRE(primary_sa->is_primary);
+    REQUIRE(primary_ra->is_primary);
+}
+
+TEST_CASE("Primary RA is re-promoted from lateral when original dies", "[meristem][quiescence][primary]") {
+    Genome g = default_genome();
+    g.starvation_ticks_max_root = 20;  // make ROOT death fast for test
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+    world.starvation_ticks_max = 10;
+
+    // Manually create a lateral RA that will survive as the re-promotion target.
+    Node* lateral_node = plant.create_node(NodeType::ROOT_APICAL, glm::vec3(0.02f, -0.02f, 0.0f), g.root_initial_radius);
+    plant.seed_mut()->add_child(lateral_node);
+    RootApicalNode* lateral = lateral_node->as_root_apical();
+    REQUIRE(lateral != nullptr);
+    REQUIRE_FALSE(lateral->is_primary);
+
+    // Find the original primary RA
+    RootApicalNode* original = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto ra = n.as_root_apical(); ra && ra->is_primary) original = ra;
+    });
+    REQUIRE(original != nullptr);
+    uint32_t original_id = original->id;
+
+    // Tick enough to let the plant settle and give the lateral some history.
+    for (int i = 0; i < 5; ++i) plant.tick(world);
+
+    // Kill the original primary by removing it outright (simulates death).
+    plant.remove_subtree(original);
+    plant.tick(world);  // tick_tree sees no primary RA, promotion pass runs
+
+    // The lateral should now be the primary
+    REQUIRE(lateral->is_primary);
+    REQUIRE(lateral->active);
+
+    // Verify the dead original doesn't come back
+    bool original_exists = false;
+    plant.for_each_node([&](const Node& n) {
+        if (n.id == original_id) original_exists = true;
+    });
+    REQUIRE_FALSE(original_exists);
 }
 
 TEST_CASE("Plant grows and stays alive for 1000 ticks with metabolic feedback", "[meristem][integration]") {

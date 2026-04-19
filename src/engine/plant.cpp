@@ -34,15 +34,20 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     float seed_auxin = genome.root_auxin_growth_threshold * 2.0f;
     seed->chemical(ChemicalID::Auxin) = seed_auxin;
 
-    // Shoot apical meristem node (child of seed)
+    // Shoot apical meristem node (child of seed) — flagged as primary so it
+    // cannot quiesce.  Real plants maintain their main apex continuously; only
+    // lateral buds dormant.  If this meristem dies, Plant::tick_tree re-promotes
+    // the strongest lateral (highest canalization path) to primary.
     Node* shoot = create_node(NodeType::APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
     shoot->chemical(ChemicalID::Cytokinin) = seed_cyt;
     shoot->chemical(ChemicalID::Auxin) = seed_auxin;
+    shoot->as_apical()->is_primary = true;
     seed->add_child(shoot);
 
-    // Root apical meristem node (child of seed)
+    // Root apical meristem node (child of seed) — same primary flag.
     Node* root = create_node(NodeType::ROOT_APICAL, glm::vec3(0.0f, -0.01f, 0.0f), genome.root_initial_radius);
     root->chemical(ChemicalID::Cytokinin) = seed_cyt;
+    root->as_root_apical()->is_primary = true;
     seed->add_child(root);
 
     // Seed water: initialize at capacity (computed after children are known).
@@ -163,11 +168,83 @@ void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
         n->tick_cytokinin_produced = 0.0f;
     }
 
+    // Reset the per-tick primary-meristem trackers.  Meristems set these
+    // during their own update_tissue (piggyback on the DFS walk below).
+    primary_sa_id_this_tick = -1;
+    primary_ra_id_this_tick = -1;
+
     pre_transport_growth(world);                // nodes claim sugar for growth before vascular
     vascular_transport(*this, genome_, world);  // bulk flow for sugar/water/cytokinin
     pin_transport(*this, genome_);              // PIN-mediated polar auxin transport
     tick_recursive(*nodes_[0], *this, world);
     flush_removals();
+
+    // After the DFS walk + removals: if either primary meristem's tracker is
+    // still -1, the primary died (or never existed).  Promote the best
+    // surviving lateral to primary based on canalization dominance.
+    if (primary_sa_id_this_tick < 0 || primary_ra_id_this_tick < 0) {
+        promote_primary_meristems();
+    }
+}
+
+// Walk the chain of parent→child edges from node back to root, summing the
+// auxin_flow_bias values (each stored on the parent, keyed by child pointer).
+// Represents how dominantly-canalized the path to this node has been —
+// higher sum = stronger historical auxin flux = more deserving of becoming
+// the new primary meristem.  A zero-flux bud gets zero; the dominant axis
+// accumulates over each step of its ancestry.
+static float canalization_score(const Node* n) {
+    float sum = 0.0f;
+    for (const Node* cur = n; cur && cur->parent; cur = cur->parent) {
+        auto it = cur->parent->auxin_flow_bias.find(const_cast<Node*>(cur));
+        if (it != cur->parent->auxin_flow_bias.end()) sum += it->second;
+    }
+    return sum;
+}
+
+// Called at end of tick_tree when a primary tracker is -1.  Walks all
+// nodes once (rare event), picks the surviving non-primary meristem with
+// the highest canalization_score, and promotes it: sets is_primary=true
+// and ensures it's active.  If no candidate of that type exists, the plant
+// has genuinely lost that subsystem (shoot or root entirely dead) — a real
+// game-over state for that half of the plant.
+void Plant::promote_primary_meristems() {
+    if (primary_sa_id_this_tick < 0) {
+        ApicalNode* best = nullptr;
+        float best_score = -1.0f;
+        for (auto& n : nodes_) {
+            ApicalNode* sa = n->as_apical();
+            if (!sa) continue;
+            float score = canalization_score(n.get());
+            if (score > best_score) {
+                best_score = score;
+                best = sa;
+            }
+        }
+        if (best) {
+            best->is_primary = true;
+            best->active = true;
+            best->starvation_ticks = 0;
+        }
+    }
+    if (primary_ra_id_this_tick < 0) {
+        RootApicalNode* best = nullptr;
+        float best_score = -1.0f;
+        for (auto& n : nodes_) {
+            RootApicalNode* ra = n->as_root_apical();
+            if (!ra) continue;
+            float score = canalization_score(n.get());
+            if (score > best_score) {
+                best_score = score;
+                best = ra;
+            }
+        }
+        if (best) {
+            best->is_primary = true;
+            best->active = true;
+            best->starvation_ticks = 0;
+        }
+    }
 }
 
 
