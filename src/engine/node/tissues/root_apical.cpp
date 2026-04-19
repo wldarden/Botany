@@ -18,6 +18,16 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 
     absorb_water(g, world);
 
+    // Quiescence: active meristem reverts to dormant after sustained sugar
+    // starvation rather than dying.  Matches real root-tip biology — tips
+    // survive weeks of stress by going quiescent, reactivate later via
+    // normal can_activate() when sugar returns.  Runs before the active
+    // check so the newly-dormant RA is handled by the dormant branch below.
+    if (active && starvation_ticks >= static_cast<uint32_t>(g.quiescence_threshold)) {
+        active = false;
+        starvation_ticks = 0;  // dormant meristem pays no maintenance; clean slate for reactivation
+    }
+
     if (!active) {
         // Dormant RAs do not synthesize auxin or cytokinin — matches shoot apical
         // behavior and real plant biology (hormone biosynthesis is an active process
@@ -25,6 +35,11 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
         // upstream to eventually cross the activation threshold, which is the
         // canalization-driven branching pattern real plants exhibit: laterals
         // activate along well-canalized paths, not uniformly everywhere.
+        //
+        // Quiescent meristems cannot starve to death — they have no active metabolism.
+        // Reset starvation_ticks each tick so check_starvation() (which runs after
+        // update_tissue) cannot accumulate to starvation_ticks_max.
+        starvation_ticks = 0;
         if (can_activate(g, world)) activate(g, world);
         return;
     }

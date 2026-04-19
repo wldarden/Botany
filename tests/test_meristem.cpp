@@ -902,3 +902,65 @@ TEST_CASE("RA auxin production drops when sugar is low", "[meristem][metabolic]"
     REQUIRE(produced_starved < produced_fed * 0.3f);  // sugar-starved meristem hits ~0.1 × water_factor
     REQUIRE(produced_starved > 0.0f);  // floor keeps it non-zero
 }
+
+TEST_CASE("Active RA reverts to dormant after quiescence_threshold ticks of starvation", "[meristem][quiescence]") {
+    Genome g = default_genome();
+    // Speed up the test: lower quiescence threshold
+    g.quiescence_threshold = 10.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+
+    RootApicalNode* ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
+    });
+    REQUIRE(ra != nullptr);
+    REQUIRE(ra->active);
+
+    // Starve the RA — zero ALL nodes' sugar each tick so seed reserves can't
+    // bleed into the RA via transport and reset its starvation_ticks counter.
+    for (int i = 0; i < 15; ++i) {
+        plant.for_each_node_mut([&](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 0.0f;
+        });
+        plant.tick(world);
+    }
+
+    // After 10+ ticks of starvation it should have gone dormant
+    REQUIRE_FALSE(ra->active);
+    // starvation_ticks is reset in the dormant branch of update_tissue, then
+    // check_starvation() increments it once at end of tick (sugar still 0).
+    // The key property: it stays <= 1, never accumulates toward starvation_ticks_max.
+    REQUIRE(ra->starvation_ticks <= 1u);
+}
+
+TEST_CASE("Dormant RA does not die at starvation_ticks_max", "[meristem][quiescence]") {
+    Genome g = default_genome();
+    g.quiescence_threshold = 5.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+    world.starvation_ticks_max = 20;  // also speed up the death check
+
+    RootApicalNode* ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
+    });
+    REQUIRE(ra != nullptr);
+
+    uint32_t ra_id = ra->id;
+
+    // Starve long enough that without quiescence, it would die
+    for (int i = 0; i < 40; ++i) {
+        plant.for_each_node_mut([&](Node& n) {
+            n.chemical(ChemicalID::Sugar) = 0.0f;
+        });
+        plant.tick(world);
+    }
+
+    // The RA should still exist (went quiescent, didn't die)
+    bool ra_still_alive = false;
+    plant.for_each_node([&](const Node& n) {
+        if (n.id == ra_id) ra_still_alive = true;
+    });
+    REQUIRE(ra_still_alive);
+}
