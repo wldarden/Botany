@@ -834,3 +834,37 @@ TEST_CASE("SA auxin production drops when water is low", "[meristem][metabolic]"
     // But dry SA should still produce something (floor 0.1)
     REQUIRE(produced_dry > 0.0f);
 }
+
+TEST_CASE("RA auxin production drops when sugar is low", "[meristem][metabolic]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+    world.starvation_ticks_max = 1000000u;  // prevent death during test
+
+    RootApicalNode* ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
+    });
+    REQUIRE(ra != nullptr);
+    REQUIRE(ra->active);  // primary RA is born active
+
+    // Tick the RA node directly (bypassing vascular transport) to control exactly
+    // what sugar/water it sees — same pattern as "Shoot growth scales with sugar level".
+
+    // Starved: abundant water, zero sugar
+    ra->chemical(ChemicalID::Sugar) = 0.0f;
+    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->tick_auxin_produced = 0.0f;
+    ra->tick(plant, world);
+    float produced_starved = ra->tick_auxin_produced;
+
+    // Fed: abundant sugar (>> K_sugar = 0.3) and abundant water
+    ra->chemical(ChemicalID::Sugar) = 1.0f;
+    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->tick_auxin_produced = 0.0f;
+    ra->tick(plant, world);
+    float produced_fed = ra->tick_auxin_produced;
+
+    REQUIRE(produced_starved < produced_fed * 0.3f);  // sugar-starved meristem hits ~0.1 × water_factor
+    REQUIRE(produced_starved > 0.0f);  // floor keeps it non-zero
+}

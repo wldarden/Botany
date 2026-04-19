@@ -32,8 +32,14 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // Active root tips: auxin self-maintenance (local PIN-recycling maximum) and
     // cytokinin production gated by local auxin ("more auxin → stronger cyto
     // signal").  Both productions match the shoot apical pattern.
-    chemical(ChemicalID::Auxin) += g.root_tip_auxin_production_rate;
-    tick_auxin_produced += g.root_tip_auxin_production_rate;
+    // Metabolic gating: sugar + water each contribute an MM factor; floor 0.1
+    // matches SA convention (auxin conjugate pools buffer short-term stress).
+    float mf_auxin = metabolic_factor(
+        chemical(ChemicalID::Sugar), g.auxin_sugar_half_saturation, 0.1f,
+        chemical(ChemicalID::Water), g.auxin_water_half_saturation, 0.1f);
+    float produced_auxin = g.root_tip_auxin_production_rate * mf_auxin;
+    chemical(ChemicalID::Auxin) += produced_auxin;
+    tick_auxin_produced += produced_auxin;
 
     float cyto_produced = g.root_cytokinin_production_rate * chemical(ChemicalID::Auxin);
     chemical(ChemicalID::Cytokinin) += cyto_produced;
