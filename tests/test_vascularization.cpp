@@ -7,6 +7,7 @@
 #include "engine/sugar.h"
 #include "engine/vascular.h"
 #include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
 #include "engine/chemical/chemical.h"
 
 using namespace botany;
@@ -259,4 +260,69 @@ TEST_CASE("Vascularization overlay: get_parent_auxin_flow_bias returns correct v
 
     // (c) seed (no parent) returns max of its children's biases
     REQUIRE(seed->get_parent_auxin_flow_bias() == Approx(1.8f));
+}
+
+// -----------------------------------------------------------------------
+// Test 6: Demand-driven phloem delivers sugar to apex across long chain
+//
+// Topology: seed (sugar=10) → 15 STEM nodes → ApicalNode (sugar=0)
+//
+// The primary SA is reparented to the tip of the chain so it acts as the
+// sole phloem sink at maximum distance from the source.  After one tick
+// of vascular_transport + tick, the apex must have measurably non-zero
+// sugar.  This fails under the Jacobi Münch implementation (3 iterations,
+// attenuates over ~30 hops) and is expected to pass once the algorithm is
+// replaced with a demand-driven single-pass allocation.
+// -----------------------------------------------------------------------
+TEST_CASE("Demand-driven phloem delivers sugar to apex across long shoot chain", "[vascular][phloem][demand]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+
+    // Build a synthetic 15-stem chain above the seed.  Give each stem enough
+    // radius to count as a vascular conduit.  The primary SA is already the
+    // seed's shoot child from the Plant constructor; we'll reparent it to the
+    // tip of the chain so it acts as the apex.
+    Node* tip_stem = plant.seed_mut();
+    for (int i = 0; i < 15; ++i) {
+        Node* stem = plant.create_node(NodeType::STEM,
+            glm::vec3(0.0f, 0.05f * (i + 1), 0.0f), 0.015f);
+        tip_stem->add_child(stem);
+        tip_stem = stem;
+    }
+
+    // Find the primary SA and reparent it to the tip of the chain.
+    ApicalNode* apex = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto sa = n.as_apical(); sa && sa->is_primary) apex = sa;
+    });
+    REQUIRE(apex != nullptr);
+    // Remove apex from its current parent and attach to the chain tip.
+    if (apex->parent) {
+        auto& siblings = apex->parent->children;
+        siblings.erase(std::remove(siblings.begin(), siblings.end(),
+                                   static_cast<Node*>(apex)),
+                       siblings.end());
+    }
+    apex->parent = nullptr;
+    tip_stem->add_child(apex);
+
+    // Zero all sugar except the seed.  Put a healthy pile at the seed so we
+    // can detect any flow reaching the tip.
+    plant.for_each_node_mut([&](Node& n) {
+        n.chemical(ChemicalID::Sugar) = 0.0f;
+    });
+    plant.seed_mut()->chemical(ChemicalID::Sugar) = 10.0f;
+
+    float apex_sugar_before = apex->chemical(ChemicalID::Sugar);
+    REQUIRE(apex_sugar_before == 0.0f);
+
+    // Single tick — phloem_resolve runs once.  Apex should receive a
+    // measurable amount (> 0.001 g, well above float noise).  The precise
+    // amount depends on proportional allocation, but anything non-trivial
+    // demonstrates that the 15-hop distance did not attenuate delivery.
+    plant.tick(world);
+
+    float apex_sugar_after = apex->chemical(ChemicalID::Sugar);
+    REQUIRE(apex_sugar_after > 0.001f);
 }
