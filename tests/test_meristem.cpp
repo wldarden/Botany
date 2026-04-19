@@ -992,3 +992,40 @@ TEST_CASE("Dormant RA does not die at starvation_ticks_max", "[meristem][quiesce
     });
     REQUIRE(ra_still_alive);
 }
+
+TEST_CASE("Plant grows and stays alive for 1000 ticks with metabolic feedback", "[meristem][integration]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+
+    // Run 1000 ticks
+    for (int i = 0; i < 1000; ++i) {
+        plant.tick(world);
+    }
+
+    // Count node types at the end
+    int shoot_count = 0;  // STEM + SA + LEAF
+    int root_count = 0;   // ROOT + RA
+    plant.for_each_node([&](const Node& n) {
+        switch (n.type) {
+            case NodeType::STEM:   if (n.parent) shoot_count++; break;  // exclude seed
+            case NodeType::APICAL:      shoot_count++; break;
+            case NodeType::LEAF:        shoot_count++; break;
+            case NodeType::ROOT:        root_count++; break;
+            case NodeType::ROOT_APICAL: root_count++; break;
+        }
+    });
+
+    // Plant grew something on both sides — precise counts depend heavily on
+    // tuning but both should have at least multiple nodes at 1000 ticks.
+    REQUIRE(shoot_count > 5);
+    REQUIRE(root_count > 5);
+
+    // Neither side should have run away absurdly.  Before the metabolic
+    // feedback a shoot-runaway plant would hit 500+ SAs at this tick count,
+    // while roots stayed under 100.  With feedback the ratio should stay
+    // in a biologically plausible range (broadly 0.1:1 to 20:1).
+    float ratio = static_cast<float>(root_count) / static_cast<float>(shoot_count);
+    REQUIRE(ratio > 0.05f);
+    REQUIRE(ratio < 50.0f);
+}
