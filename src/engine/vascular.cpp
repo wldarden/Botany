@@ -294,11 +294,26 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     //   SINK (demand):
     //     - Active APICAL / ROOT_APICAL wanting to fill to meristem_sink_fraction
     //       × cap per tick.  Dormant meristems have zero demand.
-    //     - STEM / ROOT / seed with sugar < reserve — wants to refill the
-    //       parenchyma buffer for maintenance.
     //
-    // LEAF loading was already handled in Phase 1 above; by this point leaf
-    // surplus is in the parent conduit and participates here as STEM supply.
+    // STEM / ROOT / seed are SOURCES ONLY — they supply surplus above their
+    // reserve.  They do NOT actively pull sugar to refill their parenchyma.
+    // Biologically this matches real phloem: mature stem/root parenchyma
+    // doesn't actively unload from the sieve tube stream.  Sugar gets
+    // deposited into stems/roots by leaf loading (Phase 1) and by transit
+    // through neighboring nodes.  Maintenance consumes what's there; if a
+    // conduit empties, it lives on its 8000-tick (stem) / 6000-tick (root)
+    // starvation threshold — stand-in for starch reserves we'll model later.
+    //
+    // Earlier iteration of this code had conduits demand `reserve - sugar`.
+    // That starved meristems because ~1000 conduit nodes each demanding tiny
+    // refill dominated the ~16 meristems each demanding 0.005g.  Active
+    // meristems got ~0.00002g/tick — far below their 0.0005g maintenance —
+    // so SAs stopped growing despite ample leaf production.  Removing
+    // conduit demand restores the semantic: meristems are the pulling force,
+    // conduits are pipes.
+    //
+    // LEAF loading was already handled in Phase 1 above.  Leaves keep their
+    // remaining sugar for their own use (photosynthesis/respiration).
     //
     // Mass conservation: Σ source_deduct = delivered = Σ sink_add, by
     // construction of proportional scales.  Verified every tick by the SUMMARY
@@ -325,15 +340,15 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 demand[i] = std::max(0.0f, target - sug);
             }
         } else if (n.type == NodeType::STEM || n.type == NodeType::ROOT) {
-            // Conduit / storage tissue: surplus above reserve flows, deficit
-            // below reserve pulls.
-            // Seed (STEM with no parent): sugar_cap() inflates the seed cap to
-            // max(child_sum, seed_sugar) so the seed can hold its initial 48g
-            // reserve.  But phloem_reserve_fraction × 48g = 14.4g, which means
-            // a seed with only 10g appears as a SINK even though it's the only
-            // source in the plant.  For the seed we use the network-proportional
-            // cap (sum of children's sugar_cap) instead, so the reserve scales
-            // with the connected network, not the initialization constant.
+            // Conduit / storage tissue — SOURCE ONLY (no demand, see comment
+            // block above).  Seed (STEM with no parent): sugar_cap() inflates
+            // the seed cap to max(child_sum, seed_sugar) so the seed can hold
+            // its initial 48g reserve.  But phloem_reserve_fraction × 48g =
+            // 14.4g, which would lock the seed from donating below 14.4g
+            // even though it's the only source in the plant.  For the seed
+            // we use the network-proportional cap (sum of children's
+            // sugar_cap) instead, so the reserve scales with the connected
+            // network, not the initialization constant.
             if (n.parent == nullptr) {
                 float network_cap = 0.0f;
                 for (const Node* child : n.children)
@@ -342,7 +357,7 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 reserve = network_cap * g.phloem_reserve_fraction;
             }
             if (sug > reserve) supply[i] = sug - reserve;
-            else               demand[i] = reserve - sug;
+            // No else branch — conduits don't pull.
         }
         // LEAF nodes: participated in Phase 1.  They keep their remaining
         // sugar for their own use (photosynthesis-triggered growth, respiration).
