@@ -9,6 +9,7 @@
 #include <glm/geometric.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 namespace botany {
@@ -93,6 +94,30 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*wor
         default: break;
     }
     return b;
+}
+
+void inject_step(Node& source, const VascularBudget& b, uint32_t N, const Genome& /*g*/) {
+    if (N == 0) return;
+
+    // Sugar injection: leaves push into parent phloem (active pump).
+    if (b.sugar_supply > 0.0f) {
+        if (auto* target_pool = source.nearest_phloem_upstream()) {
+            const float slice  = b.sugar_supply / static_cast<float>(N);
+            const float actual = std::min(slice, source.local().chemical(ChemicalID::Sugar));
+            source.local().chemical(ChemicalID::Sugar) -= actual;
+            target_pool->chemical(ChemicalID::Sugar)   += actual;
+        }
+    }
+
+    // Cytokinin injection: root apicals push into parent xylem.
+    if (b.cytokinin_supply > 0.0f) {
+        if (auto* target_pool = source.nearest_xylem_upstream()) {
+            const float slice  = b.cytokinin_supply / static_cast<float>(N);
+            const float actual = std::min(slice, source.local().chemical(ChemicalID::Cytokinin));
+            source.local().chemical(ChemicalID::Cytokinin) -= actual;
+            target_pool->chemical(ChemicalID::Cytokinin)   += actual;
+        }
+    }
 }
 
 float radial_permeability_sugar(float radius, const Genome& g) {

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 namespace botany {
 
@@ -17,6 +18,11 @@ struct VascularBudget {
 };
 
 VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& world);
+
+// Source injection: transfer budget/N from the node's own local_env into its
+// nearest upstream conduit.  Only does anything when the node has a
+// sugar_supply or cytokinin_supply budget (leaves, root apicals).
+void inject_step(Node& source, const VascularBudget& b, uint32_t N, const Genome& g);
 
 // Sub-stepped vascular transport.  Replaces the pairwise-Jacobi
 // vascular_transport in Phase E.  For the duration of Phase D this function

@@ -97,3 +97,30 @@ TEST_CASE("active apical below target has positive sugar_demand", "[vascular_sub
     VascularBudget b = compute_budget(apical, g, world);
     REQUIRE(b.sugar_demand > 0.0f);
 }
+
+TEST_CASE("inject step: leaf pushes sugar into parent stem phloem", "[vascular_sub_stepped][inject]") {
+    Genome g = default_genome();
+    WorldParams world;
+    StemNode stem(1, glm::vec3(0), 0.02f);
+    stem.offset = glm::vec3(0.0f, 0.05f, 0.0f);
+    LeafNode leaf(2, glm::vec3(0.05f, 0, 0), 0.01f);
+    leaf.leaf_size = 0.5f;  // so sugar_cap uses the leaf code path
+    stem.add_child(&leaf);
+    leaf.parent = &stem;
+
+    leaf.local().chemical(ChemicalID::Sugar) = 10.0f;
+    VascularBudget b = compute_budget(leaf, g, world);
+    REQUIRE(b.sugar_supply > 0.0f);
+    float budget_slice = b.sugar_supply / 10.0f;  // N = 10 sub-steps
+
+    float leaf_before   = leaf.local().chemical(ChemicalID::Sugar);
+    float phloem_before = stem.phloem()->chemical(ChemicalID::Sugar);
+
+    inject_step(leaf, b, /* N */ 10, g);
+
+    float leaf_after   = leaf.local().chemical(ChemicalID::Sugar);
+    float phloem_after = stem.phloem()->chemical(ChemicalID::Sugar);
+
+    REQUIRE(leaf_after   == Catch::Approx(leaf_before   - budget_slice).margin(1e-5f));
+    REQUIRE(phloem_after == Catch::Approx(phloem_before + budget_slice).margin(1e-5f));
+}
