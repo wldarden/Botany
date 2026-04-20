@@ -62,30 +62,6 @@ struct WorldParams {
     float ground_support_height = 0.5f;     // dm — below this Y, stress is zeroed
     float droop_rate = 0.01f;               // radians/tick — max angular droop when overstressed
 
-    // Phloem (Münch pressure flow) parameters
-    float max_phloem_velocity  = 10.0f;    // dm/tick (= 1 m/hr) — physical upper bound on phloem sap velocity.
-                                           //   Caps: velocity = min(dp × conductance_per_pressure, max_phloem_velocity).
-                                           //   Real phloem: 0.3–1.5 m/hr; 10 dm/tick is the high end.
-    float phloem_reference_radius = 0.015f;// dm — reference radius (superseded by velocity-capped model,
-                                           //   retained for reference; not used in phloem_resolve).
-    float phloem_ring_thickness   = 0.005f;// dm (= 0.5 mm) — thickness of the active conducting layer.
-                                           //   Models sieve tubes + companion cells + inner bark + cambium,
-                                           //   not just cambium.  Used in phloem_ring_area(r, t) = π × (2r×t − t²),
-                                           //   with t clamped to r so thin young nodes never produce negative area.
-                                           //   Used ONLY for pipe capacity (flow_vol = velocity × ring_area).
-                                           //   Real dicots: 0.3–2 mm depending on stem age.
-    float leaf_thickness          = 0.003f;// dm — leaf mesophyll depth for node_volume of LEAF nodes.
-                                           //   node_volume(leaf) = leaf_size² × leaf_thickness.
-
-    // Xylem (pressure-flow, root→shoot) parameters
-    float max_xylem_velocity   = 30.0f;    // dm/tick (~3 m/hr) — physical upper bound on xylem sap velocity.
-                                           //   Real xylem moves water at 1–15 m/hr in trees (much faster
-                                           //   than phloem).  We keep the cap generous; the driving gradient
-                                           //   (water_fraction differential) is small, so flows stay modest.
-    uint32_t xylem_iterations  = 1;        // unused with demand-driven xylem_resolve.
-                                           // Kept for potential future Jacobi fallback; default
-                                           // 1 since the demand-driven algorithm is single-pass.
-
     // Debug / diagnostics
     bool vascular_debug_log = false;        // write per-junction vascular flow to debug/vascular_log.csv
     bool phloem_debug_log   = true;         // write per-node Münch phloem data to debug/phloem_log.csv
@@ -149,12 +125,6 @@ inline WorldParams default_world_params() {
         .meristem_mass           = 0.1f,
         .ground_support_height   = 0.5f,
         .droop_rate              = 0.01f,
-        .max_phloem_velocity     = 10.0f,
-        .phloem_reference_radius = 0.015f,
-        .phloem_ring_thickness   = 0.005f,
-        .leaf_thickness          = 0.003f,
-        .max_xylem_velocity      = 30.0f,
-        .xylem_iterations        = 1,
     };
 }
 

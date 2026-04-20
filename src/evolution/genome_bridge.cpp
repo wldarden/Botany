@@ -155,9 +155,6 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "pin_base_efficiency",    g.pin_base_efficiency,    r, 0.05f, 0.5f,    p);
 
     // Vascular transport
-    reg(sg, "xylem_conductance",           g.xylem_conductance,           r, 1.0f,  500.0f, p);
-    reg(sg, "phloem_conductance",          g.phloem_conductance,          r, 1.0f,  50.0f,  p);
-    reg(sg, "phloem_reserve_fraction",     g.phloem_reserve_fraction,     r, 0.05f, 0.8f,   p);
     reg(sg, "meristem_sink_fraction",      g.meristem_sink_fraction,      r, 0.01f, 0.5f,   p);
     reg(sg, "vascular_radius_threshold",   g.vascular_radius_threshold,   r, 0.001f, 0.05f, p);
 
@@ -229,7 +226,6 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
         "sugar_diffusion_rate", "seed_sugar",
         "sugar_storage_density_wood", "sugar_storage_density_leaf",
         "sugar_cap_minimum", "sugar_cap_meristem",
-        "xylem_conductance", "phloem_conductance", "phloem_reserve_fraction",
         "meristem_sink_fraction", "vascular_radius_threshold"
     }});
 
@@ -421,9 +417,6 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.pin_base_efficiency   = sg.get("pin_base_efficiency");
 
     // Vascular transport
-    g.xylem_conductance          = sg.get("xylem_conductance");
-    g.phloem_conductance         = sg.get("phloem_conductance");
-    g.phloem_reserve_fraction    = sg.get("phloem_reserve_fraction");
     g.meristem_sink_fraction     = sg.has_gene("meristem_sink_fraction")
                                        ? sg.get("meristem_sink_fraction")
                                        : 0.05f;

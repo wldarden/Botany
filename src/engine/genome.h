@@ -171,10 +171,6 @@ struct Genome {
     float pin_base_efficiency;            // [0–1] — cold-start PIN efficiency when auxin_flow_bias = 0 (constitutively active PINs)
 
     // Vascular transport
-    float xylem_conductance;              // throughput per dm² cross-section per tick (water + cytokinin)
-    float phloem_conductance;             // throughput per dm² cross-section per tick (sugar)
-    float phloem_reserve_fraction;        // structural glucose reserve fraction — leaves keep this fraction of cap
-                                          // as a minimum buffer before loading surplus into phloem.
     float meristem_sink_fraction;         // fraction of sugar_cap_meristem a meristem can demand per tick.
                                           // Caps demand at cap×fraction instead of cap−current so meristems
                                           // can't out-compete leaves for limited phloem sugar. At 0.05 and
@@ -184,32 +180,6 @@ struct Genome {
                                           // Set below initial_radius (0.015 dm) so newly spawned
                                           // internodes qualify from birth. Only pre-initial-radius
                                           // manually-created nodes stay excluded.
-
-    // Münch pressure-flow phloem parameters
-    float phloem_osmotic_coefficient;     // maps sugar concentration [g/dm³] to osmotic pressure.
-                                          // pressure = (sugar/volume) × coefficient × water_frac.
-                                          // Primary calibration knob: evolution tunes how strongly
-                                          // concentration gradients drive phloem flow.
-    float conductance_per_pressure;       // dm/tick per (g/dm³) gradient — converts pressure diff to velocity.
-                                          // velocity = min(dp × conductance_per_pressure, max_phloem_velocity).
-                                          // At gradient=20 g/dm³: vel=10 dm/tick (at cap).
-                                          // Replaces phloem_conductance for the Jacobi resolve pass.
-    float xylem_conductance_per_pressure; // dm/tick per unit water-fraction gradient — xylem analogue
-                                          // of conductance_per_pressure. Driving "pressure" is just the
-                                          // dimensionless water_fraction differential dp = frac_src − frac_dst.
-                                          // velocity = min(dp × xylem_conductance_per_pressure, max_xylem_velocity).
-                                          // Real xylem conductivity >> phloem (open vessels vs. sieve tubes),
-                                          // so this is large — at dp=0.3, vel ≈ 30 dm/tick (at cap).
-    float phloem_unloading_meristem;      // permeability for APICAL and ROOT_APICAL sink nodes.
-                                          // Fraction of (gradient × desired_sugar) that crosses the
-                                          // sieve tube membrane into local tissue per tick.
-                                          // High: actively growing tip consuming continuously.
-    float phloem_unloading_leaf;          // permeability for LEAF nodes — bidirectional:
-                                          // loading when local conc > stream, unloading when reversed.
-    float phloem_unloading_root;          // permeability for mature ROOT conduit — mainly sealed pipe,
-                                          // some maintenance leakage.
-    float phloem_unloading_stem;          // permeability for STEM conduit — very low (sealed phloem),
-                                          // minimal leakage for surface-area maintenance only.
 
     // --- Compartmented vascular model (2026-04-19) ---
     // Radial flow permeability curve (per chemical class): perm(r) = base ×
@@ -390,22 +360,9 @@ inline Genome default_genome() {
         .pin_base_efficiency = 0.2f,          // cold-start: new stems transport 20% of capacity before PIN upregulates
 
         // Vascular transport
-        .xylem_conductance = 100.0f,          // primary long-range water mover (diffusion dropped to 0.02);
-                                              // π×r²×100 at initial_radius = 0.071 ml/tick, above root absorption cap
-        .phloem_conductance = 8.0f,           // slightly less — phloem is living tissue
-        .phloem_reserve_fraction = 0.3f,      // leaves keep 30% of sugar_cap as structural glucose reserve
         .meristem_sink_fraction = 0.05f,      // max demand per tick = 5% of cap (0.005g at cap=0.1) — well
                                               // below leaf production; meristem can't starve the plant
         .vascular_radius_threshold = 0.01f,   // dm — below initial_radius (0.015), all new internodes qualify from birth
-
-        // Münch pressure-flow phloem
-        .phloem_osmotic_coefficient = 1.0f,   // 1:1 mapping from concentration to pressure (calibrate via conductance_per_pressure)
-        .conductance_per_pressure   = 0.5f,   // at gradient=20 g/dm³: vel=10 dm/tick (at cap); at 5 g/dm³: 2.5 dm/tick
-        .xylem_conductance_per_pressure = 100.0f, // at dp=0.3: vel=30 dm/tick (at cap); xylem is much more conductive than phloem
-        .phloem_unloading_meristem  = 0.08f,  // active sink — covers growth cost (~0.015g/tick) plus maintenance
-        .phloem_unloading_leaf      = 0.10f,  // efficient loader/unloader; mature leaf clears surplus in ~1 tick
-        .phloem_unloading_root      = 0.008f, // 4× more permeable than stem — ray parenchyma and root hairs
-        .phloem_unloading_stem      = 0.002f, // sealed pipe; ~50× less permeable than leaf (key ratio)
 
         // Compartmented vascular defaults — starting values from spec section 6.
         .base_radial_permeability_sugar = 1.0f,

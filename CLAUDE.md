@@ -74,8 +74,8 @@ All 5 node types extend `Node` directly — flat hierarchy, no intermediate clas
 - **app_sugar_test.cpp** - Headless sugar economy tester. Builds 3 hardcoded static trees (seedling/medium/large), freezes growth, runs N ticks of production/maintenance/transport. Reports production/maintenance ratios. Usage: `./build/botany_sugar_test [--ticks N] [--csv] [--tree seedling|medium|large]`
 
 ### Tests (`tests/`)
-149 tests / 9 594 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, and vascularization.  
-Key file: `tests/test_vascularization.cpp` — 4 integration tests: no-bias no-thicken, bias-proportional growth rate, canalization ratchet, conductance-weighted phloem distribution.
+212 tests / 622 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, and vascularization.  
+Key file: `tests/test_vascularization.cpp` — 6 integration tests: no-bias no-thicken, bias-proportional growth rate, canalization ratchet, conductance-weighted phloem distribution.
 
 ### Planning docs (`docs/long-term-plan/`)
 Milestone folders with design + review documents. Current vascularization plan and code-review docs live at `docs/long-term-plan/milestone-2/vascularization/`.
