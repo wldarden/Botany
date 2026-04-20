@@ -36,3 +36,23 @@ TEST_CASE("Base Node returns nullptr from phloem() and xylem()", "[compartments]
     REQUIRE(leaf.phloem() == nullptr);
     REQUIRE(leaf.xylem() == nullptr);
 }
+
+TEST_CASE("StemNode exposes non-null phloem() and xylem()", "[compartments]") {
+    StemNode stem(/* id */ 42, glm::vec3(0), /* radius */ 0.015f);
+    REQUIRE(stem.phloem() != nullptr);
+    REQUIRE(stem.xylem()  != nullptr);
+
+    // The pools start empty.
+    REQUIRE(stem.phloem()->chemical(ChemicalID::Sugar) == 0.0f);
+    REQUIRE(stem.xylem()->chemical(ChemicalID::Water)  == 0.0f);
+}
+
+TEST_CASE("StemNode phloem and xylem are independent pools", "[compartments]") {
+    StemNode stem(1, glm::vec3(0), 0.015f);
+    stem.phloem()->chemical(ChemicalID::Sugar) = 5.0f;
+    stem.xylem()->chemical(ChemicalID::Water)  = 3.0f;
+    REQUIRE(stem.phloem()->chemical(ChemicalID::Sugar) == 5.0f);
+    REQUIRE(stem.xylem()->chemical(ChemicalID::Water)  == 3.0f);
+    REQUIRE(stem.phloem()->chemical(ChemicalID::Water) == 0.0f);  // water not in phloem
+    REQUIRE(stem.xylem()->chemical(ChemicalID::Sugar)  == 0.0f);  // sugar not in xylem
+}
