@@ -21,32 +21,32 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
 {
     // Seed node
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
-    seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
+    seed->local().chemical(ChemicalID::Sugar) = genome.seed_sugar;
 
     // Bootstrap cytokinin: the embryo contains hormones throughout,
     // enough to start growth until roots produce their own.
     float seed_cyt = genome.cytokinin_growth_threshold * 5.0f;
-    seed->chemical(ChemicalID::Cytokinin) = seed_cyt;
+    seed->local().chemical(ChemicalID::Cytokinin) = seed_cyt;
 
     // Bootstrap auxin: the embryo also contains stored IAA. This gives the
     // primary root its first growth impulse before shoot auxin can diffuse down,
     // which takes at least one tick (seed ticks before shoot in DFS order).
     float seed_auxin = genome.root_auxin_growth_threshold * 2.0f;
-    seed->chemical(ChemicalID::Auxin) = seed_auxin;
+    seed->local().chemical(ChemicalID::Auxin) = seed_auxin;
 
     // Shoot apical meristem node (child of seed) — flagged as primary so it
     // cannot quiesce.  Real plants maintain their main apex continuously; only
     // lateral buds dormant.  If this meristem dies, Plant::tick_tree re-promotes
     // the strongest lateral (highest canalization path) to primary.
     Node* shoot = create_node(NodeType::APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
-    shoot->chemical(ChemicalID::Cytokinin) = seed_cyt;
-    shoot->chemical(ChemicalID::Auxin) = seed_auxin;
+    shoot->local().chemical(ChemicalID::Cytokinin) = seed_cyt;
+    shoot->local().chemical(ChemicalID::Auxin) = seed_auxin;
     shoot->as_apical()->is_primary = true;
     seed->add_child(shoot);
 
     // Root apical meristem node (child of seed) — same primary flag.
     Node* root = create_node(NodeType::ROOT_APICAL, glm::vec3(0.0f, -0.01f, 0.0f), genome.root_initial_radius);
-    root->chemical(ChemicalID::Cytokinin) = seed_cyt;
+    root->local().chemical(ChemicalID::Cytokinin) = seed_cyt;
     root->as_root_apical()->is_primary = true;
     seed->add_child(root);
 
@@ -54,7 +54,7 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     // Using seed_sugar here would be wrong — it's 48 g-glucose, far over the ~2 ml
     // water capacity of a seedling, which causes the seed to flood children and
     // masks root-to-leaf flow in the visualizer.
-    seed->chemical(ChemicalID::Water) = water_cap(*seed, genome);
+    seed->local().chemical(ChemicalID::Water) = water_cap(*seed, genome);
 
     // Set initial world positions (subsequent ticks compute inline during DFS)
     seed->position = seed->offset;

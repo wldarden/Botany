@@ -146,10 +146,10 @@ static float node_volume(const Node& n, const WorldParams& world) {
 static float compute_phloem_pressure(const Node& n, const Genome& g, const WorldParams& world) {
     float vol = node_volume(n, world);
     if (vol <= 0.0f) return 0.0f;
-    float sugar_conc = n.chemical(ChemicalID::Sugar) / vol;  // g/dm³
+    float sugar_conc = n.local().chemical(ChemicalID::Sugar) / vol;  // g/dm³
     float wc = water_cap(n, g);
     float water_frac = (wc > 0.0f)
-        ? std::clamp(n.chemical(ChemicalID::Water) / wc, 0.0f, 1.0f)
+        ? std::clamp(n.local().chemical(ChemicalID::Water) / wc, 0.0f, 1.0f)
         : 0.0f;
     return sugar_conc * g.phloem_osmotic_coefficient * water_frac;
 }
@@ -223,7 +223,7 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         edge_unload_from_parent.resize(N, 0.0f);
         edge_final_pressure.resize(N, 0.0f);
         for (int i = 0; i < N; ++i)
-            log_pre_sugar[i] = flat[i].node->chemical(ChemicalID::Sugar);
+            log_pre_sugar[i] = flat[i].node->local().chemical(ChemicalID::Sugar);
     }
 
     // ── Phase 1: Leaf loading pass ────────────────────────────────────────────
@@ -242,8 +242,8 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         float parent_vol = node_volume(parent, world);
         if (leaf_vol <= 0.0f || parent_vol <= 0.0f) continue;
 
-        float leaf_conc   = leaf.chemical(ChemicalID::Sugar) / leaf_vol;
-        float parent_conc = parent.chemical(ChemicalID::Sugar) / parent_vol;
+        float leaf_conc   = leaf.local().chemical(ChemicalID::Sugar) / leaf_vol;
+        float parent_conc = parent.local().chemical(ChemicalID::Sugar) / parent_vol;
         float gradient    = leaf_conc - parent_conc;
         if (gradient <= 0.0f) continue;  // leaf not above parent — no loading
 
@@ -254,13 +254,13 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         float flow_vol   = velocity * ring_area;               // dm³/tick
         float max_vel    = flow_vol * leaf_conc;               // g — velocity-limited
 
-        float equil_conc = (leaf.chemical(ChemicalID::Sugar) + parent.chemical(ChemicalID::Sugar))
+        float equil_conc = (leaf.local().chemical(ChemicalID::Sugar) + parent.local().chemical(ChemicalID::Sugar))
                            / std::max(leaf_vol + parent_vol, 1e-8f);
         float max_equil  = std::max(0.0f,
-                               leaf.chemical(ChemicalID::Sugar) - equil_conc * leaf_vol);
+                               leaf.local().chemical(ChemicalID::Sugar) - equil_conc * leaf_vol);
 
         float load = std::min(max_vel, max_equil);
-        load = std::min(load, leaf.chemical(ChemicalID::Sugar));  // safety
+        load = std::min(load, leaf.local().chemical(ChemicalID::Sugar));  // safety
 
         // Storage cap for the parent conduit uses the per-type sugar_cap() model
         // (stem = volume × sugar_storage_density_wood, leaf = area × leaf-density,
@@ -268,12 +268,12 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         // Keeps phloem caps consistent with the rest of the sim instead of using a
         // volumetric-only cap that made young internodes choke at ~0.002 g.
         float parent_cap  = sugar_cap(parent, g);
-        float parent_room = parent_cap - parent.chemical(ChemicalID::Sugar);
+        float parent_room = parent_cap - parent.local().chemical(ChemicalID::Sugar);
         load = std::min(load, std::max(0.0f, parent_room));
 
         if (load > 1e-8f) {
-            leaf.chemical(ChemicalID::Sugar)   -= load;
-            parent.chemical(ChemicalID::Sugar) += load;
+            leaf.local().chemical(ChemicalID::Sugar)   -= load;
+            parent.local().chemical(ChemicalID::Sugar) += load;
             if (logging) log_loaded[flat[i].parent_idx] += load;
         }
     }
@@ -311,7 +311,7 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
         float cap = sugar_cap(n, g);
         if (cap <= 1e-8f) continue;
         float reserve = cap * g.phloem_reserve_fraction;
-        float sug = n.chemical(ChemicalID::Sugar);
+        float sug = n.local().chemical(ChemicalID::Sugar);
 
         if (n.type == NodeType::APICAL) {
             // Active shoot apicals are sinks; dormant ones are neither.
@@ -363,12 +363,12 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             Node& n = *flat[i].node;
             if (supply[i] > 0.0f) {
                 float deducted = supply[i] * supply_scale;
-                n.chemical(ChemicalID::Sugar) -= deducted;
+                n.local().chemical(ChemicalID::Sugar) -= deducted;
                 if (logging) log_flow_out[i] += deducted;
             }
             if (demand[i] > 0.0f) {
                 float added = demand[i] * demand_scale;
-                n.chemical(ChemicalID::Sugar) += added;
+                n.local().chemical(ChemicalID::Sugar) += added;
                 if (logging) log_flow_in[i] += added;
                 // Meristems track "unloaded" separately so the SUMMARY log
                 // still distinguishes meristem-sink delivery from conduit
@@ -410,13 +410,13 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             for (int i = 0; i < N; ++i) {
                 const Node& n      = *flat[i].node;
                 float pre           = log_pre_sugar[i];
-                float post          = n.chemical(ChemicalID::Sugar);
+                float post          = n.local().chemical(ChemicalID::Sugar);
                 float vol           = node_volume(n, world);
                 float conc          = (vol > 0.0f) ? pre / vol : 0.0f;
                 float pressure      = compute_phloem_pressure(n, g, world);  // uses current sugar
                 float wc            = water_cap(n, g);
                 float wfrac         = (wc > 0.0f)
-                    ? std::clamp(n.chemical(ChemicalID::Water) / wc, 0.0f, 1.0f)
+                    ? std::clamp(n.local().chemical(ChemicalID::Water) / wc, 0.0f, 1.0f)
                     : 0.0f;
                 float loaded        = log_loaded[i];
                 float unloaded      = log_unloaded[i];
@@ -485,8 +485,8 @@ void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 const Node& child  = *flat[i].node;
                 float p_vol = node_volume(parent, world);
                 float c_vol = node_volume(child,  world);
-                float p_conc = (p_vol > 0.0f) ? parent.chemical(ChemicalID::Sugar) / p_vol : 0.0f;
-                float c_conc = (c_vol > 0.0f) ? child.chemical(ChemicalID::Sugar)  / c_vol : 0.0f;
+                float p_conc = (p_vol > 0.0f) ? parent.local().chemical(ChemicalID::Sugar) / p_vol : 0.0f;
+                float c_conc = (c_vol > 0.0f) ? child.local().chemical(ChemicalID::Sugar)  / c_vol : 0.0f;
                 float net_child_gain = edge_unload_from_parent[i] - edge_desired_to_parent[i];
                 ecsv << world.current_tick << ','
                      << parent.id << ',' << child.id << ','
@@ -556,8 +556,8 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
     std::vector<float> edge_cyto_down(N, 0.0f);
     if (logging) {
         for (int i = 0; i < N; ++i) {
-            pre_water[i] = flat[i].node->chemical(ChemicalID::Water);
-            pre_cyto[i]  = flat[i].node->chemical(ChemicalID::Cytokinin);
+            pre_water[i] = flat[i].node->local().chemical(ChemicalID::Water);
+            pre_cyto[i]  = flat[i].node->local().chemical(ChemicalID::Cytokinin);
         }
     }
 
@@ -592,7 +592,7 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
 
     for (int i = 0; i < N; ++i) {
         Node& n = *flat[i].node;
-        float w = n.chemical(ChemicalID::Water);
+        float w = n.local().chemical(ChemicalID::Water);
         float cap = wcap[i];
         if (cap <= 1e-8f) continue;
 
@@ -655,12 +655,12 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             Node& n = *flat[i].node;
             if (supply[i] > 0.0f) {
                 float deducted = supply[i] * supply_scale;
-                n.chemical(ChemicalID::Water) -= deducted;
+                n.local().chemical(ChemicalID::Water) -= deducted;
                 if (logging) edge_water_down[i] += deducted;
             }
             if (demand[i] > 0.0f) {
                 float added = demand[i] * demand_scale;
-                n.chemical(ChemicalID::Water) += added;
+                n.local().chemical(ChemicalID::Water) += added;
                 if (logging) edge_water_up[i] += added;
             }
         }
@@ -678,9 +678,9 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
             float water_before = pre_water[i];  // use pre-tick water (matches cyto basis)
             if (water_before <= 1e-8f) continue;
             float cyto_per_water = pre_cyto[i] / water_before;
-            float cyto_sent = std::min(water_sent * cyto_per_water, n.chemical(ChemicalID::Cytokinin));
+            float cyto_sent = std::min(water_sent * cyto_per_water, n.local().chemical(ChemicalID::Cytokinin));
             if (cyto_sent <= 0.0f) continue;
-            n.chemical(ChemicalID::Cytokinin) -= cyto_sent;
+            n.local().chemical(ChemicalID::Cytokinin) -= cyto_sent;
             total_cyto_transported += cyto_sent;
             if (logging) edge_cyto_down[i] += cyto_sent;
         }
@@ -692,7 +692,7 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 if (demand[i] <= 0.0f) continue;
                 float water_received = demand[i] * demand_scale;
                 float cyto_share = total_cyto_transported * (water_received / delivered);
-                n.chemical(ChemicalID::Cytokinin) += cyto_share;
+                n.local().chemical(ChemicalID::Cytokinin) += cyto_share;
                 if (logging) edge_cyto_up[i] += cyto_share;
             }
         }
@@ -724,7 +724,7 @@ void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world) {
                 for (int i = 0; i < N; ++i) {
                     const Node& n = *flat[i].node;
                     float before = pre[i];
-                    float after  = n.chemical(chem);
+                    float after  = n.local().chemical(chem);
                     int parent_id = (flat[i].parent_idx >= 0)
                         ? static_cast<int>(flat[flat[i].parent_idx].node->id)
                         : -1;
