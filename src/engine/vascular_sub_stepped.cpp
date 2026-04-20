@@ -126,12 +126,23 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*wor
                 const float turgor_target = g.leaf_turgor_target_fraction * cap_w;
                 b.water_demand = std::max(0.0f, turgor_target - water);
             }
-            // Root apicals produce cytokinin.  Keep a local reserve at the
-            // root_cytokinin_inhibition_threshold so the axillary-activation
-            // inhibition check (which reads local cytokinin) can fire correctly.
-            // Only the surplus above that reserve is loaded into the xylem stream.
-            const float cyto_reserve = g.root_cytokinin_inhibition_threshold;
-            b.cytokinin_supply = std::max(0.0f, n.local().chemical(ChemicalID::Cytokinin) - cyto_reserve);
+            // Root apicals produce cytokinin to signal the rest of the plant —
+            // the cytokinin's job is to travel up xylem to the shoot, not to
+            // accumulate locally.  Inject all of it into parent xylem.
+            //
+            // Note: the older implementation kept a reserve equal to
+            // root_cytokinin_inhibition_threshold (0.15 g) in an attempt to
+            // preserve the axillary-activation inhibition check in
+            // RootApicalNode::can_activate.  That turned out to be wrong:
+            // per-tick production is ~1.3e-4 g, three orders of magnitude
+            // below the inhibition threshold, so local cytokinin never
+            // reaches anywhere near the threshold under any policy.  The
+            // reserve effectively pinned b.cytokinin_supply = 0, leaving
+            // every xylem pool in the plant empty of cytokinin and starving
+            // shoot meristems (observed at tick 483: all 91 nodes had
+            // xylem_cytokinin = 0, primary SAM had local cyto = 0 exactly,
+            // SAM growth_fraction hard-gated to 0).
+            b.cytokinin_supply = n.local().chemical(ChemicalID::Cytokinin);
             break;
         }
         // STEM and ROOT get sugar via radial flow from their own phloem.
