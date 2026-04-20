@@ -56,3 +56,22 @@ TEST_CASE("StemNode phloem and xylem are independent pools", "[compartments]") {
     REQUIRE(stem.phloem()->chemical(ChemicalID::Water) == 0.0f);  // water not in phloem
     REQUIRE(stem.xylem()->chemical(ChemicalID::Sugar)  == 0.0f);  // sugar not in xylem
 }
+
+TEST_CASE("RootNode exposes non-null phloem() and xylem()", "[compartments]") {
+    RootNode root(1, glm::vec3(0, -0.05f, 0), 0.015f);
+    REQUIRE(root.phloem() != nullptr);
+    REQUIRE(root.xylem()  != nullptr);
+}
+
+TEST_CASE("LeafNode/ApicalNode/RootApicalNode return nullptr pools", "[compartments]") {
+    LeafNode leaf(1, glm::vec3(0), 0.01f);
+    ApicalNode apical(2, glm::vec3(0), 0.01f);
+    RootApicalNode root_apical(3, glm::vec3(0, -0.05f, 0), 0.01f);
+
+    REQUIRE(leaf.phloem()        == nullptr);
+    REQUIRE(leaf.xylem()         == nullptr);
+    REQUIRE(apical.phloem()      == nullptr);
+    REQUIRE(apical.xylem()       == nullptr);
+    REQUIRE(root_apical.phloem() == nullptr);
+    REQUIRE(root_apical.xylem()  == nullptr);
+}
