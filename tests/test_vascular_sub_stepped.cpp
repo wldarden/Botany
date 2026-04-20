@@ -306,3 +306,71 @@ TEST_CASE("vascular_sub_stepped conserves mass", "[vascular_sub_stepped][integra
     REQUIRE(sugar_after == Catch::Approx(sugar_before).margin(1e-4f));
     REQUIRE(water_after == Catch::Approx(water_before).margin(1e-4f));
 }
+
+TEST_CASE("compartment residency invariants hold after vascular", "[vascular_sub_stepped][invariants]") {
+    Genome g = default_genome();
+    WorldParams world;
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Populate with a typical tick's chemicals.
+    plant.for_each_node_mut([&](Node& n) {
+        n.local().chemical(ChemicalID::Sugar)     = 1.0f;
+        n.local().chemical(ChemicalID::Water)     = 0.5f;
+        n.local().chemical(ChemicalID::Auxin)     = 0.1f;
+        if (auto* p = n.phloem()) p->chemical(ChemicalID::Sugar) = 0.3f;
+        if (auto* x = n.xylem())  x->chemical(ChemicalID::Water) = 0.2f;
+    });
+
+    vascular_sub_stepped(plant, g, world);
+
+    // Sugar must never appear in any xylem pool.
+    // Water/cytokinin must never appear in any phloem pool.
+    // Auxin/gibberellin/stress must never appear in any transport pool.
+    plant.for_each_node([&](const Node& n) {
+        if (auto* p = n.phloem()) {
+            REQUIRE(p->chemical(ChemicalID::Water)     == 0.0f);
+            REQUIRE(p->chemical(ChemicalID::Cytokinin) == 0.0f);
+            REQUIRE(p->chemical(ChemicalID::Auxin)     == 0.0f);
+        }
+        if (auto* x = n.xylem()) {
+            REQUIRE(x->chemical(ChemicalID::Sugar)     == 0.0f);
+            REQUIRE(x->chemical(ChemicalID::Auxin)     == 0.0f);
+        }
+    });
+}
+
+TEST_CASE("distal apex under-supplied when chain exceeds N", "[vascular_sub_stepped][hydraulic_limit]") {
+    Genome g = default_genome();
+    WorldParams world;
+    world.vascular_substeps = 6;  // N=6 limits propagation; shorter than 15-hop chain.
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Build a 15-stem chain — much longer than N.
+    Node* tip_stem = plant.seed_mut();
+    for (int i = 0; i < 15; ++i) {
+        Node* stem = plant.create_node(NodeType::STEM,
+            glm::vec3(0.0f, 0.05f * (i + 1), 0.0f), 0.015f);
+        tip_stem->add_child(stem);
+        tip_stem = stem;
+    }
+
+    // Zero all sugar; pile 10 g at the seed's phloem.
+    plant.for_each_node_mut([&](Node& n) {
+        n.local().chemical(ChemicalID::Sugar) = 0.0f;
+        if (auto* p = n.phloem()) p->chemical(ChemicalID::Sugar) = 0.0f;
+    });
+    plant.seed_mut()->phloem()->chemical(ChemicalID::Sugar) = 10.0f;
+
+    vascular_sub_stepped(plant, g, world);
+
+    // With N=6 sub-steps and a 15-stem chain, the distal tip at hop 15
+    // is beyond the hydraulic propagation limit and should remain dry.
+    // This demonstrates the design feature: hydraulic limitation prevents
+    // long-distance supply when N < chain_length.
+    REQUIRE(tip_stem->phloem() != nullptr);
+    // Verify the tip received no sugar (remained at 0).
+    float tip_sugar = tip_stem->phloem()->chemical(ChemicalID::Sugar);
+    // Test passes when 0 <= tip_sugar < epsilon, confirming no transport.
+    REQUIRE(tip_sugar >= 0.0f);  // Non-negative (no negative sugar).
+    REQUIRE(tip_sugar < 1e-6f);  // Negligible or zero.
+}
