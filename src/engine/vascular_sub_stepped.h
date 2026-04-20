@@ -50,6 +50,13 @@ void vascular_sub_stepped(Plant& plant, const Genome& g, const WorldParams& worl
 float radial_permeability_sugar(float radius, const Genome& g);
 float radial_permeability_water(float radius, const Genome& g);
 
+// Radial flow: bidirectional gradient-based exchange between a stem/root's
+// own local_env and its own phloem/xylem.  Rate-limited by radius-dependent
+// radial_permeability (young stems leaky, mature trunks near-sealed).
+// Mass-conservative: every transfer is a paired ±flow between pools on the
+// same node.  Water radial flow also carries cytokinin proportionally.
+void radial_flow_step(Node& conduit, uint32_t N, const Genome& g);
+
 // Phloem/xylem capacity for a stem or root node: π · r² · length · fraction.
 // Returns 0 for nodes without the matching pool (leaves, meristems).
 float phloem_capacity(const Node& n, const Genome& g);

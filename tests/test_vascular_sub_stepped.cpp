@@ -169,3 +169,37 @@ TEST_CASE("extract step capped by available phloem sugar", "[vascular_sub_steppe
     REQUIRE(stem.phloem()->chemical(ChemicalID::Sugar) >= 0.0f);
     REQUIRE(apical.local().chemical(ChemicalID::Sugar) <= 0.01f);
 }
+
+TEST_CASE("radial flow equilibrates stem local and phloem", "[vascular_sub_stepped][radial_flow]") {
+    Genome g = default_genome();
+    StemNode stem(1, glm::vec3(0), 0.015f);
+    stem.offset = glm::vec3(0.0f, 0.05f, 0.0f);
+
+    // Start with high phloem, empty local.
+    stem.phloem()->chemical(ChemicalID::Sugar) = 1.0f;
+    stem.local().chemical(ChemicalID::Sugar)   = 0.0f;
+
+    float total_before = stem.phloem()->chemical(ChemicalID::Sugar)
+                       + stem.local().chemical(ChemicalID::Sugar);
+
+    // Run radial flow many times — local should approach phloem concentration.
+    for (int i = 0; i < 100; ++i) {
+        radial_flow_step(stem, /* N */ 1, g);
+    }
+
+    float total_after = stem.phloem()->chemical(ChemicalID::Sugar)
+                      + stem.local().chemical(ChemicalID::Sugar);
+
+    // Conservation.
+    REQUIRE(total_after == Catch::Approx(total_before).margin(1e-4f));
+    // After many iterations, some flowed from phloem to local.
+    REQUIRE(stem.local().chemical(ChemicalID::Sugar) > 0.0f);
+    REQUIRE(stem.phloem()->chemical(ChemicalID::Sugar) < 1.0f);
+}
+
+TEST_CASE("radial permeability is smaller for thicker stems", "[vascular_sub_stepped][radial_flow]") {
+    Genome g = default_genome();
+    float perm_young = radial_permeability_sugar(0.01f, g);
+    float perm_mature = radial_permeability_sugar(2.0f, g);
+    REQUIRE(perm_mature < perm_young);
+}

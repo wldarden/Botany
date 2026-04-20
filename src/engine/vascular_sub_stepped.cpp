@@ -167,6 +167,73 @@ float radial_permeability_water(float radius, const Genome& g) {
     return base * (floor + (1.0f - floor) / (1.0f + ratio * ratio));
 }
 
+void radial_flow_step(Node& n, uint32_t N, const Genome& g) {
+    if (N == 0) return;
+    const float inv_N = 1.0f / static_cast<float>(N);
+
+    // --- Sugar: phloem <-> local ---
+    if (auto* phl = n.phloem()) {
+        const float perm    = radial_permeability_sugar(n.radius, g);
+        const float cap_phl = phloem_capacity(n, g);
+        const float cap_loc = sugar_cap(n, g);
+        if (cap_phl > 1e-8f && cap_loc > 1e-8f) {
+            const float conc_phl = phl->chemical(ChemicalID::Sugar) / cap_phl;
+            const float conc_loc = n.local().chemical(ChemicalID::Sugar) / cap_loc;
+            // Flow toward equal concentration; positive = phloem -> local.
+            const float dconc = conc_phl - conc_loc;
+            float flow = perm * dconc * inv_N;
+            // Cap the flow to avoid overshoot in one step.
+            const float max_equalize_volume = std::min(cap_phl, cap_loc) * 0.5f;
+            flow = std::clamp(flow, -max_equalize_volume, max_equalize_volume);
+            // Don't draw more than what's present in either side.
+            if (flow > 0.0f) flow = std::min(flow, phl->chemical(ChemicalID::Sugar));
+            else             flow = -std::min(-flow, n.local().chemical(ChemicalID::Sugar));
+
+            phl->chemical(ChemicalID::Sugar)      -= flow;
+            n.local().chemical(ChemicalID::Sugar) += flow;
+        }
+    }
+
+    // --- Water + cytokinin: xylem <-> local ---
+    if (auto* xyl = n.xylem()) {
+        const float perm    = radial_permeability_water(n.radius, g);
+        const float cap_xyl = xylem_capacity(n, g);
+        const float cap_loc = water_cap(n, g);
+        if (cap_xyl > 1e-8f && cap_loc > 1e-8f) {
+            const float conc_xyl = xyl->chemical(ChemicalID::Water) / cap_xyl;
+            const float conc_loc = n.local().chemical(ChemicalID::Water) / cap_loc;
+            const float dconc = conc_xyl - conc_loc;
+            float flow = perm * dconc * inv_N;
+            const float max_equalize_volume = std::min(cap_xyl, cap_loc) * 0.5f;
+            flow = std::clamp(flow, -max_equalize_volume, max_equalize_volume);
+            if (flow > 0.0f) flow = std::min(flow, xyl->chemical(ChemicalID::Water));
+            else             flow = -std::min(-flow, n.local().chemical(ChemicalID::Water));
+
+            xyl->chemical(ChemicalID::Water)      -= flow;
+            n.local().chemical(ChemicalID::Water) += flow;
+
+            // Cytokinin rides with water proportionally.
+            const float water_source_before = (flow > 0.0f)
+                ? xyl->chemical(ChemicalID::Water) + flow
+                : n.local().chemical(ChemicalID::Water) - flow;
+            if (water_source_before > 1e-8f && std::abs(flow) > 1e-8f) {
+                const float cyto_ratio = std::abs(flow) / water_source_before;
+                if (flow > 0.0f) {
+                    // Water moved xylem -> local, cytokinin follows.
+                    const float cyto_move = xyl->chemical(ChemicalID::Cytokinin) * cyto_ratio;
+                    xyl->chemical(ChemicalID::Cytokinin)      -= cyto_move;
+                    n.local().chemical(ChemicalID::Cytokinin) += cyto_move;
+                } else {
+                    // Water moved local -> xylem, cytokinin follows.
+                    const float cyto_move = n.local().chemical(ChemicalID::Cytokinin) * cyto_ratio;
+                    n.local().chemical(ChemicalID::Cytokinin) -= cyto_move;
+                    xyl->chemical(ChemicalID::Cytokinin)      += cyto_move;
+                }
+            }
+        }
+    }
+}
+
 // Returns the length of the internode (distance from parent to this node).
 // For the seed (no parent), returns 1.0 so the seed has a meaningful capacity.
 static float node_length(const Node& n) {
