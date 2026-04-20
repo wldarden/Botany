@@ -358,8 +358,11 @@ void jacobi_step(Node& parent, Node& child, const Genome& g) {
                 const float bias       = parent.get_bias_multiplier(&child, g);
                 const float conductance = base_cond * bias;
                 float flow = conductance * (pressure_p - pressure_c);
-                const float max_move = 0.5f * std::min(cap_p, cap_c);
-                flow = std::clamp(flow, -max_move, max_move);
+                // Removed max_move = 0.5 * min(cap) clamp.  It was throttling
+                // flow by up to 5 orders of magnitude when pressure gradients
+                // were large (e.g., over-pressurized root xylem trying to
+                // drain to seed xylem).  The source-chemical clamp below
+                // is still sufficient to prevent pools going negative.
                 if (flow > 0.0f) flow = std::min(flow, pp->chemical(ChemicalID::Sugar));
                 else             flow = -std::min(-flow, cp->chemical(ChemicalID::Sugar));
 
@@ -381,8 +384,8 @@ void jacobi_step(Node& parent, Node& child, const Genome& g) {
                 const float bias       = parent.get_bias_multiplier(&child, g);
                 const float conductance = base_cond * bias;
                 float flow = conductance * (pressure_p - pressure_c);
-                const float max_move = 0.5f * std::min(cap_p, cap_c);
-                flow = std::clamp(flow, -max_move, max_move);
+                // Removed max_move clamp here too — same reasoning as phloem.
+                // Source-chemical clamp below still prevents negative pools.
                 if (flow > 0.0f) flow = std::min(flow, pp->chemical(ChemicalID::Water));
                 else             flow = -std::min(-flow, cp->chemical(ChemicalID::Water));
 
