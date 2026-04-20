@@ -105,6 +105,14 @@ public:
     void add_child(Node* child);
     void replace_child(Node* old_child, Node* new_child);
 
+    // --- Compartment access ---
+    // Default: nullptr.  Stem and Root override to return their conduit pools.
+    // Callers must null-check the return before dereferencing.
+    virtual TransportPool* phloem() { return nullptr; }
+    virtual const TransportPool* phloem() const { return nullptr; }
+    virtual TransportPool* xylem()  { return nullptr; }
+    virtual const TransportPool* xylem()  const { return nullptr; }
+
     // --- Tick pipeline ---
     void tick(Plant& plant, const WorldParams& world);       // non-virtual: all universal processes
     virtual float maintenance_cost(const WorldParams& world) const;
