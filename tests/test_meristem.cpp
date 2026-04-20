@@ -8,7 +8,6 @@
 #include "engine/node/tissues/root_apical.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
-#include "engine/vascular.h"
 #include "engine/node/meristems/helpers.h"
 
 using namespace botany;
@@ -760,42 +759,6 @@ TEST_CASE("metabolic_factor: stresses compound multiplicatively", "[meristem][me
     // Zero sugar, full water → should reach only sugar floor (0.1)
     float mf_starved = metabolic_factor(0.0f, 0.1f, 0.1f, 1000.0f, 0.1f, 0.1f);
     REQUIRE_THAT(mf_starved, WithinAbs(0.1f, 1e-3f));
-}
-
-TEST_CASE("has_vasculature uses radius threshold, not node age or bias", "[meristem][vascular]") {
-    // Vascular admission is radius-based. initial_radius (0.015 dm) > vascular_radius_threshold
-    // (0.01 dm), so all newly spawned internodes qualify immediately.
-    // Age and bias have no effect.
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
-    Node* seed = plant.seed_mut();
-
-    // Stem below threshold radius → not vascular.
-    Node* thin = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f),
-                                   g.vascular_radius_threshold * 0.5f);
-    seed->add_child(thin);
-    thin->age = 9999;
-    REQUIRE(has_vasculature(*thin, g) == false);
-
-    // Stem at exactly threshold → vascular.
-    Node* at_thresh = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.2f, 0.0f),
-                                        g.vascular_radius_threshold);
-    seed->add_child(at_thresh);
-    REQUIRE(has_vasculature(*at_thresh, g) == true);
-
-    // Normal internode (initial_radius = 0.015 > threshold 0.01) → vascular from birth.
-    Node* normal = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.3f, 0.0f),
-                                     g.initial_radius);
-    seed->add_child(normal);
-    REQUIRE(has_vasculature(*normal, g) == true);
-
-    // Leaf → never vascular.
-    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.4f, 0.0f), g.initial_radius);
-    seed->add_child(leaf);
-    REQUIRE(has_vasculature(*leaf, g) == false);
-
-    // Seed itself (no parent) is always vascular.
-    REQUIRE(has_vasculature(*seed, g) == true);
 }
 
 TEST_CASE("SA auxin production drops when water is low", "[meristem][metabolic]") {

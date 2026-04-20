@@ -6,7 +6,6 @@
 #include "engine/node/tissues/apical.h"
 #include "engine/node/tissues/root_apical.h"
 #include "engine/ethylene.h"
-#include "engine/vascular.h"
 #include "engine/vascular_sub_stepped.h"
 #include "engine/pin_transport.h"
 #include "engine/perf_log.h"

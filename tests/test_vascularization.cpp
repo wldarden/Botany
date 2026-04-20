@@ -5,7 +5,7 @@
 #include "engine/plant.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
-#include "engine/vascular.h"
+#include "engine/vascular_sub_stepped.h"
 #include "engine/node/tissues/leaf.h"
 #include "engine/node/tissues/apical.h"
 #include "engine/chemical/chemical.h"
@@ -212,7 +212,7 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     apical_low->local().chemical(ChemicalID::Sugar)  = 0.0f;
     seed->local().chemical(ChemicalID::Sugar) = 0.0f;
 
-    vascular_transport(plant, g, static_world());
+    vascular_sub_stepped(plant, g, static_world());
 
     float got_high = apical_high->local().chemical(ChemicalID::Sugar);
     float got_low  = apical_low->local().chemical(ChemicalID::Sugar);

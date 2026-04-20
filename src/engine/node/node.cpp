@@ -3,7 +3,6 @@
 #include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/chemical/chemical_registry.h"
-#include "engine/vascular.h"
 #include "engine/perf_log.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
@@ -378,15 +377,24 @@ void Node::transport_with_children(const Genome& g) {
         std::vector<ChildInfo> infos;
         infos.reserve(children.size());
 
-        // Track whether this parent has vasculature (for skipping vascular chemicals)
-        bool parent_vascular = has_vasculature(*this, g);
+        // vascular_sub_stepped() handles bulk flow for sugar, water, and cytokinin
+        // on conduit-to-conduit edges.  Local diffusion still delivers last-mile
+        // to leaves, meristems, and young nodes below the vascular threshold.
+        const bool is_vascular_chem = (dp.id == ChemicalID::Sugar ||
+                                       dp.id == ChemicalID::Water ||
+                                       dp.id == ChemicalID::Cytokinin);
+        // This node qualifies as a vascular conduit: stem/root at or above threshold,
+        // or the seed itself (no parent — always a junction node).
+        const bool parent_is_conduit = (type == NodeType::STEM || type == NodeType::ROOT) &&
+                                       (!parent || radius >= g.vascular_radius_threshold);
 
         for (Node* child : children) {
-            // Skip vascular chemicals on mature-to-mature edges — the global
-            // vascular pass already handled bulk flow. Local diffusion still
-            // handles last-mile delivery to leaves, meristems, and young nodes.
-            if (is_vascular_chemical(dp.id) && parent_vascular && has_vasculature(*child, g)) {
-                continue;
+            // Skip vascular chemicals on mature conduit-to-conduit edges.
+            if (is_vascular_chem && parent_is_conduit) {
+                const bool child_is_conduit =
+                    (child->type == NodeType::STEM || child->type == NodeType::ROOT) &&
+                    child->radius >= g.vascular_radius_threshold;
+                if (child_is_conduit) continue;
             }
 
             float child_radius = child->radius;
