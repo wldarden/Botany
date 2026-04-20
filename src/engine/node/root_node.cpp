@@ -80,39 +80,6 @@ void RootNode::elongate(const Genome& g, const WorldParams& world) {
     }
 }
 
-void RootNode::compute_growth_reserve(const Genome& g, const WorldParams& world) {
-    sugar_reserved_for_growth = 0.0f;
-    float total_cost = 0.0f;
-
-    // Thickening cost estimate (mirrors thicken())
-    float bias = 0.0f;
-    if (parent) {
-        auto it = parent->auxin_flow_bias.find(this);
-        if (it != parent->auxin_flow_bias.end()) bias = it->second;
-    } else {
-        for (auto& [child, b] : auxin_flow_bias) bias = std::max(bias, b);
-    }
-    if (bias >= 1e-6f)
-        total_cost += g.cambium_responsiveness * bias * world.sugar_cost_stem_growth;
-
-    // Elongation cost estimate (mirrors elongate())
-    if (parent && age < g.root_internode_maturation_ticks && g.root_internode_elongation_rate > 1e-8f) {
-        float current_len = glm::length(offset);
-        float max_len = g.max_internode_length
-                      * (1.0f + local().chemical(ChemicalID::Gibberellin) * g.ga_length_sensitivity);
-        if (current_len < max_len) {
-            float ga_boost = 1.0f + local().chemical(ChemicalID::Gibberellin) * g.ga_elongation_sensitivity;
-            float eth_inh  = std::max(0.0f, 1.0f - local().chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
-            float axb = meristem_helpers::auxin_growth_factor(
-                local().chemical(ChemicalID::Auxin), g.root_auxin_max_boost, g.root_auxin_half_saturation);
-            float rate = g.root_internode_elongation_rate * ga_boost * eth_inh * axb;
-            total_cost += rate * world.sugar_cost_stem_growth;
-        }
-    }
-
-    sugar_reserved_for_growth = std::min(total_cost, local().chemical(ChemicalID::Sugar));
-}
-
 float RootNode::maintenance_cost(const WorldParams& world) const {
     // Same biology as stems: living ring (endodermis, pericycle, ray parenchyma)
     // around a dead stele core. Scale with half the lateral surface area (πrL).

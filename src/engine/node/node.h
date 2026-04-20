@@ -60,13 +60,6 @@ public:
     float tick_auxin_produced    = 0.0f;
     float tick_cytokinin_produced = 0.0f;
 
-    // --- Grow-before-transport reserve ---
-    // Set by compute_growth_reserve() before vascular_transport() runs each tick.
-    // Vascular phloem treats this as unavailable supply so nodes have sugar for
-    // their own growth when update_tissue() runs later in the same tick.
-    // Cleared to 0 at the end of each tick.
-    float sugar_reserved_for_growth = 0.0f;
-
     // Local compartment — this node's parenchyma chemicals (sugar, water,
     // auxin, cytokinin, gibberellin, stress — anything NOT in the phloem or
     // xylem transport stream).  All chemical access goes through local().
@@ -120,10 +113,6 @@ public:
     void tick(Plant& plant, const WorldParams& world);       // non-virtual: all universal processes
     virtual float maintenance_cost(const WorldParams& world) const;
 
-    // Pre-transport growth reserve — called once per tick before vascular_transport().
-    // Each subclass computes how much sugar it will spend on growth this tick and
-    // stores it in sugar_reserved_for_growth. Vascular sees (sugar - reserve) as supply.
-    virtual void compute_growth_reserve(const Genome& g, const WorldParams& world);
     void transport_with_children(const Genome& g);
     void update_canalization(const Genome& g);
     void decay_chemicals(const Genome& g);

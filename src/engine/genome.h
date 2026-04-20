@@ -174,7 +174,7 @@ struct Genome {
     float xylem_conductance;              // throughput per dm² cross-section per tick (water + cytokinin)
     float phloem_conductance;             // throughput per dm² cross-section per tick (sugar)
     float phloem_reserve_fraction;        // structural glucose reserve fraction — leaves keep this fraction of cap
-                                          // as a minimum buffer. Growth needs are handled by sugar_reserved_for_growth.
+                                          // as a minimum buffer before loading surplus into phloem.
     float meristem_sink_fraction;         // fraction of sugar_cap_meristem a meristem can demand per tick.
                                           // Caps demand at cap×fraction instead of cap−current so meristems
                                           // can't out-compete leaves for limited phloem sugar. At 0.05 and

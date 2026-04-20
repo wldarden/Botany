@@ -118,44 +118,6 @@ void StemNode::elongate(const Genome& g, const WorldParams& world) {
     }
 }
 
-void StemNode::compute_growth_reserve(const Genome& g, const WorldParams& world) {
-    sugar_reserved_for_growth = 0.0f;
-    float total_cost = 0.0f;
-    float density_scale = g.wood_density / world.reference_wood_density;
-
-    // Thickening cost estimate (mirrors thicken())
-    float bias = 0.0f;
-    if (!parent) {
-        for (auto& [child, b] : auxin_flow_bias) bias = std::max(bias, b);
-    } else {
-        auto it = parent->auxin_flow_bias.find(this);
-        if (it != parent->auxin_flow_bias.end()) bias = it->second;
-    }
-    if (bias >= 1e-6f) {
-        float stress_boost = 1.0f + local().chemical(ChemicalID::Stress) * g.stress_thickening_boost;
-        total_cost += g.cambium_responsiveness * bias * stress_boost
-                    * world.sugar_cost_stem_growth * density_scale;
-    }
-
-    // Elongation cost estimate (mirrors elongate())
-    if (parent && age < g.internode_maturation_ticks && g.internode_elongation_rate > 1e-8f) {
-        float current_len = glm::length(offset);
-        float max_len = g.max_internode_length
-                      * (1.0f + local().chemical(ChemicalID::Gibberellin) * g.ga_length_sensitivity);
-        if (current_len < max_len) {
-            float ga_boost = 1.0f + local().chemical(ChemicalID::Gibberellin) * g.ga_elongation_sensitivity;
-            float eth_inh  = std::max(0.0f, 1.0f - local().chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
-            float str_inh  = std::max(0.0f, 1.0f - local().chemical(ChemicalID::Stress) * g.stress_elongation_inhibition);
-            float axb = meristem_helpers::auxin_growth_factor(
-                local().chemical(ChemicalID::Auxin), g.stem_auxin_max_boost, g.stem_auxin_half_saturation);
-            float rate = g.internode_elongation_rate * ga_boost * eth_inh * str_inh * axb;
-            total_cost += rate * world.sugar_cost_stem_growth * density_scale;
-        }
-    }
-
-    sugar_reserved_for_growth = std::min(total_cost, local().chemical(ChemicalID::Sugar));
-}
-
 float StemNode::maintenance_cost(const WorldParams& world) const {
     // Living tissue in a mature stem is a thin ring at the surface (cambium, inner bark,
     // ray parenchyma). The interior is dead wood — zero maintenance. Scale with half the

@@ -57,7 +57,6 @@ public:
 
 private:
     void tick_tree(const WorldParams& world, PerfStats* perf);
-    void pre_transport_growth(const WorldParams& world);
     void promote_primary_meristems();  // called after tick_tree walk if a primary is missing
     Genome genome_;
     uint32_t next_id_ = 0;
