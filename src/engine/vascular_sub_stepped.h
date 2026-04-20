@@ -19,4 +19,11 @@ struct WorldParams;
 // See spec: docs/superpowers/specs/2026-04-19-compartmented-vascular-model-design.md
 void vascular_sub_stepped(Plant& plant, const Genome& g, const WorldParams& world);
 
+// Radial permeability between a stem/root's own local_env and its own
+// phloem/xylem.  Curve: perm(r) = base × (floor + (1 - floor) / (1 + (r/r_half)²))
+// Young thin stems (r=0): perm ≈ base.  Mature thick trunks (r→∞): perm ≈ base × floor.
+// See spec section 6.
+float radial_permeability_sugar(float radius, const Genome& g);
+float radial_permeability_water(float radius, const Genome& g);
+
 } // namespace botany
