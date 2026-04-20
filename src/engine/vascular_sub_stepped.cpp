@@ -126,9 +126,12 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*wor
                 const float turgor_target = g.leaf_turgor_target_fraction * cap_w;
                 b.water_demand = std::max(0.0f, turgor_target - water);
             }
-            // Root apicals produce cytokinin.  Treat all local cytokinin as
-            // surplus to inject into parent xylem.
-            b.cytokinin_supply = n.local().chemical(ChemicalID::Cytokinin);
+            // Root apicals produce cytokinin.  Keep a local reserve at the
+            // root_cytokinin_inhibition_threshold so the axillary-activation
+            // inhibition check (which reads local cytokinin) can fire correctly.
+            // Only the surplus above that reserve is loaded into the xylem stream.
+            const float cyto_reserve = g.root_cytokinin_inhibition_threshold;
+            b.cytokinin_supply = std::max(0.0f, n.local().chemical(ChemicalID::Cytokinin) - cyto_reserve);
             break;
         }
         // STEM and ROOT get sugar via radial flow from their own phloem.
