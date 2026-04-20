@@ -144,7 +144,6 @@ TEST_CASE("Active meristem tip maintenance_cost", "[sugar]") {
 
 TEST_CASE("Sugar diffuses from high to low concentration", "[sugar]") {
     Genome g = default_genome();
-    g.sugar_diffusion_rate = 0.8f;  // test the mechanism; default=0 (phloem owns transport)
     Plant plant(g, glm::vec3(0.0f));
 
     Node* seed = plant.seed_mut();
@@ -186,7 +185,6 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
 
 TEST_CASE("Transport moves sugar from full parent to empty children", "[sugar]") {
     Genome g = default_genome();
-    g.sugar_diffusion_rate = 0.8f;  // test the mechanism; default=0 (phloem owns transport)
 
     Plant plant(g, glm::vec3(0.0f));
     for (int i = 0; i < 3; i++) {

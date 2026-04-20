@@ -127,7 +127,6 @@ TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]"
     // Raise vascular_radius_threshold above node radii so local diffusion runs —
     // these unit tests call transport_with_children directly without the vascular pass.
     g.vascular_radius_threshold = 1.0f;
-    g.sugar_diffusion_rate = 0.8f;  // re-enable local diffusion for this unit test
     Plant plant(g, glm::vec3(0.0f));
 
     // Use small parent sugar so children don't hit headroom caps.
@@ -163,7 +162,6 @@ TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization
     Genome g = default_genome();
     g.canalization_weight = 0.0f;  // disabled
     g.vascular_radius_threshold = 1.0f;  // same vascular bypass as the bias test above
-    g.sugar_diffusion_rate = 0.8f;  // re-enable local diffusion for this unit test
     Plant plant(g, glm::vec3(0.0f));
 
     // Same small-sugar setup as the bias test
