@@ -210,6 +210,35 @@ struct Genome {
                                           // some maintenance leakage.
     float phloem_unloading_stem;          // permeability for STEM conduit — very low (sealed phloem),
                                           // minimal leakage for surface-area maintenance only.
+
+    // --- Compartmented vascular model (2026-04-19) ---
+    // Radial flow permeability curve (per chemical class): perm(r) = base ×
+    // (floor + (1 - floor) / (1 + (r / half_radius)²)).  Young thin stems
+    // leak freely; mature thick trunks asymptote to `floor × base`.  See
+    // spec section 6 for full rationale.
+
+    // Phloem radial (sugar between stem's own local_env and own phloem):
+    float base_radial_permeability_sugar;   // max permeability at r = 0
+    float radial_floor_fraction_sugar;      // asymptote as r → ∞, fraction of base
+    float radial_half_radius_sugar;         // dm — curve inflection
+
+    // Xylem radial (water and cytokinin between stem's own local_env and own xylem):
+    float base_radial_permeability_water;
+    float radial_floor_fraction_water;
+    float radial_half_radius_water;
+
+    // Pipe cross-section fractions (what portion of stem cross-section is
+    // sieve tubes vs vessel elements):
+    float phloem_fraction;                  // 0–1, portion of π·r² that's phloem
+    float xylem_fraction;                   // 0–1, portion of π·r² that's xylem
+
+    // Source/sink targets:
+    float leaf_reserve_fraction_sugar;      // leaf keeps this fraction of its
+                                            // local sugar before loading to phloem
+    float meristem_sink_target_fraction;    // meristem refills to this fraction
+                                            // of sugar_cap per tick
+    float leaf_turgor_target_fraction;      // leaves refill to this fraction of
+                                            // water_cap via xylem pull
 };
 
 inline Genome default_genome() {
@@ -377,6 +406,19 @@ inline Genome default_genome() {
         .phloem_unloading_leaf      = 0.10f,  // efficient loader/unloader; mature leaf clears surplus in ~1 tick
         .phloem_unloading_root      = 0.008f, // 4× more permeable than stem — ray parenchyma and root hairs
         .phloem_unloading_stem      = 0.002f, // sealed pipe; ~50× less permeable than leaf (key ratio)
+
+        // Compartmented vascular defaults — starting values from spec section 6.
+        .base_radial_permeability_sugar = 1.0f,
+        .radial_floor_fraction_sugar    = 0.1f,
+        .radial_half_radius_sugar       = 0.3f,   // dm
+        .base_radial_permeability_water = 1.0f,
+        .radial_floor_fraction_water    = 0.1f,
+        .radial_half_radius_water       = 0.3f,
+        .phloem_fraction                = 0.05f,  // 5% of cross-section is sieve tubes
+        .xylem_fraction                 = 0.2f,   // 20% of cross-section is vessels
+        .leaf_reserve_fraction_sugar    = 0.3f,   // matches existing phloem_reserve_fraction value
+        .meristem_sink_target_fraction  = 0.05f,  // matches existing meristem_sink_fraction
+        .leaf_turgor_target_fraction    = 0.7f,   // leaves aim to fill to 70% of water_cap
     };
 }
 

@@ -116,6 +116,14 @@ struct WorldParams {
                                             //   + SUMMARY row per (tick, chemical) with conservation_error check
                                             //   so any leak is caught within one run
     uint32_t current_tick = 0;              // set by caller each tick; used to label vascular log rows
+
+    uint32_t vascular_substeps = 25;   // N — number of sub-steps in the
+                                       // sub-stepped vascular loop.  Each
+                                       // sub-step propagates the pressure
+                                       // wave by ~1 hop.  Plants with chains
+                                       // longer than this will show
+                                       // distance-dependent apical supply
+                                       // (intentional — real hydraulic limit).
 };
 
 inline WorldParams default_world_params() {

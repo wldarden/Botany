@@ -161,6 +161,23 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     reg(sg, "meristem_sink_fraction",      g.meristem_sink_fraction,      r, 0.01f, 0.5f,   p);
     reg(sg, "vascular_radius_threshold",   g.vascular_radius_threshold,   r, 0.001f, 0.05f, p);
 
+    // --- Compartmented vascular model (2026-04-19) ---
+    // Radial permeability curves — sugar (phloem)
+    reg(sg, "base_radial_permeability_sugar", g.base_radial_permeability_sugar, r, 0.1f,  5.0f,  0.1f);
+    reg(sg, "radial_floor_fraction_sugar",    g.radial_floor_fraction_sugar,    r, 0.01f, 0.5f,  0.1f);
+    reg(sg, "radial_half_radius_sugar",       g.radial_half_radius_sugar,       r, 0.05f, 2.0f,  0.1f);
+    // Radial permeability curves — water (xylem)
+    reg(sg, "base_radial_permeability_water", g.base_radial_permeability_water, r, 0.1f,  5.0f,  0.1f);
+    reg(sg, "radial_floor_fraction_water",    g.radial_floor_fraction_water,    r, 0.01f, 0.5f,  0.1f);
+    reg(sg, "radial_half_radius_water",       g.radial_half_radius_water,       r, 0.05f, 2.0f,  0.1f);
+    // Pipe cross-section fractions
+    reg(sg, "phloem_fraction",                g.phloem_fraction,                r, 0.01f, 0.3f,  0.05f);
+    reg(sg, "xylem_fraction",                 g.xylem_fraction,                 r, 0.05f, 0.5f,  0.05f);
+    // Source/sink targets
+    reg(sg, "leaf_reserve_fraction_sugar",    g.leaf_reserve_fraction_sugar,    r, 0.05f, 0.7f,  0.05f);
+    reg(sg, "meristem_sink_target_fraction",  g.meristem_sink_target_fraction,  r, 0.01f, 0.3f,  0.05f);
+    reg(sg, "leaf_turgor_target_fraction",    g.leaf_turgor_target_fraction,    r, 0.3f,  0.95f, 0.05f);
+
     // --- Linkage groups ---
     sg.add_linkage_group({"auxin", {
         "apical_auxin_baseline", "apical_growth_auxin_multiplier",
@@ -247,6 +264,13 @@ evolve::StructuredGenome build_genome_template(const Genome& g, float mutation_p
     sg.add_linkage_group({"canalization", {
         "smoothing_rate", "canalization_weight",
         "pin_capacity_per_area", "pin_base_efficiency"
+    }});
+
+    sg.add_linkage_group({"compartmented_vascular", {
+        "base_radial_permeability_sugar", "radial_floor_fraction_sugar", "radial_half_radius_sugar",
+        "base_radial_permeability_water", "radial_floor_fraction_water", "radial_half_radius_water",
+        "phloem_fraction", "xylem_fraction",
+        "leaf_reserve_fraction_sugar", "meristem_sink_target_fraction", "leaf_turgor_target_fraction"
     }});
 
     return sg;
@@ -406,6 +430,30 @@ Genome from_structured(const evolve::StructuredGenome& sg) {
     g.vascular_radius_threshold  = sg.has_gene("vascular_radius_threshold")
                                        ? sg.get("vascular_radius_threshold")
                                        : 0.01f;
+
+    // Compartmented vascular model (2026-04-19) — graceful defaults for old genomes
+    g.base_radial_permeability_sugar = sg.has_gene("base_radial_permeability_sugar")
+                                           ? sg.get("base_radial_permeability_sugar") : 1.0f;
+    g.radial_floor_fraction_sugar    = sg.has_gene("radial_floor_fraction_sugar")
+                                           ? sg.get("radial_floor_fraction_sugar") : 0.1f;
+    g.radial_half_radius_sugar       = sg.has_gene("radial_half_radius_sugar")
+                                           ? sg.get("radial_half_radius_sugar") : 0.3f;
+    g.base_radial_permeability_water = sg.has_gene("base_radial_permeability_water")
+                                           ? sg.get("base_radial_permeability_water") : 1.0f;
+    g.radial_floor_fraction_water    = sg.has_gene("radial_floor_fraction_water")
+                                           ? sg.get("radial_floor_fraction_water") : 0.1f;
+    g.radial_half_radius_water       = sg.has_gene("radial_half_radius_water")
+                                           ? sg.get("radial_half_radius_water") : 0.3f;
+    g.phloem_fraction                = sg.has_gene("phloem_fraction")
+                                           ? sg.get("phloem_fraction") : 0.05f;
+    g.xylem_fraction                 = sg.has_gene("xylem_fraction")
+                                           ? sg.get("xylem_fraction") : 0.2f;
+    g.leaf_reserve_fraction_sugar    = sg.has_gene("leaf_reserve_fraction_sugar")
+                                           ? sg.get("leaf_reserve_fraction_sugar") : 0.3f;
+    g.meristem_sink_target_fraction  = sg.has_gene("meristem_sink_target_fraction")
+                                           ? sg.get("meristem_sink_target_fraction") : 0.05f;
+    g.leaf_turgor_target_fraction    = sg.has_gene("leaf_turgor_target_fraction")
+                                           ? sg.get("leaf_turgor_target_fraction") : 0.7f;
 
     return g;
 }
