@@ -85,8 +85,15 @@ void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParam
 
 void ApicalNode::check_spawn(Plant& plant, const Genome& g) {
     float dist_from_parent = glm::length(offset);
+    // Minimum internode length 2 × tip_offset (= 2mm at default genome).
+    // After each spawn the SAM resets to ~1mm (tip_offset), so requiring
+    // 2mm before the next spawn means every spawned internode has
+    // geometric length ≥ 1mm of actual accumulated growth plus the
+    // 1mm tip, giving conduit pipes a minimum physical size that
+    // matters for transport throughput.  Was g.tip_offset (1mm), which
+    // let the SAM spawn internodes with barely any grown length.
     if (parent && ticks_since_last_node >= g.shoot_plastochron
-        && dist_from_parent >= g.tip_offset
+        && dist_from_parent >= 2.0f * g.tip_offset
         && starvation_ticks == 0) {
         spawn_internode(plant, g);
     }
@@ -205,7 +212,16 @@ void ApicalNode::spawn_internode(Plant& plant, const Genome& g) {
     parent->replace_child(this, internode);
     internode->position = internode->parent->position + internode->offset;
 
-    offset = growth_dir * g.tip_offset;
+    // After spawning, reset the SAM to a 1mm tip ahead of the new internode.
+    // Safety floor: if growth_dir is zero (happens if elongate returned early
+    // due to low sugar/cytokinin and the previous spawn zeroed growth_dir),
+    // fall back to "up" so the SAM is never at length 0.  Guarantees SAM
+    // offset >= tip_offset = 1mm at all times.
+    glm::vec3 dir = growth_dir;
+    if (glm::length(dir) < 1e-4f) {
+        dir = glm::vec3(0.0f, 1.0f, 0.0f);
+    }
+    offset = dir * g.tip_offset;
     internode->add_child(this);
     position = internode->position + offset;
 
