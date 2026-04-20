@@ -66,9 +66,6 @@ struct WorldParams {
     float max_phloem_velocity  = 10.0f;    // dm/tick (= 1 m/hr) — physical upper bound on phloem sap velocity.
                                            //   Caps: velocity = min(dp × conductance_per_pressure, max_phloem_velocity).
                                            //   Real phloem: 0.3–1.5 m/hr; 10 dm/tick is the high end.
-    uint32_t phloem_iterations = 3;        // UNUSED since demand-driven phloem rewrite (2026-04-19).
-                                           //   Kept for backward-compatible serialization; the new
-                                           //   phloem_resolve is single-pass and does not iterate.
     float phloem_reference_radius = 0.015f;// dm — reference radius (superseded by velocity-capped model,
                                            //   retained for reference; not used in phloem_resolve).
     float phloem_ring_thickness   = 0.005f;// dm (= 0.5 mm) — thickness of the active conducting layer.
@@ -153,7 +150,6 @@ inline WorldParams default_world_params() {
         .ground_support_height   = 0.5f,
         .droop_rate              = 0.01f,
         .max_phloem_velocity     = 10.0f,
-        .phloem_iterations       = 3,
         .phloem_reference_radius = 0.015f,
         .phloem_ring_thickness   = 0.005f,
         .leaf_thickness          = 0.003f,
