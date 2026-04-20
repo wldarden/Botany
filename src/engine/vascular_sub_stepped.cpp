@@ -183,8 +183,32 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*wor
             b.water_supply = std::max(0.0f, water - water_reserve);
             break;
         }
-        // STEM gets sugar via radial flow from its own phloem.
-        // No direct inject/extract budget for stems.
+        case NodeType::STEM: {
+            // The seed is a STEM with no parent.  It's initialized with
+            // g.seed_sugar (48 g by default) — the heterotrophic reserve
+            // the seedling lives on before leaves produce enough to feed
+            // the plant themselves.  Real seeds actively mobilize these
+            // reserves into the phloem (cotyledon → phloem transport,
+            // driven by enzymes and active sucrose loaders), not just
+            // slowly leak via diffusion.
+            //
+            // Without explicit mobilization, the seed's 48 g sits in
+            // local_env and dribbles into phloem only via passive radial
+            // flow (capacity ~0.3 mg for a 1.7cm-radius seed stem), which
+            // massively throttles how fast the plant can access its
+            // reserves.  Observed: after 484 ticks a plant had still only
+            // consumed ~2.5 g — most of the sugar trapped in seed.local.
+            //
+            // Fix: seed actively loads sugar into its own phloem, above
+            // a reserve fraction, analogous to how roots pump water (root
+            // pressure) and leaves pump sugar.  Non-seed stems get no
+            // sugar_supply — they're conduits, not sugar sources.
+            if (!n.parent) {
+                const float reserve = g.leaf_reserve_fraction_sugar * cap_s;
+                b.sugar_supply = std::max(0.0f, sugar - reserve);
+            }
+            break;
+        }
         default: break;
     }
     return b;
@@ -193,9 +217,15 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*wor
 void inject_step(Node& source, const VascularBudget& b, uint32_t N, const Genome& /*g*/) {
     if (N == 0) return;
 
-    // Sugar injection: leaves push into parent phloem (active pump).
+    // Sugar injection: leaves push into parent phloem (active pump).  For
+    // the seed (which has its own phloem), load its own phloem directly
+    // so the seedling's reserve mobilization feeds both shoot and root
+    // chains via Jacobi.  Same pattern as root nodes pumping water into
+    // their own xylem.
     if (b.sugar_supply > 0.0f) {
-        if (auto* target_pool = source.nearest_phloem_upstream()) {
+        TransportPool* target_pool = source.phloem();
+        if (!target_pool) target_pool = source.nearest_phloem_upstream();
+        if (target_pool) {
             const float slice  = b.sugar_supply / static_cast<float>(N);
             const float actual = std::min(slice, source.local().chemical(ChemicalID::Sugar));
             source.local().chemical(ChemicalID::Sugar) -= actual;
