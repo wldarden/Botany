@@ -54,8 +54,8 @@ void ApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldParams& world) {
     float max_cost = g.growth_rate * world.sugar_cost_meristem_growth;
     float growth_gf = meristem_helpers::growth_fraction(
-        chemical(ChemicalID::Sugar), max_cost,
-        chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
+        local().chemical(ChemicalID::Sugar), max_cost,
+        local().chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
 
     float base = g.apical_auxin_baseline;
     float local_light = estimate_local_light();
@@ -63,11 +63,11 @@ void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldPar
     // Metabolic gating: sugar and water both required for full auxin synthesis.
     // Floor 0.1 matches conjugate-pool buffering — zero metabolism still yields ~1%.
     float mf = metabolic_factor(
-        chemical(ChemicalID::Sugar), g.auxin_sugar_half_saturation, 0.1f,
-        chemical(ChemicalID::Water), g.auxin_water_half_saturation, 0.1f);
+        local().chemical(ChemicalID::Sugar), g.auxin_sugar_half_saturation, 0.1f,
+        local().chemical(ChemicalID::Water), g.auxin_water_half_saturation, 0.1f);
     float modulated_baseline = base * light_factor * mf;
     float produced = modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
-    chemical(ChemicalID::Auxin) += produced;
+    local().chemical(ChemicalID::Auxin) += produced;
     tick_auxin_produced += produced;
 }
 
@@ -77,7 +77,7 @@ void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParam
     float light = estimate_local_light() * world.light_level;
     float production = light * world.sugar_maintenance_meristem * world.sugar_meristem_photosynthesis;
     if (production > 0.0f) {
-        chemical(ChemicalID::Sugar) += production;
+        local().chemical(ChemicalID::Sugar) += production;
         plant.add_sugar_produced(production);
 
     }
@@ -120,7 +120,7 @@ void ApicalNode::roll_direction(const Genome& g, const WorldParams& world) {
     // Stress hormone boosts the correction.
     {
         float base_pull = g.meristem_gravitropism_rate;
-        float stress_pull = chemical(ChemicalID::Stress) * g.stress_gravitropism_boost;
+        float stress_pull = local().chemical(ChemicalID::Stress) * g.stress_gravitropism_boost;
         float blend = std::min(base_pull + stress_pull, 0.5f);
         if (blend > 1e-6f) {
             growth_dir = glm::normalize(glm::mix(growth_dir, set_point_dir, blend));
@@ -140,10 +140,10 @@ void ApicalNode::roll_direction(const Genome& g, const WorldParams& world) {
 
 void ApicalNode::elongate(Plant& plant, const Genome& g, const WorldParams& world) {
     float max_cost = g.growth_rate * world.sugar_cost_meristem_growth;
-    float gf = growth_fraction(chemical(ChemicalID::Sugar), max_cost,
-                               chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
+    float gf = growth_fraction(local().chemical(ChemicalID::Sugar), max_cost,
+                               local().chemical(ChemicalID::Cytokinin), g.cytokinin_growth_threshold);
     if (gf < 1e-6f) return;
-    float water_gf = turgor_fraction(chemical(ChemicalID::Water), water_cap(*this, g));
+    float water_gf = turgor_fraction(local().chemical(ChemicalID::Water), water_cap(*this, g));
     if (water_gf < 1e-6f) return;
     gf *= water_gf;
 
@@ -191,9 +191,9 @@ void ApicalNode::elongate(Plant& plant, const Genome& g, const WorldParams& worl
     }
 
     float auxin_boost = meristem_helpers::auxin_growth_factor(
-        chemical(ChemicalID::Auxin), g.apical_auxin_max_boost, g.apical_auxin_half_saturation);
+        local().chemical(ChemicalID::Auxin), g.apical_auxin_max_boost, g.apical_auxin_half_saturation);
     float actual_rate = g.growth_rate * gf * auxin_boost;
-    chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_meristem_growth;
+    local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_meristem_growth;
     offset += growth_dir * actual_rate;
 }
 
@@ -240,9 +240,9 @@ void ApicalNode::spawn_leaf(Plant& plant, Node* internode, const Genome& g, cons
         leaf->as_leaf()->facing = lateral_offset / len;
     }
     // Meristem gives the new leaf some sugar to bootstrap it
-    float gift = std::min(chemical(ChemicalID::Sugar) * 0.1f, 0.5f);
-    chemical(ChemicalID::Sugar) -= gift;
-    leaf->chemical(ChemicalID::Sugar) = gift;
+    float gift = std::min(local().chemical(ChemicalID::Sugar) * 0.1f, 0.5f);
+    local().chemical(ChemicalID::Sugar) -= gift;
+    leaf->local().chemical(ChemicalID::Sugar) = gift;
     internode->add_child(leaf);
     leaf->position = internode->position + leaf->offset;
 }
@@ -253,7 +253,7 @@ void ApicalNode::compute_growth_reserve(const Genome& g, const WorldParams& worl
 
     // Mirror elongate(): max sugar cost at full growth rate.
     float max_cost = g.growth_rate * world.sugar_cost_meristem_growth;
-    sugar_reserved_for_growth = std::min(max_cost, chemical(ChemicalID::Sugar));
+    sugar_reserved_for_growth = std::min(max_cost, local().chemical(ChemicalID::Sugar));
 }
 
 float ApicalNode::maintenance_cost(const WorldParams& world) const {
@@ -262,22 +262,22 @@ float ApicalNode::maintenance_cost(const WorldParams& world) const {
 
 bool ApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
     // Low auxin removes inhibition (apical dominance weakened)
-    float stem_auxin = parent ? parent->chemical(ChemicalID::Auxin) : chemical(ChemicalID::Auxin);
+    float stem_auxin = parent ? parent->local().chemical(ChemicalID::Auxin) : local().chemical(ChemicalID::Auxin);
     if (stem_auxin >= g.auxin_threshold) return false;
 
     // Cytokinin from roots (xylem-delivered) signals "the root system is healthy".
     // Read own cytokinin — the xylem deposits CK directly in the SA sink, not in
     // the STEM conduit above. Parent STEM CK is always ~0 (pass-through only).
-    if (chemical(ChemicalID::Cytokinin) < g.cytokinin_threshold) return false;
+    if (local().chemical(ChemicalID::Cytokinin) < g.cytokinin_threshold) return false;
 
-    if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
+    if (local().chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 
     return true;
 }
 
 void ApicalNode::activate(const Genome& g, const WorldParams& world) {
     active = true;
-    chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
+    local().chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
     radius = g.initial_radius;
 
     // Set growth direction from branch offset

@@ -57,10 +57,10 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // Metabolic gating: sugar + water each contribute an MM factor; floor 0.1
     // matches SA convention (auxin conjugate pools buffer short-term stress).
     float mf_auxin = metabolic_factor(
-        chemical(ChemicalID::Sugar), g.auxin_sugar_half_saturation, 0.1f,
-        chemical(ChemicalID::Water), g.auxin_water_half_saturation, 0.1f);
+        local().chemical(ChemicalID::Sugar), g.auxin_sugar_half_saturation, 0.1f,
+        local().chemical(ChemicalID::Water), g.auxin_water_half_saturation, 0.1f);
     float produced_auxin = g.root_tip_auxin_production_rate * mf_auxin;
-    chemical(ChemicalID::Auxin) += produced_auxin;
+    local().chemical(ChemicalID::Auxin) += produced_auxin;
     tick_auxin_produced += produced_auxin;
 
     // Cytokinin: floor 0.05 (smaller than auxin's 0.1) — CK has less
@@ -68,10 +68,10 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     // This is the primary root-to-shoot feedback brake: low root sugar → low
     // CK → less CK delivered to shoot via xylem → fewer SA activations.
     float mf_cyto = metabolic_factor(
-        chemical(ChemicalID::Sugar), g.cytokinin_sugar_half_saturation, 0.05f,
-        chemical(ChemicalID::Water), g.cytokinin_water_half_saturation, 0.05f);
-    float cyto_produced = g.root_cytokinin_production_rate * chemical(ChemicalID::Auxin) * mf_cyto;
-    chemical(ChemicalID::Cytokinin) += cyto_produced;
+        local().chemical(ChemicalID::Sugar), g.cytokinin_sugar_half_saturation, 0.05f,
+        local().chemical(ChemicalID::Water), g.cytokinin_water_half_saturation, 0.05f);
+    float cyto_produced = g.root_cytokinin_production_rate * local().chemical(ChemicalID::Auxin) * mf_cyto;
+    local().chemical(ChemicalID::Cytokinin) += cyto_produced;
     tick_cytokinin_produced += cyto_produced;
 
     ticks_since_last_node++;
@@ -86,10 +86,10 @@ void RootApicalNode::absorb_water(const Genome& g, const WorldParams& world) {
     constexpr float root_hair_multiplier = 20.0f;
     float surface_area = 2.0f * 3.14159f * radius * radius * root_hair_multiplier;
     float cap = water_cap(*this, g);
-    float fill_fraction = (cap > 1e-6f) ? chemical(ChemicalID::Water) / cap : 1.0f;
+    float fill_fraction = (cap > 1e-6f) ? local().chemical(ChemicalID::Water) / cap : 1.0f;
     float gradient = std::max(0.0f, world.soil_moisture - fill_fraction);
     float absorbed = g.water_absorption_rate * surface_area * gradient;
-    chemical(ChemicalID::Water) = std::min(chemical(ChemicalID::Water) + absorbed, cap);
+    local().chemical(ChemicalID::Water) = std::min(local().chemical(ChemicalID::Water) + absorbed, cap);
 }
 
 void RootApicalNode::check_spawn(Plant& plant, const Genome& g) {
@@ -118,16 +118,16 @@ void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
     // Root elongation is sugar-gated only — real root tips maintain their own
     // auxin maximum via PIN recycling, so we don't gate on exogenous auxin.
-    float gf = sugar_growth_fraction(chemical(ChemicalID::Sugar), max_cost);
+    float gf = sugar_growth_fraction(local().chemical(ChemicalID::Sugar), max_cost);
     if (gf < 1e-6f) return;
-    float water_gf = turgor_fraction(chemical(ChemicalID::Water), water_cap(*this, g));
+    float water_gf = turgor_fraction(local().chemical(ChemicalID::Water), water_cap(*this, g));
     if (water_gf < 1e-6f) return;
     gf *= water_gf;
 
     if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
 
     float actual_rate = g.root_growth_rate * gf;
-    chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
+    local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
     offset += growth_dir * actual_rate;
 }
 
@@ -170,7 +170,7 @@ void RootApicalNode::compute_growth_reserve(const Genome& g, const WorldParams& 
 
     // Mirror elongate(): max sugar cost at full growth rate.
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
-    sugar_reserved_for_growth = std::min(max_cost, chemical(ChemicalID::Sugar));
+    sugar_reserved_for_growth = std::min(max_cost, local().chemical(ChemicalID::Sugar));
 }
 
 float RootApicalNode::maintenance_cost(const WorldParams& world) const {
@@ -181,18 +181,18 @@ bool RootApicalNode::can_activate(const Genome& g, const WorldParams& world) con
     // Auxin from the shoot promotes root activation — "the shoot wants more roots".
     // Existing cytokinin (produced by already-active roots) inhibits activation
     // of additional roots, preventing runaway branching.
-    if (chemical(ChemicalID::Auxin) < g.root_auxin_activation_threshold) return false;
+    if (local().chemical(ChemicalID::Auxin) < g.root_auxin_activation_threshold) return false;
 
-    if (chemical(ChemicalID::Cytokinin) > g.root_cytokinin_inhibition_threshold) return false;
+    if (local().chemical(ChemicalID::Cytokinin) > g.root_cytokinin_inhibition_threshold) return false;
 
-    if (chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
+    if (local().chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 
     return true;
 }
 
 void RootApicalNode::activate(const Genome& g, const WorldParams& world) {
     active = true;
-    chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
+    local().chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
     radius = g.root_initial_radius;
 }
 
