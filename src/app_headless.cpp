@@ -11,15 +11,30 @@ using namespace botany;
 int main(int argc, char* argv[]) {
     int num_ticks = 200;
     std::string output_path = "recording.bin";
+    std::string debug_log_path;  // optional; empty = no debug log
 
-    if (argc >= 2) num_ticks = std::atoi(argv[1]);
-    if (argc >= 3) output_path = argv[2];
+    for (int a = 1; a < argc; ++a) {
+        std::string arg = argv[a];
+        if (arg == "--debug-log" && a + 1 < argc) {
+            debug_log_path = argv[++a];
+        } else if (num_ticks == 200 && arg[0] != '-') {
+            num_ticks = std::atoi(arg.c_str());
+        } else if (output_path == "recording.bin" && arg[0] != '-') {
+            output_path = arg;
+        }
+    }
 
     std::cout << "Running " << num_ticks << " ticks, saving to " << output_path << std::endl;
+    if (!debug_log_path.empty()) {
+        std::cout << "Debug log: " << debug_log_path << std::endl;
+    }
 
     Engine engine;
     Genome g = default_genome();
     engine.create_plant(g, glm::vec3(0.0f));
+    if (!debug_log_path.empty()) {
+        engine.debug_log().open(debug_log_path);
+    }
 
     std::ofstream file(output_path, std::ios::binary);
     if (!file) {

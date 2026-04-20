@@ -4,7 +4,10 @@
 #include "engine/world_params.h"
 #include "engine/node/node.h"
 #include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
 #include "engine/chemical/chemical.h"
+#include "engine/vascular_sub_stepped.h"
 #include <iomanip>
 #include <filesystem>
 #include <glm/geometric.hpp>
@@ -34,7 +37,13 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
               << "auxin_produced,cytokinin_produced,"
               << "light_exposure,leaf_size,angle_eff,senescence,"
               << "starvation_ticks,pos_x,pos_y,pos_z,radius,length,"
-              << "total_mass,stress\n";
+              << "total_mass,stress,"
+              // Compartmented vascular diagnostics (2026-04-20):
+              << "water,water_cap,"
+              << "phloem_sugar,phloem_cap,"
+              << "xylem_water,xylem_cytokinin,xylem_cap,"
+              << "radial_perm_sugar,radial_perm_water,"
+              << "active,is_primary\n";
         header_written_ = true;
     }
 
@@ -79,6 +88,31 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
 
         int32_t parent_id = node.parent ? static_cast<int32_t>(node.parent->id) : -1;
 
+        // Compartmented vascular: phloem/xylem pool contents and capacities.
+        // Columns are 0 when the node doesn't own the pool (leaves, meristems).
+        const float water_loc       = node.local().chemical(ChemicalID::Water);
+        const float water_cap_val   = water_cap(node, g);
+        const auto* phl             = node.phloem();
+        const auto* xyl             = node.xylem();
+        const float phloem_sugar    = phl ? phl->chemical(ChemicalID::Sugar) : 0.0f;
+        const float phloem_cap_val  = phl ? phloem_capacity(node, g)         : 0.0f;
+        const float xylem_water     = xyl ? xyl->chemical(ChemicalID::Water)     : 0.0f;
+        const float xylem_cyto      = xyl ? xyl->chemical(ChemicalID::Cytokinin) : 0.0f;
+        const float xylem_cap_val   = xyl ? xylem_capacity(node, g)          : 0.0f;
+        const float perm_sugar      = radial_permeability_sugar(node.radius, g);
+        const float perm_water      = radial_permeability_water(node.radius, g);
+
+        // Meristem activation state — 0 if not a meristem.
+        int active_flag = 0;
+        int primary_flag = 0;
+        if (const auto* sa = node.as_apical()) {
+            active_flag  = sa->active ? 1 : 0;
+            primary_flag = sa->is_primary ? 1 : 0;
+        } else if (const auto* ra = node.as_root_apical()) {
+            active_flag  = ra->active ? 1 : 0;
+            primary_flag = ra->is_primary ? 1 : 0;
+        }
+
         file_ << tick << "," << node.id << "," << parent_id << ","
               << type_str << "," << node.age << "," << node.children.size() << ","
               << std::fixed << std::setprecision(6)
@@ -95,7 +129,12 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
               << node.starvation_ticks << ","
               << node.position.x << "," << node.position.y << "," << node.position.z << ","
               << node.radius << "," << glm::length(node.offset) << ","
-              << node.total_mass << "," << node.stress << "\n";
+              << node.total_mass << "," << node.stress << ","
+              << water_loc << "," << water_cap_val << ","
+              << phloem_sugar << "," << phloem_cap_val << ","
+              << xylem_water << "," << xylem_cyto << "," << xylem_cap_val << ","
+              << perm_sugar << "," << perm_water << ","
+              << active_flag << "," << primary_flag << "\n";
     });
 }
 
