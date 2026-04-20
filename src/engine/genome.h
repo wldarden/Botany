@@ -209,6 +209,14 @@ struct Genome {
                                             // of sugar_cap per tick
     float leaf_turgor_target_fraction;      // leaves refill to this fraction of
                                             // water_cap via xylem pull
+    float root_water_reserve_fraction;      // roots keep this fraction of their
+                                            // local water before actively pumping
+                                            // surplus into xylem.  The active pump
+                                            // models root pressure — the osmotic
+                                            // mechanism that pushes xylem sap
+                                            // upward in young/small-leaf plants
+                                            // when transpiration pull is weak.
+                                            // 0.3 matches the leaf sugar reserve.
 };
 
 inline Genome default_genome() {
@@ -384,6 +392,9 @@ inline Genome default_genome() {
         .leaf_reserve_fraction_sugar    = 0.3f,   // matches existing phloem_reserve_fraction value
         .meristem_sink_target_fraction  = 0.05f,  // matches existing meristem_sink_fraction
         .leaf_turgor_target_fraction    = 0.7f,   // leaves aim to fill to 70% of water_cap
+        .root_water_reserve_fraction    = 0.3f,   // roots keep 30% of water_cap locally
+                                                  // before pumping surplus into xylem
+                                                  // (matches leaf_reserve_fraction_sugar).
     };
 }
 

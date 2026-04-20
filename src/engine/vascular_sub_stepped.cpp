@@ -79,10 +79,13 @@ void vascular_sub_stepped(Plant& plant, const Genome& g, const WorldParams& worl
     // Extract runs last so sinks (meristems, leaves) see the post-Jacobi,
     // post-radial conduit state when pulling their demand.
     for (uint32_t iter = 0; iter < N; ++iter) {
-        // Step 1: Inject at sources (leaves for sugar, root apicals for cytokinin).
+        // Step 1: Inject at sources (leaves for sugar, roots for water via
+        // root pressure, root apicals for cytokinin).
         for (size_t i = 0; i < flat.all.size(); ++i) {
             const VascularBudget& b = budgets[i];
-            if (b.sugar_supply > 0.0f || b.cytokinin_supply > 0.0f) {
+            if (b.sugar_supply > 0.0f
+                || b.water_supply > 0.0f
+                || b.cytokinin_supply > 0.0f) {
                 inject_step(*flat.all[i], b, N, g);
             }
         }
@@ -142,6 +145,13 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*wor
                 const float turgor_target = g.leaf_turgor_target_fraction * cap_w;
                 b.water_demand = std::max(0.0f, turgor_target - water);
             }
+            // Root pressure: root apicals absorb water from soil, keep a local
+            // reserve, and actively pump surplus into the nearest upstream
+            // xylem.  This models osmotic root pressure — the main mechanism
+            // driving xylem flow upward in young plants before they have
+            // enough leaves to generate transpiration pull.
+            const float water_reserve = g.root_water_reserve_fraction * cap_w;
+            b.water_supply = std::max(0.0f, water - water_reserve);
             // Root apicals produce cytokinin to signal the rest of the plant —
             // the cytokinin's job is to travel up xylem to the shoot, not to
             // accumulate locally.  Inject all of it into parent xylem.
@@ -161,8 +171,20 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*wor
             b.cytokinin_supply = n.local().chemical(ChemicalID::Cytokinin);
             break;
         }
-        // STEM and ROOT get sugar via radial flow from their own phloem.
-        // No direct inject/extract budget for them.
+        case NodeType::ROOT: {
+            // Established root nodes also generate root pressure: they absorb
+            // water from soil (via RootNode::absorb_water → local_env) and
+            // actively load surplus into their own xylem.  Unlike root apicals
+            // which inject into their parent's xylem (they have no xylem of
+            // their own), root nodes load their own xylem directly — this is
+            // handled in inject_step by checking self.xylem() before falling
+            // back to walk-up.
+            const float water_reserve = g.root_water_reserve_fraction * cap_w;
+            b.water_supply = std::max(0.0f, water - water_reserve);
+            break;
+        }
+        // STEM gets sugar via radial flow from its own phloem.
+        // No direct inject/extract budget for stems.
         default: break;
     }
     return b;
@@ -188,6 +210,23 @@ void inject_step(Node& source, const VascularBudget& b, uint32_t N, const Genome
             const float actual = std::min(slice, source.local().chemical(ChemicalID::Cytokinin));
             source.local().chemical(ChemicalID::Cytokinin) -= actual;
             target_pool->chemical(ChemicalID::Cytokinin)   += actual;
+        }
+    }
+
+    // Water injection (root pressure): roots and root apicals actively pump
+    // water from local_env into xylem.  Root nodes load their own xylem;
+    // root apicals (no xylem of their own) fall back to walk-up parent's
+    // xylem.  This creates positive pressure at the bottom of the xylem
+    // stream, pushing water upward through Jacobi even when leaves aren't
+    // transpiring enough to generate cohesion-tension pull from above.
+    if (b.water_supply > 0.0f) {
+        TransportPool* target_pool = source.xylem();
+        if (!target_pool) target_pool = source.nearest_xylem_upstream();
+        if (target_pool) {
+            const float slice  = b.water_supply / static_cast<float>(N);
+            const float actual = std::min(slice, source.local().chemical(ChemicalID::Water));
+            source.local().chemical(ChemicalID::Water) -= actual;
+            target_pool->chemical(ChemicalID::Water)   += actual;
         }
     }
 }

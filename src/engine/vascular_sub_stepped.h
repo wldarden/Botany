@@ -13,6 +13,9 @@ struct WorldParams;
 struct VascularBudget {
     float sugar_supply     = 0.0f;  // leaf: above reserve; 0 otherwise
     float sugar_demand     = 0.0f;  // active meristem: to fill toward sink_target
+    float water_supply     = 0.0f;  // root / root apical: active water loading into xylem
+                                    // (models osmotic root pressure — the mechanism that
+                                    // pushes xylem sap up in young plants without leaves)
     float water_demand     = 0.0f;  // leaf/meristem: to fill toward turgor_target
     float cytokinin_supply = 0.0f;  // root apical: produced this tick
 };
