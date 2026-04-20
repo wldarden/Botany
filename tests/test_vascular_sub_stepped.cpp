@@ -4,6 +4,8 @@
 #include "engine/plant.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
+#include "engine/node/stem_node.h"
+#include "engine/node/tissues/leaf.h"
 
 using namespace botany;
 
@@ -40,4 +42,20 @@ TEST_CASE("radial_permeability asymptotes to floor at large r", "[vascular_sub_s
     float perm = radial_permeability_sugar(100.0f, g);
     float expected_floor = g.base_radial_permeability_sugar * g.radial_floor_fraction_sugar;
     REQUIRE(perm == Catch::Approx(expected_floor).margin(0.01f));
+}
+
+TEST_CASE("phloem_capacity scales with r² × length × phloem_fraction", "[vascular_sub_stepped][capacity]") {
+    Genome g = default_genome();
+    StemNode stem(1, glm::vec3(0), 0.1f);  // radius 0.1 dm
+    // Give the stem a length via offset magnitude.
+    stem.offset = glm::vec3(0.0f, 1.0f, 0.0f);  // length = 1 dm
+
+    float expected = 3.14159f * 0.1f * 0.1f * 1.0f * g.phloem_fraction;
+    REQUIRE(phloem_capacity(stem, g) == Catch::Approx(expected).margin(1e-4f));
+}
+
+TEST_CASE("phloem_capacity returns zero for a leaf (no phloem)", "[vascular_sub_stepped][capacity]") {
+    Genome g = default_genome();
+    LeafNode leaf(1, glm::vec3(0), 0.01f);
+    REQUIRE(phloem_capacity(leaf, g) == 0.0f);
 }

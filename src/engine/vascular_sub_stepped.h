@@ -3,6 +3,7 @@
 namespace botany {
 
 class Plant;
+class Node;
 struct Genome;
 struct WorldParams;
 
@@ -25,5 +26,10 @@ void vascular_sub_stepped(Plant& plant, const Genome& g, const WorldParams& worl
 // See spec section 6.
 float radial_permeability_sugar(float radius, const Genome& g);
 float radial_permeability_water(float radius, const Genome& g);
+
+// Phloem/xylem capacity for a stem or root node: π · r² · length · fraction.
+// Returns 0 for nodes without the matching pool (leaves, meristems).
+float phloem_capacity(const Node& n, const Genome& g);
+float xylem_capacity(const Node& n, const Genome& g);
 
 } // namespace botany
