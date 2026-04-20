@@ -27,13 +27,13 @@ Node::Node(uint32_t id, NodeType type, glm::vec3 position, float radius)
     , age(0)
 {
     // Initialize all chemical map entries to zero
-    chemicals[ChemicalID::Auxin] = 0.0f;
-    chemicals[ChemicalID::Cytokinin] = 0.0f;
-    chemicals[ChemicalID::Gibberellin] = 0.0f;
-    chemicals[ChemicalID::Sugar] = 0.0f;
-    chemicals[ChemicalID::Ethylene] = 0.0f;
-    chemicals[ChemicalID::Stress] = 0.0f;
-    chemicals[ChemicalID::Water] = 0.0f;
+    chemical(ChemicalID::Auxin) = 0.0f;
+    chemical(ChemicalID::Cytokinin) = 0.0f;
+    chemical(ChemicalID::Gibberellin) = 0.0f;
+    chemical(ChemicalID::Sugar) = 0.0f;
+    chemical(ChemicalID::Ethylene) = 0.0f;
+    chemical(ChemicalID::Stress) = 0.0f;
+    chemical(ChemicalID::Water) = 0.0f;
 }
 
 void Node::add_child(Node* child) {

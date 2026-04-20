@@ -5,14 +5,7 @@
 #include <vector>
 #include <glm/vec3.hpp>
 #include "engine/chemical/chemical.h"
-
-// Hash for ChemicalID so it works as unordered_map key
-template<>
-struct std::hash<botany::ChemicalID> {
-    std::size_t operator()(botany::ChemicalID id) const noexcept {
-        return static_cast<std::size_t>(id);
-    }
-};
+#include "engine/compartments.h"
 
 namespace botany {
 
@@ -74,14 +67,19 @@ public:
     // Cleared to 0 at the end of each tick.
     float sugar_reserved_for_growth = 0.0f;
 
-    // Chemical storage — map-based, sole storage for all chemical values.
-    std::unordered_map<ChemicalID, float> chemicals;
+    // Local compartment — this node's parenchyma chemicals (sugar, water,
+    // auxin, cytokinin, gibberellin, stress — anything NOT in the phloem or
+    // xylem transport stream).  All chemical access goes through local().
+    LocalEnv local_env;
 
-    float& chemical(ChemicalID id) { return chemicals[id]; }
-    float chemical(ChemicalID id) const {
-        auto it = chemicals.find(id);
-        return it != chemicals.end() ? it->second : 0.0f;
-    }
+    LocalEnv& local() { return local_env; }
+    const LocalEnv& local() const { return local_env; }
+
+    // Legacy accessor — forwards to local().chemical(id).  Retained for the
+    // duration of Phase B; all call sites migrate to node.local().chemical(id)
+    // in Task 4.  Remove after sweep is complete.
+    float& chemical(ChemicalID id) { return local_env.chemical(id); }
+    float chemical(ChemicalID id) const { return local_env.chemical(id); }
 
     // Transport received buffer — chemicals received from parent's Phase 2
     // this tick. NOT visible to this node's own transport (anti-teleportation).
