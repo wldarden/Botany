@@ -28,7 +28,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 - **genome.h** - `Genome` struct with all tunable parameters + `default_genome()`
 - **node/** - Node subfolder:
   - `node.h/cpp` — `Node` base class (position, radius, parent/children, chemicals) with non-virtual `tick()` and virtual `update_tissue()`. `NodeType` enum: `STEM, ROOT, LEAF, APICAL, ROOT_APICAL`. Downcasting via `as_stem()`, `as_root()`, `as_leaf()`, `as_apical()`, `as_root_apical()`. `is_meristem()` returns true for APICAL and ROOT_APICAL.
-  - `stem_node.h/cpp` — `StemNode` (secondary thickening via structural_flow_bias, intercalary elongation)
+  - `stem_node.h/cpp` — `StemNode` (secondary thickening via auxin_flow_bias, intercalary elongation)
   - `root_node.h/cpp` — `RootNode` (same with root params, gradient-based water absorption)
   - `tissues/leaf.h/cpp` — `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; photosynthesis gated by stomatal conductance, phototropism, expansion)
   - `tissues/apical.h/cpp` — `ApicalNode` (chain growth via self-reparenting, phyllotaxis, auxin production)
@@ -36,7 +36,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
   - `meristems/helpers.h` — shared growth helpers (`turgor_fraction`, `auxin_growth_factor`, `sugar_growth_fraction`, etc.)
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
-- **vascular.h/cpp** - `vascular_transport()` — global xylem/phloem bulk-flow pass. Moves sugar (phloem) and water+cytokinin (xylem) with conductance-first distribution weighted by `structural_flow_bias`. Runs before the DFS tree walk. `has_vasculature()` checks `structural_flow_bias >= vascular_conductance_threshold`.
+- **vascular.h/cpp** - `vascular_transport()` — global xylem/phloem bulk-flow pass. Moves sugar (phloem) and water+cytokinin (xylem) with conductance-first distribution weighted by `auxin_flow_bias`. Runs before the DFS tree walk. `has_vasculature()` returns true for stems/roots with `radius >= vascular_radius_threshold` (seed always vascular; leaves/meristems never vascular).
 - **sugar.h/cpp** - `sugar_cap()`, `transport_sugar()` helpers. Diffusion itself lives in `Node::transport_chemicals()`.
 - **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
 - **world_params.h** - `WorldParams` struct (light level, construction costs, sugar_production_rate, maintenance rates, soil_moisture 0-1) — non-genetic physical constants
@@ -46,7 +46,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 ### Node Class Hierarchy
 ```
 Node (base — position, chemicals, non-virtual tick, virtual update_tissue)
-├── StemNode   (thicken via structural_flow_bias, elongate)
+├── StemNode   (thicken via auxin_flow_bias, elongate)
 ├── RootNode   (same with root params, gradient water absorption)
 ├── LeafNode   (leaf_size, light_exposure, photosynthesize, expand, phototropism)
 ├── ApicalNode (chain growth, phyllotaxis, auxin production)
@@ -84,7 +84,7 @@ Milestone folders with design + review documents. Current vascularization plan a
 
 The plant uses a **dual transport system** matching real plant biology:
 
-1. **Vascular bulk flow** (`vascular.h/cpp`) — global pass before the DFS walk. Moves sugar (phloem), water, and cytokinin (xylem) via conductance-first bulk flow. Conduit weights = `π × r² × conductance × (1 + canalization_weight × structural_flow_bias)` — high-canalization paths carry proportionally more flow. Two O(N) walks: post-order aggregates supply/demand, pre-order distributes via iterative water-filling. Runs before the DFS tree walk.
+1. **Vascular bulk flow** (`vascular.h/cpp`) — global pass before the DFS walk. Moves sugar (phloem), water, and cytokinin (xylem) via conductance-first bulk flow. Conduit weights = `π × r² × conductance × (1 + canalization_weight × auxin_flow_bias)` — high-canalization paths carry proportionally more flow. Two O(N) walks: post-order aggregates supply/demand, pre-order distributes via iterative water-filling. Runs before the DFS tree walk.
 
 2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk. Handles auxin, gibberellin, and stress (cell-to-cell signaling) and last-mile delivery of vascular chemicals to/from leaves, meristems, and non-vascular nodes. Diffusion rates are kept low (auxin 0.05, gibberellin 0.05, stress 0.10) to keep these signals genuinely local.
 
@@ -98,7 +98,7 @@ The plant uses a **dual transport system** matching real plant biology:
 | Water | **Vascular (xylem)** + last-mile local | Root → shoot bulk flow |
 | Cytokinin | **Vascular (xylem)** + last-mile local | Carried in xylem stream; root tips → shoot |
 
-**Vasculature admission:** `has_vasculature(node, genome)` returns true when the parent's `structural_flow_bias[node] >= vascular_conductance_threshold` (0.005). The seed is always vascular (junction). Leaves, meristems, and nodes with no accumulated flux stay on local diffusion. Newly created internodes are stamped with an initial bias (~0.01) at birth so they enter the network immediately — only truly uncanalized nodes (bias = 0, never carried any auxin) stay excluded.
+**Vasculature admission:** `has_vasculature(node, genome)` returns true for stem/root nodes with `radius >= vascular_radius_threshold` (0.01 dm). The seed is always vascular (junction). Leaves and meristems never join and rely on last-mile local diffusion from the nearest vascular ancestor. Since `initial_radius` (0.015 dm) is above the threshold, newly spawned internodes qualify from birth.
 
 ### Vascular Sources and Sinks
 
@@ -153,36 +153,35 @@ Five mechanisms work together:
 
 ## Secondary Thickening (Cambium)
 
-Radial growth is driven by vascular history, not node age:
+Radial growth is driven by PIN saturation history (`auxin_flow_bias`), not node age:
 
 ```
-delta_radius = cambium_responsiveness × structural_flow_bias × sugar_gf × stress_boost
+delta_radius = cambium_responsiveness × auxin_flow_bias × sugar_gf × stress_boost
 ```
 
-- `structural_flow_bias` stored on the parent, keyed by child pointer — connections where auxin has flowed repeatedly have stronger canalization and thicker cambium
+- `auxin_flow_bias` stored on the parent, keyed by child pointer, range `[0, 1]` (see Canalization Model) — connections where auxin has flowed repeatedly have higher saturation and thicker cambium
 - `sugar_gf` = `sugar / max_cost`, capped at 1 — sugar-limited when starved
 - `stress_boost = 1 + stress × stress_thickening_boost` — mechanical load accelerates thickening
-- Early return if `structural_flow_bias < 1e-6` — zero-flux connections never thicken (monocot behavior)
+- Early return if `auxin_flow_bias < 1e-6` — zero-flux connections never thicken (monocot behavior)
 - **No age gate** — `cambium_maturation_ticks` is gone; the bias threshold is the gate
 
 The self-reinforcing loop: main axis carries most flux → highest bias → fastest thickening → widest pipe → more flow → more bias. Lateral branches with weak canalization stay thin automatically.
 
 ## Canalization Model
 
-Auxin flow through parent-child connections builds transport preference over time. Two layers of memory on the parent node, keyed by child pointer:
+Auxin flow through parent-child connections builds transport preference over time. Single-layer PIN saturation model, stored on the parent node, keyed by child pointer.
 
-**Transient bias (auxin_flow_bias)** — fast, reversible. Represents PIN protein polarization.
-- `target = auxin_flux × transient_gain`, bias chases target exponentially at `transient_rate`
-- Decays toward 0 when flux stops.
+**`auxin_flow_bias`** — represents PIN-transporter saturation on the parent→child connection, in `[0, 1]`.
+- Each tick, `saturation = flux / (child.radius² × pin_capacity_per_area)`, clamped to `[0, 1]`
+- Bias chases saturation exponentially: `flow_bias += (saturation - flow_bias) × smoothing_rate`
+- Natural decay when flux stops — no separate decay param; bias drifts back toward 0 as saturation drops to 0.
+- Persistent across ticks (not reset).
 
-**Structural bias (structural_flow_bias)** — slow, permanent. Represents built xylem/phloem.
-- Grows by `structural_growth_rate` per tick when auxin flux exceeds `structural_threshold`
-- Never decays. Capped at `structural_max`.
-- Also gates vasculature admission (`has_vasculature`) and cambial thickening rate.
+**Effect on transport:** Bias multiplies the conductance weight for each child connection. `weight = pipe_cap × (1 + canalization_weight × auxin_flow_bias)`. Redistributes flow (all chemicals, not just auxin) among siblings proportionally — does **not** amplify total flow.
 
-**Effect on transport:** Both biases multiply the conductance weight for each child connection. `weight = pipe_cap × (1 + canalization_weight × (flow_bias + structural_bias))`. This redistributes flow (all chemicals, not just auxin) among siblings proportionally — does **not** amplify total flow.
+**Effect on cambium:** Drives secondary thickening (see Secondary Thickening section).
 
-**Lifecycle:** Biases transfer on `replace_child` (chain growth preserves branch history). New children start at 0, 0. Cleaned up on `die()`.
+**Lifecycle:** Bias transfers on `replace_child` (chain growth preserves branch history). New children start at 0. Cleaned up on `die()`.
 
 ## Water Model
 
@@ -241,8 +240,8 @@ Children are ticked recursively after step 8 using a snapshot of the children li
 ## Key Design Decisions
 - **Meristems are nodes** — 2 meristem types (`ApicalNode`, `RootApicalNode`) extend `Node` directly. Real children in the tree graph, participate in chemical transport naturally. No axillary node types.
 - **Local diffusion rates are low by design** — auxin/GA/stress use low diffusion rates (0.05–0.10) so they remain cell-to-cell signals, not whole-plant gradients. Radius bottleneck handles the rest.
-- **Vascular admission is bias-gated** — `has_vasculature()` checks `structural_flow_bias >= vascular_conductance_threshold`. No age gate. New internodes stamped with initial bias at creation so they join the network immediately.
-- **Thickening is bias-driven** — `cambium_responsiveness × structural_flow_bias` replaces old fixed `thickening_rate`. Zero-flux branches never thicken.
+- **Vascular admission is radius-gated** — `has_vasculature()` returns true for stem/root nodes with `radius >= vascular_radius_threshold` (0.01 dm). No age gate. Since initial_radius (0.015 dm) is above the threshold, new internodes join the network immediately.
+- **Thickening is bias-driven** — `cambium_responsiveness × auxin_flow_bias` replaces old fixed `thickening_rate`. Zero-flux branches never thicken.
 - **Conductance-first vascular distribution** — water-filling allocation weights by `pipe_capacity × (1 + bias)`. High-canalization branches receive proportionally more flow at every tick.
 - **Flat node hierarchy** — `Node` base class with 5 direct subclasses. Each owns type-specific fields and behavior via `virtual update_tissue()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_apical()`/`as_root_apical()` — fast `static_cast` gated on `NodeType` enum, no RTTI.
 - **Root elongation is sugar-gated only** — root apical `elongate()` uses `sugar_growth_fraction()` with no auxin gate. Shoot-derived auxin affects root *activation*, not elongation.
@@ -277,7 +276,7 @@ Children are ticked recursively after step 8 using a snapshot of the children li
 - `apical_growth_auxin_multiplier` (2.0) - growth bonus: total = baseline × (1 + multiplier × growth_fraction)
 - `leaf_auxin_baseline` (0.15) - scaling constant for leaf auxin production
 - `leaf_growth_auxin_multiplier` (0.1) - fraction of leaf_auxin_baseline at max growth (10% of apical baseline)
-- `cambium_responsiveness` (0.00002 dm/hr·bias) - thickening rate per unit structural_flow_bias. Main trunk (bias ~2.0) thickens at ~0.00004 dm/hr; laterals with weak canalization thicken proportionally less.
+- `cambium_responsiveness` (0.00002 dm/hr·bias) - thickening rate per unit auxin_flow_bias (PIN saturation in [0,1]). A fully-saturated trunk edge (bias ~1.0) thickens at ~0.00002 dm/hr; laterals with lower saturation thicken proportionally less.
 - `branch_angle` (0.785 rad / 45°) - angle of shoot branches from parent stem
 - `root_branch_angle` (0.35 rad / 20°) - angle of root branches
 - `ga_production_rate` (0.5) - GA per dm leaf_size per tick from young leaves
@@ -287,13 +286,11 @@ Children are ticked recursively after step 8 using a snapshot of the children li
 - `ethylene_abscission_threshold` (0.5) - triggers leaf senescence
 - `ethylene_shade_threshold` (0.3) - light_exposure below which shade-ethylene kicks in
 - `senescence_duration` (48) - ticks from senescence to leaf drop
-- `transient_gain` (2.0) - target transient bias per unit of auxin flux
-- `transient_rate` (0.2) - exponential chase speed for transient bias (~87% in 8 hours)
-- `structural_threshold` (0.15) - minimum auxin flux per tick to grow structural bias (filters noise)
-- `structural_growth_rate` (0.005) - structural bias increment per tick above threshold (~8 days to reach 1.0)
-- `structural_max` (2.0) - cap on structural bias. At max: connection weight = 1 + 2.0 = 3×
-- `canalization_weight` (1.0) - global scaling on bias effect. 0 = canalization disabled entirely
-- `vascular_conductance_threshold` (0.005) - minimum structural_flow_bias for vascular admission. Just below the initial stamp so new internodes join immediately; zero-flux nodes stay excluded.
+- `smoothing_rate` (0.1) - exponential lerp rate for auxin_flow_bias toward current PIN saturation (~20 tick response; natural decay when flux stops)
+- `pin_capacity_per_area` (500.0 AU/(dm²·tick)) - max auxin transport per unit cross-section at full efficiency; also the denominator in `saturation = flux / (r² × pin_capacity_per_area)`
+- `pin_base_efficiency` ([0,1]) - cold-start PIN efficiency when auxin_flow_bias = 0 (constitutively active PINs)
+- `canalization_weight` (1.0) - global scaling on bias effect in transport weighting. 0 = canalization disabled entirely
+- `vascular_radius_threshold` (0.01 dm) - minimum stem/root radius for bulk vascular admission. Below `initial_radius` (0.015 dm) so all new internodes qualify from birth.
 - `water_absorption_rate` (0.5) - ml / (dm² root surface · hr) per unit soil moisture
 - `transpiration_rate` (0.04) - ml / (dm² leaf area · hr) at full light
 - `photosynthesis_water_ratio` (0.5) - ml water consumed per g sugar produced
