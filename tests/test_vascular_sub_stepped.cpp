@@ -6,6 +6,8 @@
 #include "engine/world_params.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
 
 using namespace botany;
 
@@ -58,4 +60,40 @@ TEST_CASE("phloem_capacity returns zero for a leaf (no phloem)", "[vascular_sub_
     Genome g = default_genome();
     LeafNode leaf(1, glm::vec3(0), 0.01f);
     REQUIRE(phloem_capacity(leaf, g) == 0.0f);
+}
+
+TEST_CASE("leaf budget: sugar_supply is local sugar above reserve", "[vascular_sub_stepped][budget]") {
+    Genome g = default_genome();
+    WorldParams world;
+    // Give the leaf a parent so sugar_cap uses the leaf path (not seed path).
+    StemNode parent(0, glm::vec3(0), 0.1f);
+    LeafNode leaf(1, glm::vec3(0), 0.02f);
+    leaf.parent = &parent;
+    leaf.offset = glm::vec3(0.0f, 0.1f, 0.0f);
+    leaf.leaf_size = 0.5f;  // area = 0.25 dm², cap = 0.25 * 2.0 = 0.5 g
+    // sugar_cap = 0.5, reserve = 0.3 * 0.5 = 0.15, so sugar = 1.0 → supply = 0.85
+    leaf.local().chemical(ChemicalID::Sugar) = 1.0f;
+    VascularBudget b = compute_budget(leaf, g, world);
+    REQUIRE(b.sugar_supply > 0.0f);
+    REQUIRE(b.sugar_demand == 0.0f);
+}
+
+TEST_CASE("dormant apical budget: zero demand", "[vascular_sub_stepped][budget]") {
+    Genome g = default_genome();
+    WorldParams world;
+    ApicalNode apical(1, glm::vec3(0), 0.01f);
+    apical.active = false;  // dormant
+    VascularBudget b = compute_budget(apical, g, world);
+    REQUIRE(b.sugar_demand == 0.0f);
+    REQUIRE(b.water_demand == 0.0f);
+}
+
+TEST_CASE("active apical below target has positive sugar_demand", "[vascular_sub_stepped][budget]") {
+    Genome g = default_genome();
+    WorldParams world;
+    ApicalNode apical(1, glm::vec3(0), 0.01f);
+    apical.active = true;
+    apical.local().chemical(ChemicalID::Sugar) = 0.0f;
+    VascularBudget b = compute_budget(apical, g, world);
+    REQUIRE(b.sugar_demand > 0.0f);
 }

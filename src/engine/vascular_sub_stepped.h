@@ -7,6 +7,17 @@ class Node;
 struct Genome;
 struct WorldParams;
 
+// Per-node supply/demand snapshot for one tick.  Computed once at the start
+// of vascular_sub_stepped() and then amortized across N sub-steps.
+struct VascularBudget {
+    float sugar_supply     = 0.0f;  // leaf: above reserve; 0 otherwise
+    float sugar_demand     = 0.0f;  // active meristem: to fill toward sink_target
+    float water_demand     = 0.0f;  // leaf/meristem: to fill toward turgor_target
+    float cytokinin_supply = 0.0f;  // root apical: produced this tick
+};
+
+VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& world);
+
 // Sub-stepped vascular transport.  Replaces the pairwise-Jacobi
 // vascular_transport in Phase E.  For the duration of Phase D this function
 // coexists with the old one but is not wired into Plant::tick() yet.

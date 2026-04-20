@@ -3,7 +3,11 @@
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/node/node.h"
+#include "engine/sugar.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
 #include <glm/geometric.hpp>
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -46,6 +50,49 @@ FlatNodes flatten(Plant& plant) {
 
 void vascular_sub_stepped(Plant& /*plant*/, const Genome& /*g*/, const WorldParams& /*world*/) {
     // Empty stub — per-sub-step logic is added in Tasks 10-18.
+}
+
+VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*world*/) {
+    VascularBudget b;
+    const float sugar = n.local().chemical(ChemicalID::Sugar);
+    const float water = n.local().chemical(ChemicalID::Water);
+    const float cap_s = sugar_cap(n, g);
+    const float cap_w = water_cap(n, g);
+
+    switch (n.type) {
+        case NodeType::LEAF: {
+            const float reserve = g.leaf_reserve_fraction_sugar * cap_s;
+            b.sugar_supply = std::max(0.0f, sugar - reserve);
+            const float turgor_target = g.leaf_turgor_target_fraction * cap_w;
+            b.water_demand = std::max(0.0f, turgor_target - water);
+            break;
+        }
+        case NodeType::APICAL: {
+            if (n.as_apical() && n.as_apical()->active) {
+                const float target = g.meristem_sink_target_fraction * cap_s;
+                b.sugar_demand = std::max(0.0f, target - sugar);
+                const float turgor_target = g.leaf_turgor_target_fraction * cap_w;
+                b.water_demand = std::max(0.0f, turgor_target - water);
+            }
+            break;
+        }
+        case NodeType::ROOT_APICAL: {
+            if (n.as_root_apical() && n.as_root_apical()->active) {
+                const float target = g.meristem_sink_target_fraction * cap_s;
+                b.sugar_demand = std::max(0.0f, target - sugar);
+                const float turgor_target = g.leaf_turgor_target_fraction * cap_w;
+                b.water_demand = std::max(0.0f, turgor_target - water);
+            }
+            // Root apicals produce cytokinin.  Treat all local cytokinin as
+            // surplus to inject into parent xylem.
+            b.cytokinin_supply = n.local().chemical(ChemicalID::Cytokinin);
+            break;
+        }
+        // STEM and ROOT get sugar via radial flow from their own phloem.
+        // No direct inject/extract budget for them.
+        default: break;
+    }
+    return b;
 }
 
 float radial_permeability_sugar(float radius, const Genome& g) {
