@@ -139,6 +139,7 @@ target_link_libraries(botany_evolve PRIVATE botany_engine botany_evolution botan
 # Tests
 enable_testing()
 add_executable(botany_tests
+    tests/test_compartments.cpp
     tests/test_genome.cpp
     tests/test_node.cpp
     tests/test_plant.cpp
