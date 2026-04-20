@@ -97,6 +97,12 @@ void Engine::tick() {
         }
     }
 
+    if (global_economy_log_.is_open()) {
+        for (const auto& plant : plants_) {
+            global_economy_log_.log_tick(tick_, *plant, world_params_);
+        }
+    }
+
     if (world_params_.canalization_debug_log) {
         for (const auto& plant : plants_) {
             write_canalization_log(tick_, *plant, plant->genome());

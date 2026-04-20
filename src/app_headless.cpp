@@ -11,12 +11,15 @@ using namespace botany;
 int main(int argc, char* argv[]) {
     int num_ticks = 200;
     std::string output_path = "recording.bin";
-    std::string debug_log_path;  // optional; empty = no debug log
+    std::string debug_log_path;    // optional; empty = no debug log
+    std::string economy_log_path;  // optional; empty = no global economy log
 
     for (int a = 1; a < argc; ++a) {
         std::string arg = argv[a];
         if (arg == "--debug-log" && a + 1 < argc) {
             debug_log_path = argv[++a];
+        } else if (arg == "--economy-log" && a + 1 < argc) {
+            economy_log_path = argv[++a];
         } else if (num_ticks == 200 && arg[0] != '-') {
             num_ticks = std::atoi(arg.c_str());
         } else if (output_path == "recording.bin" && arg[0] != '-') {
@@ -34,6 +37,10 @@ int main(int argc, char* argv[]) {
     engine.create_plant(g, glm::vec3(0.0f));
     if (!debug_log_path.empty()) {
         engine.debug_log().open(debug_log_path);
+    }
+    if (!economy_log_path.empty()) {
+        engine.global_economy_log().open(economy_log_path);
+        std::cout << "Global economy log: " << economy_log_path << std::endl;
     }
 
     std::ofstream file(output_path, std::ios::binary);

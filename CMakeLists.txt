@@ -78,6 +78,7 @@ add_library(botany_engine STATIC
     src/engine/sugar.cpp
     src/engine/light.cpp
     src/engine/debug_log.cpp
+    src/engine/global_economy_log.cpp
     src/engine/ethylene.cpp
     src/engine/vascular.cpp
     src/engine/vascular_sub_stepped.cpp

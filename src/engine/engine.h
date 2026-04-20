@@ -10,6 +10,7 @@
 #include "engine/world_params.h"
 #include "engine/light.h"
 #include "engine/debug_log.h"
+#include "engine/global_economy_log.h"
 #include "engine/perf_log.h"
 
 namespace botany {
@@ -36,6 +37,7 @@ public:
 
     const ShadowMapViz& shadow_map() const { return shadow_map_; }
     DebugLog& debug_log() { return debug_log_; }
+    GlobalEconomyLog& global_economy_log() { return global_economy_log_; }
     PerfLog& perf_log() { return perf_log_; }
 
 private:
@@ -44,6 +46,7 @@ private:
     WorldParams world_params_;
     ShadowMapViz shadow_map_;
     DebugLog debug_log_;
+    GlobalEconomyLog global_economy_log_;
     PerfLog perf_log_;
 };
 
