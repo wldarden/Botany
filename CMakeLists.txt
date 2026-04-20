@@ -80,6 +80,7 @@ add_library(botany_engine STATIC
     src/engine/debug_log.cpp
     src/engine/ethylene.cpp
     src/engine/vascular.cpp
+    src/engine/vascular_sub_stepped.cpp
     src/engine/engine.cpp
     src/engine/world_params.cpp
 )
@@ -139,6 +140,7 @@ target_link_libraries(botany_evolve PRIVATE botany_engine botany_evolution botan
 # Tests
 enable_testing()
 add_executable(botany_tests
+    tests/test_compartments.cpp
     tests/test_genome.cpp
     tests/test_node.cpp
     tests/test_plant.cpp
@@ -156,6 +158,7 @@ add_executable(botany_tests
     tests/test_pin_transport.cpp
     tests/test_stem_photosynthesis.cpp
     tests/test_cytokinin_transport.cpp
+    tests/test_vascular_sub_stepped.cpp
 )
 target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization botany_evolution Catch2::Catch2WithMain)
 include(CTest)

@@ -5,14 +5,7 @@
 #include <vector>
 #include <glm/vec3.hpp>
 #include "engine/chemical/chemical.h"
-
-// Hash for ChemicalID so it works as unordered_map key
-template<>
-struct std::hash<botany::ChemicalID> {
-    std::size_t operator()(botany::ChemicalID id) const noexcept {
-        return static_cast<std::size_t>(id);
-    }
-};
+#include "engine/compartments.h"
 
 namespace botany {
 
@@ -67,21 +60,13 @@ public:
     float tick_auxin_produced    = 0.0f;
     float tick_cytokinin_produced = 0.0f;
 
-    // --- Grow-before-transport reserve ---
-    // Set by compute_growth_reserve() before vascular_transport() runs each tick.
-    // Vascular phloem treats this as unavailable supply so nodes have sugar for
-    // their own growth when update_tissue() runs later in the same tick.
-    // Cleared to 0 at the end of each tick.
-    float sugar_reserved_for_growth = 0.0f;
+    // Local compartment — this node's parenchyma chemicals (sugar, water,
+    // auxin, cytokinin, gibberellin, stress — anything NOT in the phloem or
+    // xylem transport stream).  All chemical access goes through local().
+    LocalEnv local_env;
 
-    // Chemical storage — map-based, sole storage for all chemical values.
-    std::unordered_map<ChemicalID, float> chemicals;
-
-    float& chemical(ChemicalID id) { return chemicals[id]; }
-    float chemical(ChemicalID id) const {
-        auto it = chemicals.find(id);
-        return it != chemicals.end() ? it->second : 0.0f;
-    }
+    LocalEnv& local() { return local_env; }
+    const LocalEnv& local() const { return local_env; }
 
     // Transport received buffer — chemicals received from parent's Phase 2
     // this tick. NOT visible to this node's own transport (anti-teleportation).
@@ -107,14 +92,27 @@ public:
     void add_child(Node* child);
     void replace_child(Node* old_child, Node* new_child);
 
+    // --- Compartment access ---
+    // Default: nullptr.  Stem and Root override to return their conduit pools.
+    // Callers must null-check the return before dereferencing.
+    virtual TransportPool* phloem() { return nullptr; }
+    virtual const TransportPool* phloem() const { return nullptr; }
+    virtual TransportPool* xylem()  { return nullptr; }
+    virtual const TransportPool* xylem()  const { return nullptr; }
+
+    // Walk-up: find the nearest ancestor that owns a TransportPool of the
+    // given kind.  Used by leaves, apicals, and root apicals (which have no
+    // pool of their own) to locate the parent conduit they load into or
+    // unload from.  Returns nullptr if no ancestor has a matching pool.
+    TransportPool* nearest_phloem_upstream();
+    const TransportPool* nearest_phloem_upstream() const;
+    TransportPool* nearest_xylem_upstream();
+    const TransportPool* nearest_xylem_upstream() const;
+
     // --- Tick pipeline ---
     void tick(Plant& plant, const WorldParams& world);       // non-virtual: all universal processes
     virtual float maintenance_cost(const WorldParams& world) const;
 
-    // Pre-transport growth reserve — called once per tick before vascular_transport().
-    // Each subclass computes how much sugar it will spend on growth this tick and
-    // stores it in sugar_reserved_for_growth. Vascular sees (sugar - reserve) as supply.
-    virtual void compute_growth_reserve(const Genome& g, const WorldParams& world);
     void transport_with_children(const Genome& g);
     void update_canalization(const Genome& g);
     void decay_chemicals(const Genome& g);

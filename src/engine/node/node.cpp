@@ -3,7 +3,6 @@
 #include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/chemical/chemical_registry.h"
-#include "engine/vascular.h"
 #include "engine/perf_log.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/root_node.h"
@@ -27,13 +26,13 @@ Node::Node(uint32_t id, NodeType type, glm::vec3 position, float radius)
     , age(0)
 {
     // Initialize all chemical map entries to zero
-    chemicals[ChemicalID::Auxin] = 0.0f;
-    chemicals[ChemicalID::Cytokinin] = 0.0f;
-    chemicals[ChemicalID::Gibberellin] = 0.0f;
-    chemicals[ChemicalID::Sugar] = 0.0f;
-    chemicals[ChemicalID::Ethylene] = 0.0f;
-    chemicals[ChemicalID::Stress] = 0.0f;
-    chemicals[ChemicalID::Water] = 0.0f;
+    local().chemical(ChemicalID::Auxin) = 0.0f;
+    local().chemical(ChemicalID::Cytokinin) = 0.0f;
+    local().chemical(ChemicalID::Gibberellin) = 0.0f;
+    local().chemical(ChemicalID::Sugar) = 0.0f;
+    local().chemical(ChemicalID::Ethylene) = 0.0f;
+    local().chemical(ChemicalID::Stress) = 0.0f;
+    local().chemical(ChemicalID::Water) = 0.0f;
 }
 
 void Node::add_child(Node* child) {
@@ -65,26 +64,26 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     age++;
     sync_world_position();
 
-    float s0 = chemical(ChemicalID::Sugar);
+    float s0 = local().chemical(ChemicalID::Sugar);
     deduct_maintenance_sugar(world);
-    tick_sugar_maintenance = s0 - chemical(ChemicalID::Sugar);
+    tick_sugar_maintenance = s0 - local().chemical(ChemicalID::Sugar);
 
-    float s1 = chemical(ChemicalID::Sugar);
+    float s1 = local().chemical(ChemicalID::Sugar);
     update_tissue(plant, world);
-    tick_sugar_activity = chemical(ChemicalID::Sugar) - s1;
+    tick_sugar_activity = local().chemical(ChemicalID::Sugar) - s1;
 
     sync_world_position();  // re-sync after tissue may have changed offset
     if (update_physics(plant, g, world)) return;
 
-    float s2 = chemical(ChemicalID::Sugar);
+    float s2 = local().chemical(ChemicalID::Sugar);
     transport_chemicals(g);
-    tick_sugar_transport = chemical(ChemicalID::Sugar) - s2;
+    tick_sugar_transport = local().chemical(ChemicalID::Sugar) - s2;
 
     // Flush chemicals received from parent this tick (anti-teleportation:
     // received chemicals couldn't cascade during this node's own transport
-    // because they were held in the buffer, not in chemical()).
+    // because they were held in the buffer, not in local().chemical()).
     for (auto& [id, amount] : transport_received) {
-        chemical(id) += amount;
+        local().chemical(id) += amount;
     }
     transport_received.clear();
 
@@ -94,8 +93,6 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     // each tick to cover maintenance must not accumulate starvation ticks.
     if (check_starvation(plant, world)) return;
 
-    // Clear growth reserve — update_tissue() has already used the sugar it needed.
-    sugar_reserved_for_growth = 0.0f;
 }
 
 // --- Tick helpers ---
@@ -126,12 +123,12 @@ void Node::transport_chemicals(const Genome& g) {
 
 void Node::deduct_maintenance_sugar(const WorldParams& world) {
     float cost = maintenance_cost(world);
-    chemical(ChemicalID::Sugar) = std::max(0.0f, chemical(ChemicalID::Sugar) - cost);
+    local().chemical(ChemicalID::Sugar) = std::max(0.0f, local().chemical(ChemicalID::Sugar) - cost);
 }
 
 
 bool Node::check_starvation(Plant& plant, const WorldParams& world) {
-    if (chemical(ChemicalID::Sugar) <= 0.0f) starvation_ticks++;
+    if (local().chemical(ChemicalID::Sugar) <= 0.0f) starvation_ticks++;
     else starvation_ticks = 0;
 
     // Type-specific death threshold.  Meristems (APICAL, ROOT_APICAL) use the
@@ -211,7 +208,7 @@ void Node::compute_stress(const Genome& g, const WorldParams& world) {
         if (stress_ratio > g.stress_hormone_threshold) {
             float excess = (stress_ratio - g.stress_hormone_threshold)
                          / (1.0f - g.stress_hormone_threshold);
-            chemical(ChemicalID::Stress) += excess * g.stress_hormone_production_rate;
+            local().chemical(ChemicalID::Stress) += excess * g.stress_hormone_production_rate;
         }
     }
 }
@@ -288,10 +285,6 @@ bool Node::apply_droop_and_break(Plant& plant, const Genome& g, const WorldParam
 }
 
 void Node::update_tissue(Plant& /*plant*/, const WorldParams& /*world*/) {}
-
-void Node::compute_growth_reserve(const Genome& /*g*/, const WorldParams& /*world*/) {
-    sugar_reserved_for_growth = 0.0f;
-}
 
 float Node::get_bias_multiplier(Node* child, const Genome& g) const {
     float flow = 0.0f;
@@ -378,15 +371,24 @@ void Node::transport_with_children(const Genome& g) {
         std::vector<ChildInfo> infos;
         infos.reserve(children.size());
 
-        // Track whether this parent has vasculature (for skipping vascular chemicals)
-        bool parent_vascular = has_vasculature(*this, g);
+        // vascular_sub_stepped() handles bulk flow for sugar, water, and cytokinin
+        // on conduit-to-conduit edges.  Local diffusion still delivers last-mile
+        // to leaves, meristems, and young nodes below the vascular threshold.
+        const bool is_vascular_chem = (dp.id == ChemicalID::Sugar ||
+                                       dp.id == ChemicalID::Water ||
+                                       dp.id == ChemicalID::Cytokinin);
+        // This node qualifies as a vascular conduit: stem/root at or above threshold,
+        // or the seed itself (no parent — always a junction node).
+        const bool parent_is_conduit = (type == NodeType::STEM || type == NodeType::ROOT) &&
+                                       (!parent || radius >= g.vascular_radius_threshold);
 
         for (Node* child : children) {
-            // Skip vascular chemicals on mature-to-mature edges — the global
-            // vascular pass already handled bulk flow. Local diffusion still
-            // handles last-mile delivery to leaves, meristems, and young nodes.
-            if (is_vascular_chemical(dp.id) && parent_vascular && has_vasculature(*child, g)) {
-                continue;
+            // Skip vascular chemicals on mature conduit-to-conduit edges.
+            if (is_vascular_chem && parent_is_conduit) {
+                const bool child_is_conduit =
+                    (child->type == NodeType::STEM || child->type == NodeType::ROOT) &&
+                    child->radius >= g.vascular_radius_threshold;
+                if (child_is_conduit) continue;
             }
 
             float child_radius = child->radius;
@@ -406,7 +408,7 @@ void Node::transport_with_children(const Genome& g) {
             }
 
             float desired = compute_transport_flow(
-                child->chemical(dp.id), chemical(dp.id),
+                child->local().chemical(dp.id), local().chemical(dp.id),
                 child_cap, parent_cap,
                 child_radius, radius, ref_radius, child_dp);
 
@@ -415,13 +417,13 @@ void Node::transport_with_children(const Genome& g) {
         }
 
         // --- Phase 1: children giving to parent (desired < 0) ---
-        float parent_val = chemical(dp.id);
+        float parent_val = local().chemical(dp.id);
         float parent_headroom = has_cap ? std::max(0.0f, parent_cap - parent_val) : 1e30f;
         float total_inflow = 0.0f;
 
         for (auto& ci : infos) {
             if (ci.desired >= 0.0f) continue;
-            float give = std::min(-ci.desired, ci.child->chemical(dp.id));
+            float give = std::min(-ci.desired, ci.child->local().chemical(dp.id));
             ci.desired = -give;
             total_inflow += give;
         }
@@ -448,13 +450,13 @@ void Node::transport_with_children(const Genome& g) {
         for (auto& ci : infos) {
             if (ci.desired >= 0.0f) continue;
             float give = -ci.desired;
-            ci.child->chemical(dp.id) -= give;
+            ci.child->local().chemical(dp.id) -= give;
             parent_val += give;
             if (dp.id == ChemicalID::Auxin) {
                 last_auxin_flux[ci.child] += give;
             }
         }
-        chemical(dp.id) = parent_val;
+        local().chemical(dp.id) = parent_val;
 
         // --- Phase 2: parent giving to children (desired > 0) ---
         // Seed pass-through: recompute desired flows using updated parent level
@@ -464,14 +466,14 @@ void Node::transport_with_children(const Genome& g) {
             for (auto& ci : infos) {
                 if (ci.desired <= 0.0f) continue; // only recompute receivers
                 ci.desired = compute_transport_flow(
-                    ci.child->chemical(dp.id), chemical(dp.id),
+                    ci.child->local().chemical(dp.id), local().chemical(dp.id),
                     ci.child_cap, parent_cap,
                     ci.child_radius, radius, ref_radius, ci.child_dp);
                 if (ci.desired < 0.0f) ci.desired = 0.0f; // was a receiver, stays a receiver
             }
         }
 
-        float available = chemical(dp.id);
+        float available = local().chemical(dp.id);
 
         struct Receiver {
             Node* child;
@@ -485,12 +487,12 @@ void Node::transport_with_children(const Genome& g) {
         for (auto& ci : infos) {
             if (ci.desired <= 0.0f) continue;
             float headroom = has_cap
-                ? std::max(0.0f, ci.child_cap - ci.child->chemical(dp.id))
+                ? std::max(0.0f, ci.child_cap - ci.child->local().chemical(dp.id))
                 : 1e30f;
             if (headroom > 1e-8f) {
                 receivers.push_back({ci.child, ci.desired, ci.desired * ci.bias_mult, headroom});
                 sum_receiver_caps += ci.child_cap;
-                sum_receiver_vals += ci.child->chemical(dp.id);
+                sum_receiver_vals += ci.child->local().chemical(dp.id);
             }
         }
 
@@ -560,7 +562,7 @@ void Node::transport_with_children(const Genome& g) {
                 receivers.end());
         }
 
-        chemical(dp.id) = available;
+        local().chemical(dp.id) = available;
     }
 }
 
@@ -594,7 +596,7 @@ void Node::update_canalization(const Genome& g) {
 void Node::decay_chemicals(const Genome& g) {
     for (const auto& dp : diffusion_params(g)) {
         if (dp.decay_rate > 0.0f) {
-            chemical(dp.id) *= (1.0f - dp.decay_rate);
+            local().chemical(dp.id) *= (1.0f - dp.decay_rate);
         }
     }
 }
@@ -614,5 +616,34 @@ ApicalNode*       Node::as_apical()       { return type == NodeType::APICAL ? st
 const ApicalNode* Node::as_apical() const { return type == NodeType::APICAL ? static_cast<const ApicalNode*>(this) : nullptr; }
 RootApicalNode*       Node::as_root_apical()       { return type == NodeType::ROOT_APICAL ? static_cast<RootApicalNode*>(this) : nullptr; }
 const RootApicalNode* Node::as_root_apical() const { return type == NodeType::ROOT_APICAL ? static_cast<const RootApicalNode*>(this) : nullptr; }
+
+// Walk-up helpers for finding upstream conduits
+TransportPool* Node::nearest_phloem_upstream() {
+    for (Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->phloem()) return p;
+    }
+    return nullptr;
+}
+
+const TransportPool* Node::nearest_phloem_upstream() const {
+    for (const Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->phloem()) return p;
+    }
+    return nullptr;
+}
+
+TransportPool* Node::nearest_xylem_upstream() {
+    for (Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->xylem()) return p;
+    }
+    return nullptr;
+}
+
+const TransportPool* Node::nearest_xylem_upstream() const {
+    for (const Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->xylem()) return p;
+    }
+    return nullptr;
+}
 
 } // namespace botany

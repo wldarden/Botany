@@ -63,7 +63,7 @@ static TickStats gather_stats(const Plant& plant, const WorldParams& world) {
     TickStats s{};
     plant.for_each_node([&](const Node& n) {
         s.node_count++;
-        float sugar = n.chemical(ChemicalID::Sugar);
+        float sugar = n.local().chemical(ChemicalID::Sugar);
         s.total_sugar += sugar;
         s.min_sugar = std::min(s.min_sugar, sugar);
         s.max_sugar = std::max(s.max_sugar, sugar);
@@ -105,7 +105,7 @@ static TreeDesc describe_tree(const Plant& plant) {
     TreeDesc d{};
     plant.for_each_node([&](const Node& n) {
         d.node_count++;
-        d.initial_sugar += n.chemical(ChemicalID::Sugar);
+        d.initial_sugar += n.local().chemical(ChemicalID::Sugar);
         if (auto* leaf = n.as_leaf()) {
             d.leaf_count++;
             d.total_leaf_area += leaf->leaf_size * leaf->leaf_size;
@@ -165,15 +165,15 @@ static void distribute_initial_sugar(Plant& plant, const Genome& g) {
     plant.for_each_node_mut([&](Node& n) {
         if (n.type == NodeType::STEM || n.type == NodeType::ROOT) {
             float cap = sugar_cap(n, g);
-            n.chemical(ChemicalID::Sugar) = cap * 0.2f;
+            n.local().chemical(ChemicalID::Sugar) = cap * 0.2f;
         } else if (n.type == NodeType::LEAF) {
-            n.chemical(ChemicalID::Sugar) = 0.0f; // empty — needs headroom to produce
+            n.local().chemical(ChemicalID::Sugar) = 0.0f; // empty — needs headroom to produce
         } else if (n.is_meristem()) {
-            n.chemical(ChemicalID::Sugar) = 0.3f;
+            n.local().chemical(ChemicalID::Sugar) = 0.3f;
         }
     });
     // Seed keeps its seed_sugar
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = g.seed_sugar;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = g.seed_sugar;
 }
 
 // ── Tree builders ──
@@ -403,7 +403,7 @@ static void run_tree(const char* name, Plant& plant, const WorldParams& world,
                 // manually to prevent photosynthesize from bailing at cap.
 
 
-                n.chemical(ChemicalID::Sugar) = 0.0f;
+                n.local().chemical(ChemicalID::Sugar) = 0.0f;
             }
         });
 

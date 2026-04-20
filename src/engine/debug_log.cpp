@@ -50,10 +50,10 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
             case NodeType::ROOT_APICAL: type_str = "RA"; break;
         }
 
-        float sugar = node.chemical(ChemicalID::Sugar);
+        float sugar = node.local().chemical(ChemicalID::Sugar);
         float cap = sugar_cap(node, g);
         float maint = node.maintenance_cost(world);
-        float parent_sugar = node.parent ? node.parent->chemical(ChemicalID::Sugar) : -1.0f;
+        float parent_sugar = node.parent ? node.parent->local().chemical(ChemicalID::Sugar) : -1.0f;
 
         float light_exp = 0.0f;
         float leaf_sz = 0.0f;
@@ -83,11 +83,11 @@ void DebugLog::log_tick(uint32_t tick, const Plant& plant, const WorldParams& wo
               << type_str << "," << node.age << "," << node.children.size() << ","
               << std::fixed << std::setprecision(6)
               << sugar << "," << cap << "," << maint << "," << production << ","
-              << node.chemical(ChemicalID::Auxin) << ","
-              << node.chemical(ChemicalID::Cytokinin) << ","
-              << node.chemical(ChemicalID::Gibberellin) << ","
-              << node.chemical(ChemicalID::Ethylene) << ","
-              << node.chemical(ChemicalID::Stress) << ","
+              << node.local().chemical(ChemicalID::Auxin) << ","
+              << node.local().chemical(ChemicalID::Cytokinin) << ","
+              << node.local().chemical(ChemicalID::Gibberellin) << ","
+              << node.local().chemical(ChemicalID::Ethylene) << ","
+              << node.local().chemical(ChemicalID::Stress) << ","
               << node.tick_auxin_produced << ","
               << node.tick_cytokinin_produced << ","
               << light_exp << "," << leaf_sz << "," << angle_eff << ","

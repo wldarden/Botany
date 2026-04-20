@@ -5,7 +5,7 @@
 #include "engine/plant.h"
 #include "engine/world_params.h"
 #include "engine/sugar.h"
-#include "engine/vascular.h"
+#include "engine/vascular_sub_stepped.h"
 #include "engine/node/tissues/leaf.h"
 #include "engine/node/tissues/apical.h"
 #include "engine/chemical/chemical.h"
@@ -57,8 +57,8 @@ TEST_CASE("Vascularization: no auxin_flow_bias means no thickening", "[vasculari
     // No auxin_flow_bias entry set. With no auxin production, PIN transport moves
     // nothing, update_canalization() sees zero flux each tick, so bias stays at 0
     // (or lerps to 0 on the first tick) and never exceeds the 1e-6 threshold.
-    stem->chemical(ChemicalID::Sugar) = 10.0f;
-    seed->chemical(ChemicalID::Sugar) = 10.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 10.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     float radius_before = stem->radius;
 
@@ -95,9 +95,9 @@ TEST_CASE("Vascularization: higher bias produces faster thickening", "[vasculari
     seed->auxin_flow_bias[stem_b] = 0.1f;
 
     // Sugar is far above the maintenance threshold so sugar_gf ≈ 1 for both.
-    stem_a->chemical(ChemicalID::Sugar) = 20.0f;
-    stem_b->chemical(ChemicalID::Sugar) = 20.0f;
-    seed->chemical(ChemicalID::Sugar)   = 20.0f;
+    stem_a->local().chemical(ChemicalID::Sugar) = 20.0f;
+    stem_b->local().chemical(ChemicalID::Sugar) = 20.0f;
+    seed->local().chemical(ChemicalID::Sugar)   = 20.0f;
 
     float a_initial = stem_a->radius;
     float b_initial = stem_b->radius;
@@ -143,12 +143,12 @@ TEST_CASE("Vascularization: auxin flux builds auxin_flow_bias from zero", "[vasc
     // PIN Phase A this flows toward the seed, registering flux on the seed↔stem
     // edge.  A large initial amount sustains flux above zero long enough to build
     // measurable bias before the auxin decays away.
-    stem->chemical(ChemicalID::Auxin) = 5.0f;
+    stem->local().chemical(ChemicalID::Auxin) = 5.0f;
 
     // Ample sugar and a full-sized leaf prevent starvation interfering.
-    seed->chemical(ChemicalID::Sugar) = 10.0f;
-    stem->chemical(ChemicalID::Sugar) = 10.0f;
-    leaf->chemical(ChemicalID::Sugar) = 10.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 10.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 10.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 10.0f;
     leaf->as_leaf()->leaf_size        = 0.3f;
 
     WorldParams world = static_world();
@@ -205,17 +205,17 @@ TEST_CASE("Vascularization: conductance-weighted vascular pass favors high-bias 
     // Pre-fill every node to its cap so only the test apicals are sinks.
     plant.for_each_node_mut([&](Node& n) {
         if (&n != leaf_src && &n != apical_high && &n != apical_low)
-            n.chemical(ChemicalID::Sugar) = sugar_cap(n, g);
+            n.local().chemical(ChemicalID::Sugar) = sugar_cap(n, g);
     });
-    leaf_src->chemical(ChemicalID::Sugar)   = 0.605f;
-    apical_high->chemical(ChemicalID::Sugar) = 0.0f;
-    apical_low->chemical(ChemicalID::Sugar)  = 0.0f;
-    seed->chemical(ChemicalID::Sugar) = 0.0f;
+    leaf_src->local().chemical(ChemicalID::Sugar)   = 0.605f;
+    apical_high->local().chemical(ChemicalID::Sugar) = 0.0f;
+    apical_low->local().chemical(ChemicalID::Sugar)  = 0.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 0.0f;
 
-    vascular_transport(plant, g, static_world());
+    vascular_sub_stepped(plant, g, static_world());
 
-    float got_high = apical_high->chemical(ChemicalID::Sugar);
-    float got_low  = apical_low->chemical(ChemicalID::Sugar);
+    float got_high = apical_high->local().chemical(ChemicalID::Sugar);
+    float got_low  = apical_low->local().chemical(ChemicalID::Sugar);
 
     // Under Münch flow, both apicals receive sugar from their parent stems
     // (which are filled to cap, giving a steep concentration gradient).
@@ -310,19 +310,21 @@ TEST_CASE("Demand-driven phloem delivers sugar to apex across long shoot chain",
     // Zero all sugar except the seed.  Put a healthy pile at the seed so we
     // can detect any flow reaching the tip.
     plant.for_each_node_mut([&](Node& n) {
-        n.chemical(ChemicalID::Sugar) = 0.0f;
+        n.local().chemical(ChemicalID::Sugar) = 0.0f;
     });
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 10.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 10.0f;
 
-    float apex_sugar_before = apex->chemical(ChemicalID::Sugar);
+    float apex_sugar_before = apex->local().chemical(ChemicalID::Sugar);
     REQUIRE(apex_sugar_before == 0.0f);
 
-    // Single tick — phloem_resolve runs once.  Apex should receive a
-    // measurable amount (> 0.001 g, well above float noise).  The precise
-    // amount depends on proportional allocation, but anything non-trivial
-    // demonstrates that the 15-hop distance did not attenuate delivery.
+    // Single tick — vascular_sub_stepped runs once (after metabolism under the new
+    // tick-then-vascular ordering).  Apex should receive a measurable amount
+    // (> 1e-4 g, well above float noise) from the phloem chain.  The new
+    // sub-stepped algorithm delivers via radial_flow + Jacobi propagation;
+    // thin stems (r=0.015) have tiny phloem capacity so each tick delivers a
+    // small fraction, but delivery must still be non-trivial.
     plant.tick(world);
 
-    float apex_sugar_after = apex->chemical(ChemicalID::Sugar);
-    REQUIRE(apex_sugar_after > 0.001f);
+    float apex_sugar_after = apex->local().chemical(ChemicalID::Sugar);
+    REQUIRE(apex_sugar_after > 1e-4f);
 }

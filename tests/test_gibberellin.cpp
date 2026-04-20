@@ -17,13 +17,13 @@ TEST_CASE("Young leaf produces GA on itself", "[gibberellin]") {
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = 10;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     stem->add_child(leaf);
 
     WorldParams wp = default_world_params();
     leaf->tick(plant, wp);
 
-    REQUIRE(leaf->chemical(ChemicalID::Gibberellin) > 0.0f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Gibberellin) > 0.0f);
 }
 
 TEST_CASE("GA spreads to parent via transport", "[gibberellin]") {
@@ -32,12 +32,12 @@ TEST_CASE("GA spreads to parent via transport", "[gibberellin]") {
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 5.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 5.0f;
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = 10;
-    leaf->chemical(ChemicalID::Sugar) = 50.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 50.0f;
     stem->add_child(leaf);
 
     WorldParams wp = default_world_params();
@@ -46,7 +46,7 @@ TEST_CASE("GA spreads to parent via transport", "[gibberellin]") {
     leaf->tick(plant, wp);
     stem->tick(plant, wp);  // stem transports with leaf child
 
-    REQUIRE(stem->chemical(ChemicalID::Gibberellin) > 0.0f);
+    REQUIRE(stem->local().chemical(ChemicalID::Gibberellin) > 0.0f);
 }
 
 TEST_CASE("Old leaf produces no GA", "[gibberellin]") {
@@ -59,14 +59,14 @@ TEST_CASE("Old leaf produces no GA", "[gibberellin]") {
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.1f, 0.1f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = g.ga_leaf_age_max + 1;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     stem->add_child(leaf);
 
     WorldParams wp = default_world_params();
     leaf->tick(plant, wp);
 
     // No GA production (age exceeds max), and no prior GA in system
-    REQUIRE(leaf->chemical(ChemicalID::Gibberellin) < 1e-6f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Gibberellin) < 1e-6f);
 }
 
 TEST_CASE("GA decays without production", "[gibberellin]") {
@@ -75,15 +75,15 @@ TEST_CASE("GA decays without production", "[gibberellin]") {
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Gibberellin) = 1.0f;
-    stem->chemical(ChemicalID::Sugar) = 5.0f;
+    stem->local().chemical(ChemicalID::Gibberellin) = 1.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 5.0f;
 
     WorldParams wp = default_world_params();
     for (int i = 0; i < 20; i++) {
         stem->tick(plant, wp);
     }
 
-    REQUIRE(stem->chemical(ChemicalID::Gibberellin) < 0.1f);
+    REQUIRE(stem->local().chemical(ChemicalID::Gibberellin) < 0.1f);
 }
 
 TEST_CASE("Senescing leaf produces no GA", "[gibberellin]") {
@@ -97,11 +97,11 @@ TEST_CASE("Senescing leaf produces no GA", "[gibberellin]") {
     leaf->as_leaf()->leaf_size = 0.2f;
     leaf->age = 10;
     leaf->as_leaf()->senescence_ticks = 1;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     stem->add_child(leaf);
 
     WorldParams wp = default_world_params();
     leaf->tick(plant, wp);
 
-    REQUIRE(leaf->chemical(ChemicalID::Gibberellin) < 1e-6f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Gibberellin) < 1e-6f);
 }

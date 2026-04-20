@@ -33,7 +33,7 @@ TEST_CASE("Auxin: shoot apical produces auxin", "[hormone]") {
         if (c->type == NodeType::APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
-    REQUIRE(shoot->chemical(ChemicalID::Auxin) > 0.0f);
+    REQUIRE(shoot->local().chemical(ChemicalID::Auxin) > 0.0f);
 }
 
 TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
@@ -47,7 +47,7 @@ TEST_CASE("Auxin: basipetal transport reaches parent", "[hormone]") {
     tick_n(plant, world, 2);
 
     // Seed should have received auxin from shoot apical child
-    REQUIRE(plant.seed()->chemical(ChemicalID::Auxin) > 0.0f);
+    REQUIRE(plant.seed()->local().chemical(ChemicalID::Auxin) > 0.0f);
 }
 
 TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
@@ -68,7 +68,7 @@ TEST_CASE("Auxin: root apical doesn't produce auxin", "[hormone]") {
     REQUIRE(root != nullptr);
     REQUIRE(shoot != nullptr);
     // Root should have much less auxin than shoot (only receives via seed spillover)
-    REQUIRE(root->chemical(ChemicalID::Auxin) < shoot->chemical(ChemicalID::Auxin));
+    REQUIRE(root->local().chemical(ChemicalID::Auxin) < shoot->local().chemical(ChemicalID::Auxin));
 }
 
 TEST_CASE("Auxin: decays over time without production", "[hormone]") {
@@ -82,12 +82,12 @@ TEST_CASE("Auxin: decays over time without production", "[hormone]") {
     tick_n(plant, world, 5);
 
     const Node* seed = plant.seed();
-    float auxin_at_5 = seed->chemical(ChemicalID::Auxin);
+    float auxin_at_5 = seed->local().chemical(ChemicalID::Auxin);
 
     // Keep ticking — production continues but transport + decay should prevent
     // linear accumulation
     tick_n(plant, world, 20);
-    float auxin_at_25 = seed->chemical(ChemicalID::Auxin);
+    float auxin_at_25 = seed->local().chemical(ChemicalID::Auxin);
 
     // Should not be 8x the earlier amount (decay limits accumulation).
     // With slower diffusion (0.05) auxin disperses more slowly so the local
@@ -109,7 +109,7 @@ TEST_CASE("Cytokinin: root apical produces cytokinin", "[hormone]") {
         if (c->type == NodeType::ROOT_APICAL) { root = c; break; }
     }
     REQUIRE(root != nullptr);
-    REQUIRE(root->chemical(ChemicalID::Cytokinin) > 0.0f);
+    REQUIRE(root->local().chemical(ChemicalID::Cytokinin) > 0.0f);
 }
 
 TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
@@ -126,7 +126,7 @@ TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
         if (c->type == NodeType::APICAL) { shoot = c; break; }
     }
     REQUIRE(shoot != nullptr);
-    REQUIRE(shoot->chemical(ChemicalID::Cytokinin) > 0.0f);
+    REQUIRE(shoot->local().chemical(ChemicalID::Cytokinin) > 0.0f);
 }
 
 TEST_CASE("Auxin: apical growth multiplier boosts production with sugar", "[hormone]") {
@@ -147,12 +147,12 @@ TEST_CASE("Auxin: apical growth multiplier boosts production with sugar", "[horm
     // Saturate sugar + cytokinin on both → max growth → max multiplier
     for (int i = 0; i < 3; i++) {
         plant1.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
         });
         plant2.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
         });
         plant1.tick(world);
         plant2.tick(world);
@@ -160,8 +160,8 @@ TEST_CASE("Auxin: apical growth multiplier boosts production with sugar", "[horm
 
     // Sum total auxin in each plant
     float total1 = 0.0f, total2 = 0.0f;
-    plant1.for_each_node([&](const Node& n) { total1 += n.chemical(ChemicalID::Auxin); });
-    plant2.for_each_node([&](const Node& n) { total2 += n.chemical(ChemicalID::Auxin); });
+    plant1.for_each_node([&](const Node& n) { total1 += n.local().chemical(ChemicalID::Auxin); });
+    plant2.for_each_node([&](const Node& n) { total2 += n.local().chemical(ChemicalID::Auxin); });
 
     // Growth-boosted plant should have meaningfully more total auxin
     REQUIRE(total2 > total1 * 1.5f);
@@ -182,15 +182,15 @@ TEST_CASE("Auxin: apical growth multiplier has no effect without sugar", "[hormo
 
     // Zero sugar → zero growth → multiplier should have no effect
     for (int i = 0; i < 3; i++) {
-        plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-        plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+        plant1.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
+        plant2.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
         plant1.tick(world);
         plant2.tick(world);
     }
 
     float total1 = 0.0f, total2 = 0.0f;
-    plant1.for_each_node([&](const Node& n) { total1 += n.chemical(ChemicalID::Auxin); });
-    plant2.for_each_node([&](const Node& n) { total2 += n.chemical(ChemicalID::Auxin); });
+    plant1.for_each_node([&](const Node& n) { total1 += n.local().chemical(ChemicalID::Auxin); });
+    plant2.for_each_node([&](const Node& n) { total2 += n.local().chemical(ChemicalID::Auxin); });
 
     // Both should produce similar auxin (baseline only, growth_gf ≈ 0)
     // Allow 20% tolerance for sugar_factor floor (0.1 minimum) interacting with multiplier
@@ -211,8 +211,8 @@ TEST_CASE("Auxin: growing leaf produces auxin", "[hormone]") {
     // Grow plant until leaves exist
     for (int i = 0; i < 5; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
         });
         plant.tick(world);
     }
@@ -228,15 +228,15 @@ TEST_CASE("Auxin: growing leaf produces auxin", "[hormone]") {
 
     // Zero all auxin, give sugar + water for leaf growth
     plant.for_each_node_mut([&](Node& n) {
-        n.chemical(ChemicalID::Auxin) = 0.0f;
-        n.chemical(ChemicalID::Sugar) = 100.0f;
-        n.chemical(ChemicalID::Water) = water_cap(n, g);
+        n.local().chemical(ChemicalID::Auxin) = 0.0f;
+        n.local().chemical(ChemicalID::Sugar) = 100.0f;
+        n.local().chemical(ChemicalID::Water) = water_cap(n, g);
     });
 
     plant.tick(world);
 
     // Growing leaf should have produced auxin (some may have transported, but should retain some)
-    REQUIRE(growing_leaf->chemical(ChemicalID::Auxin) > 0.0f);
+    REQUIRE(growing_leaf->local().chemical(ChemicalID::Auxin) > 0.0f);
 }
 
 TEST_CASE("Auxin: full-size leaf produces zero auxin", "[hormone]") {
@@ -253,8 +253,8 @@ TEST_CASE("Auxin: full-size leaf produces zero auxin", "[hormone]") {
     // Grow plant until leaves exist
     for (int i = 0; i < 5; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
         });
         plant.tick(world);
     }
@@ -268,15 +268,15 @@ TEST_CASE("Auxin: full-size leaf produces zero auxin", "[hormone]") {
 
     // Zero all auxin everywhere
     plant.for_each_node_mut([](Node& n) {
-        n.chemical(ChemicalID::Auxin) = 0.0f;
-        n.chemical(ChemicalID::Sugar) = 100.0f;
+        n.local().chemical(ChemicalID::Auxin) = 0.0f;
+        n.local().chemical(ChemicalID::Sugar) = 100.0f;
     });
 
     plant.tick(world);
 
     // No auxin source anywhere → all auxin should be zero
     float total_auxin = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_auxin += n.chemical(ChemicalID::Auxin); });
+    plant.for_each_node([&](const Node& n) { total_auxin += n.local().chemical(ChemicalID::Auxin); });
     REQUIRE(total_auxin < 1e-6f);
 }
 
@@ -305,14 +305,14 @@ TEST_CASE("Auxin: leaf auxin scales with growth amount", "[hormone]") {
     // Set water high so leaves are fully hydrated — this test is about auxin, not water balance.
     for (int i = 0; i < 5; i++) {
         plant1.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
-            n.chemical(ChemicalID::Water) = 100.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Water) = 100.0f;
         });
         plant2.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
-            n.chemical(ChemicalID::Water) = 100.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Water) = 100.0f;
         });
         plant1.tick(world);
         plant2.tick(world);
@@ -320,21 +320,21 @@ TEST_CASE("Auxin: leaf auxin scales with growth amount", "[hormone]") {
 
     // Zero auxin, give sugar + water, tick once more
     plant1.for_each_node_mut([](Node& n) {
-        n.chemical(ChemicalID::Auxin) = 0.0f;
-        n.chemical(ChemicalID::Sugar) = 100.0f;
-        n.chemical(ChemicalID::Water) = 100.0f;
+        n.local().chemical(ChemicalID::Auxin) = 0.0f;
+        n.local().chemical(ChemicalID::Sugar) = 100.0f;
+        n.local().chemical(ChemicalID::Water) = 100.0f;
     });
     plant2.for_each_node_mut([](Node& n) {
-        n.chemical(ChemicalID::Auxin) = 0.0f;
-        n.chemical(ChemicalID::Sugar) = 100.0f;
-        n.chemical(ChemicalID::Water) = 100.0f;
+        n.local().chemical(ChemicalID::Auxin) = 0.0f;
+        n.local().chemical(ChemicalID::Sugar) = 100.0f;
+        n.local().chemical(ChemicalID::Water) = 100.0f;
     });
     plant1.tick(world);
     plant2.tick(world);
 
     float total1 = 0.0f, total2 = 0.0f;
-    plant1.for_each_node([&](const Node& n) { total1 += n.chemical(ChemicalID::Auxin); });
-    plant2.for_each_node([&](const Node& n) { total2 += n.chemical(ChemicalID::Auxin); });
+    plant1.for_each_node([&](const Node& n) { total1 += n.local().chemical(ChemicalID::Auxin); });
+    plant2.for_each_node([&](const Node& n) { total2 += n.local().chemical(ChemicalID::Auxin); });
 
     // Higher multiplier → more leaf auxin in the system
     REQUIRE(total2 > total1 * 2.0f);
@@ -354,11 +354,11 @@ TEST_CASE("Transport: auxin crosses seed node from shoot to root", "[hormone][tr
 
     // Zero all auxin so we are measuring only shoot-produced auxin.
     // (Bootstrap auxin in seed/shoot would otherwise mask whether transport works.)
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Auxin) = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Auxin) = 0.0f; });
 
     for (int i = 0; i < 50; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 10.0f;   // keep nodes alive & growing
+            n.local().chemical(ChemicalID::Sugar) = 10.0f;   // keep nodes alive & growing
         });
         plant.tick(world);
     }
@@ -374,12 +374,12 @@ TEST_CASE("Transport: auxin crosses seed node from shoot to root", "[hormone][tr
     REQUIRE(root  != nullptr);
 
     // Shoot produces auxin — must have some remaining after transport+decay
-    REQUIRE(shoot->chemical(ChemicalID::Auxin) > 0.0f);
+    REQUIRE(shoot->local().chemical(ChemicalID::Auxin) > 0.0f);
 
     // Auxin must have crossed the seed and reached the root apical.
     // Auxin accumulates at its source (shoot tip), so root level is lower than
     // shoot level — we only require root > 0, i.e. transport DID cross the seed.
-    REQUIRE(root->chemical(ChemicalID::Auxin) > 0.0f);
+    REQUIRE(root->local().chemical(ChemicalID::Auxin) > 0.0f);
 }
 
 TEST_CASE("Transport: cytokinin crosses seed node from root to shoot", "[hormone][transport]") {
@@ -390,11 +390,11 @@ TEST_CASE("Transport: cytokinin crosses seed node from root to shoot", "[hormone
     WorldParams world = default_world_params();
 
     // Zero all cytokinin so we measure only root-produced cytokinin.
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Cytokinin) = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Cytokinin) = 0.0f; });
 
     for (int i = 0; i < 50; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 10.0f;
+            n.local().chemical(ChemicalID::Sugar) = 10.0f;
         });
         plant.tick(world);
     }
@@ -409,11 +409,19 @@ TEST_CASE("Transport: cytokinin crosses seed node from root to shoot", "[hormone
     REQUIRE(shoot != nullptr);
     REQUIRE(root  != nullptr);
 
-    // Root produces cytokinin — must have some remaining
-    REQUIRE(root->chemical(ChemicalID::Cytokinin) > 0.0f);
+    // Root produces cytokinin — verify by checking total plant cytokinin > 0.
+    // Under tick-then-vascular ordering, the RA's local cytokinin is moved into the
+    // xylem stream each tick (by vascular_sub_stepped), so root->local() will be near 0.
+    // Instead, verify that cytokinin is present somewhere in the plant.
+    float cyto_total = 0.0f;
+    plant.for_each_node([&](const Node& n) {
+        cyto_total += n.local().chemical(ChemicalID::Cytokinin);
+        if (auto* xyl = n.xylem()) cyto_total += xyl->chemical(ChemicalID::Cytokinin);
+    });
+    REQUIRE(cyto_total > 0.0f);
 
     // Cytokinin must have crossed the seed and reached the shoot apical.
     // Cytokinin accumulates at its source (root tip), so root level stays higher
     // than shoot level — we only require shoot > 0, i.e. transport DID cross the seed.
-    REQUIRE(shoot->chemical(ChemicalID::Cytokinin) > 0.0f);
+    REQUIRE(shoot->local().chemical(ChemicalID::Cytokinin) > 0.0f);
 }

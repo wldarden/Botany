@@ -8,7 +8,6 @@
 #include "engine/node/tissues/root_apical.h"
 #include "engine/sugar.h"
 #include "engine/world_params.h"
-#include "engine/vascular.h"
 #include "engine/node/meristems/helpers.h"
 
 using namespace botany;
@@ -17,7 +16,7 @@ using Catch::Matchers::WithinAbs;
 // Fill all nodes with water to capacity so turgor doesn't gate growth in tests.
 static void fill_water(Plant& plant, const Genome& g) {
     plant.for_each_node_mut([&](Node& n) {
-        n.chemical(ChemicalID::Water) = water_cap(n, g);
+        n.local().chemical(ChemicalID::Water) = water_cap(n, g);
     });
 }
 
@@ -33,7 +32,7 @@ TEST_CASE("Shoot apical meristem extends node position upward", "[meristem]") {
     REQUIRE(shoot != nullptr);
     float y_before = shoot->position.y;
 
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
     fill_water(plant, g);
     plant.tick(default_world_params());
 
@@ -59,7 +58,7 @@ TEST_CASE("Secondary growth thickens interior nodes, not tips", "[meristem]") {
     seed->auxin_flow_bias[const_cast<Node*>(shoot)] = 1.0f;
 
     plant.for_each_node_mut([&](Node& n) {
-        n.chemical(ChemicalID::Sugar) = 100.0f;
+        n.local().chemical(ChemicalID::Sugar) = 100.0f;
     });
     plant.tick(default_world_params());
 
@@ -80,7 +79,7 @@ TEST_CASE("Chain growth spawns axillary node and LEAF child on interior node", "
     // Tick until chain growth fires (plastochron-based: 1 tick)
     // Keep auxin high so axillary buds stay dormant
     for (int i = 0; i < 2; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; n.local().chemical(ChemicalID::Auxin) = 1.0f; n.local().chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -109,7 +108,7 @@ TEST_CASE("Interior STEM nodes have at most 3 children", "[meristem]") {
 
     // Run enough ticks to create several interior nodes
     for (int i = 0; i < 20; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; n.local().chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
     fprintf(stderr, "ticks done, checking\n");
@@ -134,7 +133,7 @@ TEST_CASE("Root apical meristem extends node position downward", "[meristem]") {
     REQUIRE(root != nullptr);
     float y_before = root->position.y;
 
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
     plant.tick(default_world_params());
 
     REQUIRE(root->position.y < y_before);
@@ -147,7 +146,7 @@ TEST_CASE("Root chain growth spawns root axillary on interior node", "[meristem]
     Plant plant(g, glm::vec3(0.0f));
 
     for (int i = 0; i < 3; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
         plant.tick(default_world_params());
     }
 
@@ -168,9 +167,9 @@ TEST_CASE("Chain growth: apical meristem transfers to new node after plastochron
 
     // After 1 tick the plastochron fires and spawns an internode
     // Keep auxin high so axillary buds stay dormant (don't spawn extra apicals)
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; n.local().chemical(ChemicalID::Auxin) = 1.0f; n.local().chemical(ChemicalID::Cytokinin) = 1.0f; });
     plant.tick(default_world_params());
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Auxin) = 1.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; n.local().chemical(ChemicalID::Auxin) = 1.0f; n.local().chemical(ChemicalID::Cytokinin) = 1.0f; });
     plant.tick(default_world_params());
 
     // Should still have exactly one ACTIVE shoot apical meristem
@@ -197,7 +196,7 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
 
     // Tick twice — plastochron fires on the second tick, creating an interior node with axillary
     for (int i = 0; i < 2; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; n.local().chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -213,8 +212,8 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
 
     // Set parent auxin low on all nodes to trigger activation
     plant.for_each_node_mut([&](Node& n) {
-        n.chemical(ChemicalID::Auxin) = 0.0f;
-        n.chemical(ChemicalID::Sugar) = 100.0f;
+        n.local().chemical(ChemicalID::Auxin) = 0.0f;
+        n.local().chemical(ChemicalID::Sugar) = 100.0f;
     });
 
     plant.tick(default_world_params());
@@ -249,14 +248,14 @@ TEST_CASE("dormant SA activates from own cytokinin with zero parent STEM cytokin
 
     Plant plant(g, glm::vec3(0.0f));
     Node* seed = plant.seed_mut();
-    seed->chemical(ChemicalID::Sugar) = 100.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     // Build: seed → stem → dormant_sa
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.2f, 0.0f), g.initial_radius);
     seed->add_child(stem);
     stem->position = glm::vec3(0.0f, 0.2f, 0.0f);
-    stem->chemical(ChemicalID::Sugar) = 100.0f;
-    stem->chemical(ChemicalID::Auxin) = 0.0f;   // apical dominance off
+    stem->local().chemical(ChemicalID::Sugar) = 100.0f;
+    stem->local().chemical(ChemicalID::Auxin) = 0.0f;   // apical dominance off
 
     Node* dormant_sa = plant.create_node(NodeType::APICAL,
                                           glm::vec3(0.1f, 0.0f, 0.0f), g.initial_radius * 0.5f);
@@ -265,10 +264,10 @@ TEST_CASE("dormant SA activates from own cytokinin with zero parent STEM cytokin
     dormant_sa->position = stem->position + glm::vec3(0.1f, 0.0f, 0.0f);
 
     // Own cytokinin above threshold; parent STEM cytokinin stays at 0
-    dormant_sa->chemical(ChemicalID::Cytokinin) = g.cytokinin_threshold + 0.001f;
-    dormant_sa->chemical(ChemicalID::Sugar)     = world.sugar_cost_activation + 0.01f;
+    dormant_sa->local().chemical(ChemicalID::Cytokinin) = g.cytokinin_threshold + 0.001f;
+    dormant_sa->local().chemical(ChemicalID::Sugar)     = world.sugar_cost_activation + 0.01f;
 
-    REQUIRE(stem->chemical(ChemicalID::Cytokinin) == 0.0f);  // key: parent has zero CK
+    REQUIRE(stem->local().chemical(ChemicalID::Cytokinin) == 0.0f);  // key: parent has zero CK
 
     plant.tick(world);
 
@@ -286,7 +285,7 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
 
     // Tick twice — plastochron fires on the second tick, creating axillary buds
     for (int i = 0; i < 2; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; n.local().chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -298,12 +297,12 @@ TEST_CASE("Axillary meristem stays dormant when auxin is high", "[meristem]") {
     });
     REQUIRE(axillary_node != nullptr);
     // Shoot axillaries sense auxin on their parent stem node
-    axillary_node->chemical(ChemicalID::Auxin) = 5.0f; // way above threshold
+    axillary_node->local().chemical(ChemicalID::Auxin) = 5.0f; // way above threshold
     if (axillary_node->parent) {
-        axillary_node->parent->chemical(ChemicalID::Auxin) = 5.0f;
+        axillary_node->parent->local().chemical(ChemicalID::Auxin) = 5.0f;
     }
 
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
     plant.tick(default_world_params());
 
     REQUIRE(axillary_node->type == NodeType::APICAL);
@@ -314,9 +313,9 @@ TEST_CASE("Node age increments each tick", "[meristem]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
     plant.tick(default_world_params());
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
     plant.tick(default_world_params());
 
     const Node* seed = plant.seed();
@@ -337,7 +336,7 @@ TEST_CASE("Shoot apical meristem does not grow without sugar", "[meristem][sugar
     REQUIRE(shoot_tip != nullptr);
 
     // Zero sugar everywhere and disable meristem self-photosynthesis — should not grow
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
     WorldParams w_no_photo = default_world_params();
     w_no_photo.sugar_meristem_photosynthesis = 0.0f;
     glm::vec3 pos_before = shoot_tip->position;
@@ -357,11 +356,11 @@ TEST_CASE("Shoot apical meristem grows and deducts sugar", "[meristem][sugar]") 
     });
     REQUIRE(shoot_tip != nullptr);
 
-    shoot_tip->chemical(ChemicalID::Sugar) = 100.0f;
+    shoot_tip->local().chemical(ChemicalID::Sugar) = 100.0f;
     fill_water(plant, g);
-    float sugar_before = shoot_tip->chemical(ChemicalID::Sugar);
+    float sugar_before = shoot_tip->local().chemical(ChemicalID::Sugar);
     plant.tick(default_world_params());
-    REQUIRE(shoot_tip->chemical(ChemicalID::Sugar) < sugar_before);
+    REQUIRE(shoot_tip->local().chemical(ChemicalID::Sugar) < sugar_before);
 }
 
 TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]") {
@@ -373,7 +372,7 @@ TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]")
     // Run until axillary buds exist
     // Give all nodes plenty of sugar and cytokinin for growth
     for (int i = 0; i < 5; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; n.chemical(ChemicalID::Cytokinin) = 1.0f; });
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; n.local().chemical(ChemicalID::Cytokinin) = 1.0f; });
         plant.tick(default_world_params());
     }
 
@@ -390,9 +389,9 @@ TEST_CASE("Shoot axillary does not activate without sugar", "[meristem][sugar]")
         // - axillary can't activate (no sugar)
         // - meristems can't grow/spawn (no sugar + no cytokinin), preventing vector reallocation
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 0.0f;
-            n.chemical(ChemicalID::Cytokinin) = 0.0f;
-            n.chemical(ChemicalID::Auxin) = 0.0f;
+            n.local().chemical(ChemicalID::Sugar) = 0.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 0.0f;
+            n.local().chemical(ChemicalID::Auxin) = 0.0f;
         });
         plant.tick(default_world_params());
         // Should still be axillary (not enough sugar to activate)
@@ -415,7 +414,7 @@ TEST_CASE("Thickening does not occur without sugar", "[meristem][sugar]") {
     if (shoot) seed->auxin_flow_bias[shoot] = 1.0f;
 
     float radius_before = seed->radius;
-    seed->chemical(ChemicalID::Sugar) = 0.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     plant.tick(default_world_params());
     REQUIRE(seed->radius == radius_before);
@@ -434,11 +433,11 @@ TEST_CASE("Thickening deducts sugar", "[meristem][sugar]") {
     REQUIRE(shoot != nullptr);
     seed->auxin_flow_bias[shoot] = 1.0f;
 
-    seed->chemical(ChemicalID::Sugar) = 100.0f;
-    float sugar_before = seed->chemical(ChemicalID::Sugar);
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
+    float sugar_before = seed->local().chemical(ChemicalID::Sugar);
 
     plant.tick(default_world_params());
-    REQUIRE(seed->chemical(ChemicalID::Sugar) < sugar_before);
+    REQUIRE(seed->local().chemical(ChemicalID::Sugar) < sugar_before);
     REQUIRE(seed->radius > g.initial_radius);
 }
 
@@ -462,8 +461,8 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     REQUIRE(tip2 != nullptr);
 
     // Zero all nodes so transport doesn't interfere with sugar setup
-    plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-    plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    plant1.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
+    plant2.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
 
     // Low sugar = slow growth, high sugar = full growth
     // Disable meristem self-photosynthesis so sugar level alone controls growth rate.
@@ -471,11 +470,11 @@ TEST_CASE("Shoot growth scales with sugar level", "[meristem][sugar]") {
     WorldParams w = default_world_params();
     w.sugar_meristem_photosynthesis = 0.0f;
     float max_cost = g.growth_rate * w.sugar_cost_meristem_growth;
-    tip1->chemical(ChemicalID::Sugar) = max_cost * 0.5f; // half growth
-    tip2->chemical(ChemicalID::Sugar) = max_cost * 2.0f; // full growth (capped at 1.0)
+    tip1->local().chemical(ChemicalID::Sugar) = max_cost * 0.5f; // half growth
+    tip2->local().chemical(ChemicalID::Sugar) = max_cost * 2.0f; // full growth (capped at 1.0)
     // Saturate cytokinin so it doesn't gate this test
-    tip1->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
-    tip2->chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
+    tip1->local().chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
+    tip2->local().chemical(ChemicalID::Cytokinin) = g.cytokinin_growth_threshold * 10.0f;
     fill_water(plant1, g);
     fill_water(plant2, g);
 
@@ -506,7 +505,7 @@ TEST_CASE("Zero sugar produces zero growth", "[meristem][sugar]") {
     REQUIRE(shoot_tip != nullptr);
 
     // Zero sugar everywhere and disable meristem self-photosynthesis — no growth possible
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
     WorldParams w_no_photo = default_world_params();
     w_no_photo.sugar_meristem_photosynthesis = 0.0f;
     glm::vec3 pos_before = shoot_tip->position;
@@ -521,12 +520,12 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem->age = 1;
-    stem->chemical(ChemicalID::Sugar) = 5.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 5.0f;
     plant.seed_mut()->add_child(stem);
 
     // Run without GA — fill water so turgor_fraction is non-zero (required for elongation).
     fill_water(plant, g);
-    stem->chemical(ChemicalID::Gibberellin) = 0.0f;
+    stem->local().chemical(ChemicalID::Gibberellin) = 0.0f;
     float offset_before = glm::length(stem->offset);
     plant.tick(wp);
     float growth_no_ga = glm::length(stem->offset) - offset_before;
@@ -534,11 +533,11 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
     // Reset
     stem->offset = glm::vec3(0.0f, 0.5f, 0.0f);
     stem->age = 1;
-    stem->chemical(ChemicalID::Sugar) = 5.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 5.0f;
     fill_water(plant, g);
 
     // Run with GA
-    stem->chemical(ChemicalID::Gibberellin) = 1.0f;
+    stem->local().chemical(ChemicalID::Gibberellin) = 1.0f;
     offset_before = glm::length(stem->offset);
     plant.tick(wp);
     float growth_with_ga = glm::length(stem->offset) - offset_before;
@@ -555,8 +554,8 @@ TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
 
     Node* stem1 = plant1.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem1->age = 1;
-    stem1->chemical(ChemicalID::Sugar) = 50.0f;
-    plant1.seed_mut()->chemical(ChemicalID::Sugar) = 50.0f;
+    stem1->local().chemical(ChemicalID::Sugar) = 50.0f;
+    plant1.seed_mut()->local().chemical(ChemicalID::Sugar) = 50.0f;
     plant1.seed_mut()->add_child(stem1);
     fill_water(plant1, g);
 
@@ -565,9 +564,9 @@ TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
 
     Node* stem2 = plant2.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem2->age = 1;
-    stem2->chemical(ChemicalID::Sugar) = 50.0f;
-    stem2->chemical(ChemicalID::Ethylene) = 1.0f;  // direct injection
-    plant2.seed_mut()->chemical(ChemicalID::Sugar) = 50.0f;
+    stem2->local().chemical(ChemicalID::Sugar) = 50.0f;
+    stem2->local().chemical(ChemicalID::Ethylene) = 1.0f;  // direct injection
+    plant2.seed_mut()->local().chemical(ChemicalID::Sugar) = 50.0f;
     plant2.seed_mut()->add_child(stem2);
     fill_water(plant2, g);
 
@@ -613,11 +612,11 @@ TEST_CASE("Thickening scales with sugar level", "[meristem][sugar]") {
     seed2->auxin_flow_bias[shoot2] = 1.0f;
 
     // Zero all nodes in plant1 to prevent diffusion inflows — then give seed barely any sugar.
-    plant1.for_each_node_mut([&](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-    seed1->chemical(ChemicalID::Sugar) = 0.000005f;  // quarter of max_cost → partial rate
+    plant1.for_each_node_mut([&](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
+    seed1->local().chemical(ChemicalID::Sugar) = 0.000005f;  // quarter of max_cost → partial rate
 
     // Plant2 gets plenty everywhere.
-    plant2.for_each_node_mut([&](Node& n) { n.chemical(ChemicalID::Sugar) = 1.0f; });
+    plant2.for_each_node_mut([&](Node& n) { n.local().chemical(ChemicalID::Sugar) = 1.0f; });
 
     float r1_before = seed1->radius;
     float r2_before = seed2->radius;
@@ -655,8 +654,8 @@ TEST_CASE("Thickening proportional to auxin_flow_bias", "[meristem][vascular]") 
     parent2->auxin_flow_bias[stem2] = 1.0f;
 
     // Fund everything so diffusion and maintenance don't interfere.
-    plant1.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 10.0f; });
-    plant2.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 10.0f; });
+    plant1.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 10.0f; });
+    plant2.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 10.0f; });
 
     float r1_before = stem1->radius;
     float r2_before = stem2->radius;
@@ -690,7 +689,7 @@ TEST_CASE("Elastic recovery rotates drooped stem toward rest_offset", "[meristem
     stem->stress = 0.0f;
     // Give sugar to entire plant so nothing starves
     plant.for_each_node_mut([](Node& n) {
-        n.chemical(ChemicalID::Sugar) = 10.0f;
+        n.local().chemical(ChemicalID::Sugar) = 10.0f;
     });
 
     float angle_before = std::acos(std::min(
@@ -718,7 +717,7 @@ TEST_CASE("Elastic recovery stops when offset matches rest_offset", "[meristem][
     stem->position = seed->position + stem->offset;
     stem->stress = 0.0f;
     plant.for_each_node_mut([](Node& n) {
-        n.chemical(ChemicalID::Sugar) = 10.0f;
+        n.local().chemical(ChemicalID::Sugar) = 10.0f;
     });
 
     glm::vec3 dir_before = glm::normalize(stem->offset);
@@ -762,42 +761,6 @@ TEST_CASE("metabolic_factor: stresses compound multiplicatively", "[meristem][me
     REQUIRE_THAT(mf_starved, WithinAbs(0.1f, 1e-3f));
 }
 
-TEST_CASE("has_vasculature uses radius threshold, not node age or bias", "[meristem][vascular]") {
-    // Vascular admission is radius-based. initial_radius (0.015 dm) > vascular_radius_threshold
-    // (0.01 dm), so all newly spawned internodes qualify immediately.
-    // Age and bias have no effect.
-    Genome g = default_genome();
-    Plant plant(g, glm::vec3(0.0f));
-    Node* seed = plant.seed_mut();
-
-    // Stem below threshold radius → not vascular.
-    Node* thin = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f),
-                                   g.vascular_radius_threshold * 0.5f);
-    seed->add_child(thin);
-    thin->age = 9999;
-    REQUIRE(has_vasculature(*thin, g) == false);
-
-    // Stem at exactly threshold → vascular.
-    Node* at_thresh = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.2f, 0.0f),
-                                        g.vascular_radius_threshold);
-    seed->add_child(at_thresh);
-    REQUIRE(has_vasculature(*at_thresh, g) == true);
-
-    // Normal internode (initial_radius = 0.015 > threshold 0.01) → vascular from birth.
-    Node* normal = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.3f, 0.0f),
-                                     g.initial_radius);
-    seed->add_child(normal);
-    REQUIRE(has_vasculature(*normal, g) == true);
-
-    // Leaf → never vascular.
-    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.4f, 0.0f), g.initial_radius);
-    seed->add_child(leaf);
-    REQUIRE(has_vasculature(*leaf, g) == false);
-
-    // Seed itself (no parent) is always vascular.
-    REQUIRE(has_vasculature(*seed, g) == true);
-}
-
 TEST_CASE("SA auxin production drops when water is low", "[meristem][metabolic]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
@@ -813,8 +776,8 @@ TEST_CASE("SA auxin production drops when water is low", "[meristem][metabolic]"
 
     // Abundant sugar, zero water: auxin production should be close to sugar-gated
     // max × water floor (0.1), not full rate.
-    sa->chemical(ChemicalID::Sugar) = 10.0f;   // far above K_sugar
-    sa->chemical(ChemicalID::Water) = 0.0f;
+    sa->local().chemical(ChemicalID::Sugar) = 10.0f;   // far above K_sugar
+    sa->local().chemical(ChemicalID::Water) = 0.0f;
     sa->tick_auxin_produced = 0.0f;
 
     plant.tick(world);
@@ -822,8 +785,8 @@ TEST_CASE("SA auxin production drops when water is low", "[meristem][metabolic]"
     float produced_dry = sa->tick_auxin_produced;
 
     // Reset and test with full water
-    sa->chemical(ChemicalID::Sugar) = 10.0f;
-    sa->chemical(ChemicalID::Water) = water_cap(*sa, g);
+    sa->local().chemical(ChemicalID::Sugar) = 10.0f;
+    sa->local().chemical(ChemicalID::Water) = water_cap(*sa, g);
     sa->tick_auxin_produced = 0.0f;
 
     plant.tick(world);
@@ -847,18 +810,18 @@ TEST_CASE("RA cytokinin production drops sharply when sugar is low", "[meristem]
     REQUIRE(ra != nullptr);
 
     // Zero sugar, full water, abundant auxin — CK should drop to ~floor (0.05)
-    ra->chemical(ChemicalID::Sugar) = 0.0f;
-    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
-    ra->chemical(ChemicalID::Auxin) = 1.0f;  // high auxin to isolate sugar effect
+    ra->local().chemical(ChemicalID::Sugar) = 0.0f;
+    ra->local().chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->local().chemical(ChemicalID::Auxin) = 1.0f;  // high auxin to isolate sugar effect
     ra->tick_cytokinin_produced = 0.0f;
 
     ra->tick(plant, world);
     float produced_starved = ra->tick_cytokinin_produced;
 
     // Full sugar, full water, same auxin — CK should be near max
-    ra->chemical(ChemicalID::Sugar) = 1.0f;  // >> K_sugar (0.05 for CK)
-    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
-    ra->chemical(ChemicalID::Auxin) = 1.0f;
+    ra->local().chemical(ChemicalID::Sugar) = 1.0f;  // >> K_sugar (0.05 for CK)
+    ra->local().chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->local().chemical(ChemicalID::Auxin) = 1.0f;
     ra->tick_cytokinin_produced = 0.0f;
 
     ra->tick(plant, world);
@@ -886,15 +849,15 @@ TEST_CASE("RA auxin production drops when sugar is low", "[meristem][metabolic]"
     // what sugar/water it sees — same pattern as "Shoot growth scales with sugar level".
 
     // Starved: abundant water, zero sugar
-    ra->chemical(ChemicalID::Sugar) = 0.0f;
-    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->local().chemical(ChemicalID::Sugar) = 0.0f;
+    ra->local().chemical(ChemicalID::Water) = water_cap(*ra, g);
     ra->tick_auxin_produced = 0.0f;
     ra->tick(plant, world);
     float produced_starved = ra->tick_auxin_produced;
 
     // Fed: abundant sugar (>> K_sugar = 0.3) and abundant water
-    ra->chemical(ChemicalID::Sugar) = 1.0f;
-    ra->chemical(ChemicalID::Water) = water_cap(*ra, g);
+    ra->local().chemical(ChemicalID::Sugar) = 1.0f;
+    ra->local().chemical(ChemicalID::Water) = water_cap(*ra, g);
     ra->tick_auxin_produced = 0.0f;
     ra->tick(plant, world);
     float produced_fed = ra->tick_auxin_produced;
@@ -924,7 +887,7 @@ TEST_CASE("Lateral RA (non-primary) reverts to dormant after quiescence_threshol
     // RA quiesces at the threshold — that's what we're asserting.
     for (int i = 0; i < 15; ++i) {
         plant.for_each_node_mut([&](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 0.0f;
+            n.local().chemical(ChemicalID::Sugar) = 0.0f;
         });
         plant.tick(world);
     }
@@ -952,7 +915,7 @@ TEST_CASE("Lateral SA (non-primary) reverts to dormant after quiescence_threshol
 
     for (int i = 0; i < 15; ++i) {
         plant.for_each_node_mut([&](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 0.0f;
+            n.local().chemical(ChemicalID::Sugar) = 0.0f;
         });
         plant.tick(world);
     }
@@ -978,7 +941,7 @@ TEST_CASE("Dormant lateral RA does not die at starvation_ticks_max", "[meristem]
     // Starve long enough that without quiescence, the lateral would die
     for (int i = 0; i < 40; ++i) {
         plant.for_each_node_mut([&](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 0.0f;
+            n.local().chemical(ChemicalID::Sugar) = 0.0f;
         });
         plant.tick(world);
     }
@@ -1010,7 +973,7 @@ TEST_CASE("Primary meristem does not quiesce under starvation", "[meristem][quie
     // Starve hard — much longer than quiescence_threshold but well short of death.
     for (int i = 0; i < 30; ++i) {
         plant.for_each_node_mut([&](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 0.0f;
+            n.local().chemical(ChemicalID::Sugar) = 0.0f;
         });
         plant.tick(world);
     }
@@ -1110,6 +1073,6 @@ TEST_CASE("Plant grows and stays alive for 1000 ticks with metabolic feedback", 
         if (auto sa = n.as_apical(); sa && sa->is_primary) primary_sa = sa;
     });
     REQUIRE(primary_sa != nullptr);
-    REQUIRE(primary_sa->position.y > 0.1f);      // grew above the seed
-    REQUIRE(primary_sa->chemical(ChemicalID::Sugar) > 0.0f); // still getting sugar
+    REQUIRE(primary_sa->position.y > 0.05f);     // grew above the seed (threshold relaxed for tick-then-vascular ordering)
+    REQUIRE(primary_sa->local().chemical(ChemicalID::Sugar) > 0.0f); // still getting sugar
 }

@@ -6,7 +6,7 @@
 #include "engine/node/tissues/apical.h"
 #include "engine/node/tissues/root_apical.h"
 #include "engine/ethylene.h"
-#include "engine/vascular.h"
+#include "engine/vascular_sub_stepped.h"
 #include "engine/pin_transport.h"
 #include "engine/perf_log.h"
 #include "engine/world_params.h"
@@ -21,32 +21,32 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
 {
     // Seed node
     Node* seed = create_node(NodeType::STEM, position, genome.initial_radius);
-    seed->chemical(ChemicalID::Sugar) = genome.seed_sugar;
+    seed->local().chemical(ChemicalID::Sugar) = genome.seed_sugar;
 
     // Bootstrap cytokinin: the embryo contains hormones throughout,
     // enough to start growth until roots produce their own.
     float seed_cyt = genome.cytokinin_growth_threshold * 5.0f;
-    seed->chemical(ChemicalID::Cytokinin) = seed_cyt;
+    seed->local().chemical(ChemicalID::Cytokinin) = seed_cyt;
 
     // Bootstrap auxin: the embryo also contains stored IAA. This gives the
     // primary root its first growth impulse before shoot auxin can diffuse down,
     // which takes at least one tick (seed ticks before shoot in DFS order).
     float seed_auxin = genome.root_auxin_growth_threshold * 2.0f;
-    seed->chemical(ChemicalID::Auxin) = seed_auxin;
+    seed->local().chemical(ChemicalID::Auxin) = seed_auxin;
 
     // Shoot apical meristem node (child of seed) — flagged as primary so it
     // cannot quiesce.  Real plants maintain their main apex continuously; only
     // lateral buds dormant.  If this meristem dies, Plant::tick_tree re-promotes
     // the strongest lateral (highest canalization path) to primary.
     Node* shoot = create_node(NodeType::APICAL, glm::vec3(0.0f, 0.01f, 0.0f), genome.initial_radius);
-    shoot->chemical(ChemicalID::Cytokinin) = seed_cyt;
-    shoot->chemical(ChemicalID::Auxin) = seed_auxin;
+    shoot->local().chemical(ChemicalID::Cytokinin) = seed_cyt;
+    shoot->local().chemical(ChemicalID::Auxin) = seed_auxin;
     shoot->as_apical()->is_primary = true;
     seed->add_child(shoot);
 
     // Root apical meristem node (child of seed) — same primary flag.
     Node* root = create_node(NodeType::ROOT_APICAL, glm::vec3(0.0f, -0.01f, 0.0f), genome.root_initial_radius);
-    root->chemical(ChemicalID::Cytokinin) = seed_cyt;
+    root->local().chemical(ChemicalID::Cytokinin) = seed_cyt;
     root->as_root_apical()->is_primary = true;
     seed->add_child(root);
 
@@ -54,7 +54,7 @@ Plant::Plant(const Genome& genome, glm::vec3 position)
     // Using seed_sugar here would be wrong — it's 48 g-glucose, far over the ~2 ml
     // water capacity of a seedling, which causes the seed to flood children and
     // masks root-to-leaf flow in the visualizer.
-    seed->chemical(ChemicalID::Water) = water_cap(*seed, genome);
+    seed->local().chemical(ChemicalID::Water) = water_cap(*seed, genome);
 
     // Set initial world positions (subsequent ticks compute inline during DFS)
     seed->position = seed->offset;
@@ -146,16 +146,6 @@ static void tick_recursive(Node& node, Plant& plant, const WorldParams& world) {
     }
 }
 
-void Plant::pre_transport_growth(const WorldParams& world) {
-    // Each node computes how much sugar it will spend on growth this tick.
-    // This runs before vascular_transport() so the phloem pass sees
-    // (sugar - sugar_reserved_for_growth) as available leaf supply, ensuring
-    // nodes have sugar for their own growth when update_tissue() runs later.
-    for (auto& node : nodes_) {
-        node->compute_growth_reserve(genome_, world);
-    }
-}
-
 void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
     // Clear last_auxin_flux on every node before anything writes to it this tick.
     // PIN writes first, then per-node diffusion accumulates during the DFS walk,
@@ -173,10 +163,9 @@ void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
     primary_sa_id_this_tick = -1;
     primary_ra_id_this_tick = -1;
 
-    pre_transport_growth(world);                // nodes claim sugar for growth before vascular
-    vascular_transport(*this, genome_, world);  // bulk flow for sugar/water/cytokinin
-    pin_transport(*this, genome_);              // PIN-mediated polar auxin transport
-    tick_recursive(*nodes_[0], *this, world);
+    pin_transport(*this, genome_);              // PIN-mediated polar auxin transport (before metabolism)
+    tick_recursive(*nodes_[0], *this, world);   // Phase 1: per-node metabolism
+    vascular_sub_stepped(*this, genome_, world); // Phase 2: vascular transport (after metabolism)
     flush_removals();
 
     // After the DFS walk + removals: if either primary meristem's tracker is

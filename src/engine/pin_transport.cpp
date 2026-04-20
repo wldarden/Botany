@@ -77,11 +77,11 @@ void pin_transport(Plant& plant, const Genome& g) {
         if (it != par->auxin_flow_bias.end()) flow_bias = it->second;
         float efficiency = g.pin_base_efficiency + flow_bias * (1.0f - g.pin_base_efficiency);
 
-        float available = n->chemical(ChemicalID::Auxin);
+        float available = n->local().chemical(ChemicalID::Auxin);
         float moved = std::min(available, max_cap * efficiency);
         if (moved < 1e-8f) continue;
 
-        n->chemical(ChemicalID::Auxin) -= moved;
+        n->local().chemical(ChemicalID::Auxin) -= moved;
         par->last_auxin_flux[n] += moved;  // record for update_canalization
 
         if (par == seed) {
@@ -116,7 +116,7 @@ void pin_transport(Plant& plant, const Genome& g) {
         }
         seed_collected -= total_sent;
     }
-    seed->chemical(ChemicalID::Auxin) += seed_collected;  // remainder stays at seed
+    seed->local().chemical(ChemicalID::Auxin) += seed_collected;  // remainder stays at seed
 
     // ----------------------------------------------------------------
     // Phase C: Root pre-order — seed → root tips.
@@ -158,7 +158,7 @@ void pin_transport(Plant& plant, const Genome& g) {
         }
 
         // incoming − distributed stays at this node.
-        n->chemical(ChemicalID::Auxin) += (incoming - distributed);
+        n->local().chemical(ChemicalID::Auxin) += (incoming - distributed);
     }
 }
 

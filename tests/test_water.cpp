@@ -16,7 +16,7 @@ using namespace botany;
 static void flush_buffers(Plant& plant) {
     plant.for_each_node_mut([](Node& n) {
         for (auto& [id, amount] : n.transport_received) {
-            n.chemical(id) += amount;
+            n.local().chemical(id) += amount;
         }
         n.transport_received.clear();
     });
@@ -27,7 +27,7 @@ TEST_CASE("Seed node starts with water", "[water]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    REQUIRE(plant.seed()->chemical(ChemicalID::Water) > 0.0f);
+    REQUIRE(plant.seed()->local().chemical(ChemicalID::Water) > 0.0f);
 }
 
 // === Water cap tests ===
@@ -104,14 +104,14 @@ TEST_CASE("Water diffuses from high to low concentration", "[water]") {
     Node* child = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), 0.02f);
     plant.seed_mut()->add_child(child);
 
-    plant.seed_mut()->chemical(ChemicalID::Water) = 50.0f;
-    child->chemical(ChemicalID::Water) = 0.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Water) = 50.0f;
+    child->local().chemical(ChemicalID::Water) = 0.0f;
 
     plant.seed_mut()->transport_with_children(g);
     flush_buffers(plant);
 
-    REQUIRE(child->chemical(ChemicalID::Water) > 0.0f);
-    REQUIRE(plant.seed()->chemical(ChemicalID::Water) < 50.0f);
+    REQUIRE(child->local().chemical(ChemicalID::Water) > 0.0f);
+    REQUIRE(plant.seed()->local().chemical(ChemicalID::Water) < 50.0f);
 }
 
 TEST_CASE("Water transport conserves total water", "[water]") {
@@ -124,11 +124,11 @@ TEST_CASE("Water transport conserves total water", "[water]") {
         plant.seed_mut()->add_child(child);
     }
 
-    plant.seed_mut()->chemical(ChemicalID::Water) = 20.0f;
-    plant.seed_mut()->children[0]->chemical(ChemicalID::Water) = 5.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Water) = 20.0f;
+    plant.seed_mut()->children[0]->local().chemical(ChemicalID::Water) = 5.0f;
 
     float total_before = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_before += n.chemical(ChemicalID::Water); });
+    plant.for_each_node([&](const Node& n) { total_before += n.local().chemical(ChemicalID::Water); });
 
     for (int i = 0; i < 10; i++) {
         plant.for_each_node_mut([&](Node& n) {
@@ -138,7 +138,7 @@ TEST_CASE("Water transport conserves total water", "[water]") {
     }
 
     float total_after = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_after += n.chemical(ChemicalID::Water); });
+    plant.for_each_node([&](const Node& n) { total_after += n.local().chemical(ChemicalID::Water); });
 
     REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
 }
@@ -151,15 +151,15 @@ TEST_CASE("Root nodes absorb water proportional to surface area", "[water]") {
 
     Node* root = plant.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(root);
-    root->chemical(ChemicalID::Water) = 0.0f;
-    root->chemical(ChemicalID::Sugar) = 10.0f;
+    root->local().chemical(ChemicalID::Water) = 0.0f;
+    root->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp = default_world_params();
     wp.soil_moisture = 1.0f;
 
     root->tick(plant, wp);
 
-    REQUIRE(root->chemical(ChemicalID::Water) > 0.0f);
+    REQUIRE(root->local().chemical(ChemicalID::Water) > 0.0f);
 }
 
 TEST_CASE("Root absorption scales with soil_moisture", "[water]") {
@@ -168,8 +168,8 @@ TEST_CASE("Root absorption scales with soil_moisture", "[water]") {
     Plant plant_wet(g, glm::vec3(0.0f));
     Node* root_wet = plant_wet.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
     plant_wet.seed_mut()->add_child(root_wet);
-    root_wet->chemical(ChemicalID::Water) = 0.0f;
-    root_wet->chemical(ChemicalID::Sugar) = 10.0f;
+    root_wet->local().chemical(ChemicalID::Water) = 0.0f;
+    root_wet->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp_wet = default_world_params();
     wp_wet.soil_moisture = 1.0f;
@@ -178,14 +178,14 @@ TEST_CASE("Root absorption scales with soil_moisture", "[water]") {
     Plant plant_dry(g, glm::vec3(0.0f));
     Node* root_dry = plant_dry.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
     plant_dry.seed_mut()->add_child(root_dry);
-    root_dry->chemical(ChemicalID::Water) = 0.0f;
-    root_dry->chemical(ChemicalID::Sugar) = 10.0f;
+    root_dry->local().chemical(ChemicalID::Water) = 0.0f;
+    root_dry->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp_dry = default_world_params();
     wp_dry.soil_moisture = 0.2f;
     root_dry->tick(plant_dry, wp_dry);
 
-    REQUIRE(root_wet->chemical(ChemicalID::Water) > root_dry->chemical(ChemicalID::Water));
+    REQUIRE(root_wet->local().chemical(ChemicalID::Water) > root_dry->local().chemical(ChemicalID::Water));
 }
 
 TEST_CASE("Zero soil_moisture means zero water absorption", "[water]") {
@@ -194,15 +194,15 @@ TEST_CASE("Zero soil_moisture means zero water absorption", "[water]") {
 
     Node* root = plant.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(root);
-    root->chemical(ChemicalID::Water) = 0.0f;
-    root->chemical(ChemicalID::Sugar) = 10.0f;
+    root->local().chemical(ChemicalID::Water) = 0.0f;
+    root->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp = default_world_params();
     wp.soil_moisture = 0.0f;
 
     root->tick(plant, wp);
 
-    REQUIRE(root->chemical(ChemicalID::Water) < 1e-6f);
+    REQUIRE(root->local().chemical(ChemicalID::Water) < 1e-6f);
 }
 
 TEST_CASE("Root apical tips also absorb water", "[water]") {
@@ -215,15 +215,15 @@ TEST_CASE("Root apical tips also absorb water", "[water]") {
     });
     REQUIRE(root_apical != nullptr);
 
-    root_apical->chemical(ChemicalID::Water) = 0.0f;
-    root_apical->chemical(ChemicalID::Sugar) = 10.0f;
+    root_apical->local().chemical(ChemicalID::Water) = 0.0f;
+    root_apical->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp = default_world_params();
     wp.soil_moisture = 1.0f;
 
     root_apical->tick(plant, wp);
 
-    REQUIRE(root_apical->chemical(ChemicalID::Water) > 0.0f);
+    REQUIRE(root_apical->local().chemical(ChemicalID::Water) > 0.0f);
 }
 
 // === Task 7: Leaf transpiration and photosynthesis water cost tests ===
@@ -237,15 +237,15 @@ TEST_CASE("Leaves lose water via transpiration", "[water]") {
     plant.seed_mut()->add_child(leaf);
 
     float initial_water = 5.0f;
-    leaf->chemical(ChemicalID::Water) = initial_water;
-    leaf->chemical(ChemicalID::Sugar) = 10.0f;
+    leaf->local().chemical(ChemicalID::Water) = initial_water;
+    leaf->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp = default_world_params();
     wp.light_level = 2.0f;
     compute_light_exposure(plant, wp);
     leaf->tick(plant, wp);
 
-    REQUIRE(leaf->chemical(ChemicalID::Water) < initial_water);
+    REQUIRE(leaf->local().chemical(ChemicalID::Water) < initial_water);
 }
 
 TEST_CASE("Transpiration scales with light exposure", "[water]") {
@@ -259,8 +259,8 @@ TEST_CASE("Transpiration scales with light exposure", "[water]") {
     leaf_bright->as_leaf()->leaf_size = 0.5f;
     leaf_bright->as_leaf()->light_exposure = 1.0f;
     plant_bright.seed_mut()->add_child(leaf_bright);
-    leaf_bright->chemical(ChemicalID::Water) = 5.0f;
-    leaf_bright->chemical(ChemicalID::Sugar) = 10.0f;
+    leaf_bright->local().chemical(ChemicalID::Water) = 5.0f;
+    leaf_bright->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp = default_world_params();
     leaf_bright->tick(plant_bright, wp);
@@ -270,12 +270,12 @@ TEST_CASE("Transpiration scales with light exposure", "[water]") {
     leaf_dim->as_leaf()->leaf_size = 0.5f;
     leaf_dim->as_leaf()->light_exposure = 0.1f;
     plant_dim.seed_mut()->add_child(leaf_dim);
-    leaf_dim->chemical(ChemicalID::Water) = 5.0f;
-    leaf_dim->chemical(ChemicalID::Sugar) = 10.0f;
+    leaf_dim->local().chemical(ChemicalID::Water) = 5.0f;
+    leaf_dim->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     leaf_dim->tick(plant_dim, wp);
 
-    REQUIRE(leaf_bright->chemical(ChemicalID::Water) < leaf_dim->chemical(ChemicalID::Water));
+    REQUIRE(leaf_bright->local().chemical(ChemicalID::Water) < leaf_dim->local().chemical(ChemicalID::Water));
 }
 
 TEST_CASE("Water does not go below zero from transpiration", "[water]") {
@@ -286,15 +286,15 @@ TEST_CASE("Water does not go below zero from transpiration", "[water]") {
     leaf->as_leaf()->leaf_size = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
-    leaf->chemical(ChemicalID::Water) = 0.0001f;
-    leaf->chemical(ChemicalID::Sugar) = 10.0f;
+    leaf->local().chemical(ChemicalID::Water) = 0.0001f;
+    leaf->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     WorldParams wp = default_world_params();
     wp.light_level = 10.0f;
     compute_light_exposure(plant, wp);
     leaf->tick(plant, wp);
 
-    REQUIRE(leaf->chemical(ChemicalID::Water) >= 0.0f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Water) >= 0.0f);
 }
 
 TEST_CASE("Photosynthesis consumes water proportional to sugar produced", "[water]") {
@@ -305,16 +305,16 @@ TEST_CASE("Photosynthesis consumes water proportional to sugar produced", "[wate
     leaf->as_leaf()->leaf_size = 0.5f;
     plant.seed_mut()->add_child(leaf);
 
-    leaf->chemical(ChemicalID::Water) = 100.0f;
-    leaf->chemical(ChemicalID::Sugar) = 0.0f;
+    leaf->local().chemical(ChemicalID::Water) = 100.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     WorldParams wp = default_world_params();
     wp.light_level = 2.0f;
     compute_light_exposure(plant, wp);
 
-    float water_before = leaf->chemical(ChemicalID::Water);
+    float water_before = leaf->local().chemical(ChemicalID::Water);
     leaf->tick(plant, wp);
-    float water_after = leaf->chemical(ChemicalID::Water);
+    float water_after = leaf->local().chemical(ChemicalID::Water);
 
     float leaf_area = 0.5f * 0.5f;
     float transpiration_only = g.transpiration_rate * leaf_area * leaf->as_leaf()->light_exposure;
@@ -338,23 +338,23 @@ TEST_CASE("Root absorption self-limits as root fills up", "[water]") {
     Node* root_low = plant_low.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
     plant_low.seed_mut()->add_child(root_low);
     float cap = water_cap(*root_low, g);
-    root_low->chemical(ChemicalID::Water) = 0.1f * cap;
-    root_low->chemical(ChemicalID::Sugar) = 10.0f;
+    root_low->local().chemical(ChemicalID::Water) = 0.1f * cap;
+    root_low->local().chemical(ChemicalID::Sugar) = 10.0f;
 
-    float before_low = root_low->chemical(ChemicalID::Water);
+    float before_low = root_low->local().chemical(ChemicalID::Water);
     root_low->tick(plant_low, wp);
-    float absorbed_low = root_low->chemical(ChemicalID::Water) - before_low;
+    float absorbed_low = root_low->local().chemical(ChemicalID::Water) - before_low;
 
     // Root at 90% fill — same geometry, just more water inside
     Plant plant_high(g, glm::vec3(0.0f));
     Node* root_high = plant_high.create_node(NodeType::ROOT, glm::vec3(0.0f, -0.5f, 0.0f), 0.05f);
     plant_high.seed_mut()->add_child(root_high);
-    root_high->chemical(ChemicalID::Water) = 0.9f * cap;
-    root_high->chemical(ChemicalID::Sugar) = 10.0f;
+    root_high->local().chemical(ChemicalID::Water) = 0.9f * cap;
+    root_high->local().chemical(ChemicalID::Sugar) = 10.0f;
 
-    float before_high = root_high->chemical(ChemicalID::Water);
+    float before_high = root_high->local().chemical(ChemicalID::Water);
     root_high->tick(plant_high, wp);
-    float absorbed_high = root_high->chemical(ChemicalID::Water) - before_high;
+    float absorbed_high = root_high->local().chemical(ChemicalID::Water) - before_high;
 
     // 10%-full root has gradient 0.9, 90%-full has gradient 0.1 → ratio ~9×
     REQUIRE(absorbed_low > 0.0f);                       // 10%-full root absorbs
@@ -370,7 +370,7 @@ TEST_CASE("Seed water initializes within capacity (not to seed_sugar)", "[water]
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    float seed_water = plant.seed()->chemical(ChemicalID::Water);
+    float seed_water = plant.seed()->local().chemical(ChemicalID::Water);
     float seed_cap   = water_cap(*plant.seed(), g);
 
     // Water must be at or below capacity (no overcap)

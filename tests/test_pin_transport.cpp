@@ -50,7 +50,7 @@ TEST_CASE("PIN Phase A: shoot stem pumps auxin toward seed", "[pin]") {
     // participate in Phase A/B — they would otherwise supply/absorb auxin and skew
     // the expected capacity calculations.
     { auto ch = seed->children; for (Node* c : ch) plant.remove_subtree(c); }
-    seed->chemical(ChemicalID::Auxin) = 0.0f;
+    seed->local().chemical(ChemicalID::Auxin) = 0.0f;
 
     // Add a STEM child with known radius so capacity is predictable.
     float r = 0.05f;
@@ -58,7 +58,7 @@ TEST_CASE("PIN Phase A: shoot stem pumps auxin toward seed", "[pin]") {
     seed->add_child(stem);
 
     float initial_auxin = 3.0f;
-    stem->chemical(ChemicalID::Auxin) = initial_auxin;
+    stem->local().chemical(ChemicalID::Auxin) = initial_auxin;
 
     // Expected: efficiency = pin_base_efficiency (no prior bias).
     float max_cap  = r * r * g.pin_capacity_per_area;  // 0.0025 × 500 = 1.25
@@ -67,13 +67,13 @@ TEST_CASE("PIN Phase A: shoot stem pumps auxin toward seed", "[pin]") {
     pin_transport(plant, g);
 
     // Stem lost auxin.
-    REQUIRE(stem->chemical(ChemicalID::Auxin) == Approx(initial_auxin - expected).epsilon(1e-4f));
+    REQUIRE(stem->local().chemical(ChemicalID::Auxin) == Approx(initial_auxin - expected).epsilon(1e-4f));
 
     // Seed's transport_received holds the collected amount (or seed.chemical directly
     // if the seed is the accumulator — Phase B distributes to roots, and any
     // remainder stays at the seed).
     float received = seed->transport_received[ChemicalID::Auxin]
-                   + seed->chemical(ChemicalID::Auxin);
+                   + seed->local().chemical(ChemicalID::Auxin);
     // Without root children to absorb it, Phase B puts the remainder at seed.
     REQUIRE(received == Approx(expected).epsilon(1e-4f));
 }
@@ -97,7 +97,7 @@ TEST_CASE("PIN Phase A: high bias raises transport efficiency", "[pin]") {
     seed->auxin_flow_bias[stem] = 1.0f;  // fully upregulated PINs
 
     float initial_auxin = 3.0f;
-    stem->chemical(ChemicalID::Auxin) = initial_auxin;
+    stem->local().chemical(ChemicalID::Auxin) = initial_auxin;
 
     float max_cap  = r * r * g.pin_capacity_per_area;   // 1.25
     float efficiency = g.pin_base_efficiency + 1.0f * (1.0f - g.pin_base_efficiency);  // 1.0
@@ -105,7 +105,7 @@ TEST_CASE("PIN Phase A: high bias raises transport efficiency", "[pin]") {
 
     pin_transport(plant, g);
 
-    REQUIRE(stem->chemical(ChemicalID::Auxin) == Approx(initial_auxin - expected).epsilon(1e-4f));
+    REQUIRE(stem->local().chemical(ChemicalID::Auxin) == Approx(initial_auxin - expected).epsilon(1e-4f));
 }
 
 // -----------------------------------------------------------------------
@@ -123,7 +123,7 @@ TEST_CASE("PIN Phase B: seed distributes to root child", "[pin]") {
     // Strip default meristems — default root_apical would absorb a fraction of the
     // seed_collected auxin in Phase B, making the expected distribution non-trivial.
     { auto ch = seed->children; for (Node* c : ch) plant.remove_subtree(c); }
-    seed->chemical(ChemicalID::Auxin) = 0.0f;
+    seed->local().chemical(ChemicalID::Auxin) = 0.0f;
 
     float r_stem = 0.05f;
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), r_stem);
@@ -134,7 +134,7 @@ TEST_CASE("PIN Phase B: seed distributes to root child", "[pin]") {
     seed->add_child(root);
 
     // Give stem enough auxin to produce measurable Phase A flow.
-    stem->chemical(ChemicalID::Auxin) = 5.0f;
+    stem->local().chemical(ChemicalID::Auxin) = 5.0f;
 
     // Expected shoot collection (Phase A): capacity × base_efficiency for stem.
     float stem_cap      = r_stem * r_stem * g.pin_capacity_per_area;
@@ -146,8 +146,8 @@ TEST_CASE("PIN Phase B: seed distributes to root child", "[pin]") {
 
     pin_transport(plant, g);
 
-    // Phase C places it directly in root->chemical(Auxin).
-    REQUIRE(root->chemical(ChemicalID::Auxin) == Approx(expected_to_root).epsilon(1e-4f));
+    // Phase C places it directly in root->local().chemical(Auxin).
+    REQUIRE(root->local().chemical(ChemicalID::Auxin) == Approx(expected_to_root).epsilon(1e-4f));
 }
 
 // -----------------------------------------------------------------------
@@ -174,14 +174,14 @@ TEST_CASE("PIN Phase B: two root children split auxin by radius", "[pin]") {
     seed->add_child(root_small);
 
     // Ample auxin so distribution isn't limited by available amount.
-    stem->chemical(ChemicalID::Auxin) = 10.0f;
+    stem->local().chemical(ChemicalID::Auxin) = 10.0f;
     // Bias fully upregulated so capacity (not efficiency) is the limiting factor.
     seed->auxin_flow_bias[stem] = 1.0f;
 
     pin_transport(plant, g);
 
-    float got_big   = root_big->chemical(ChemicalID::Auxin);
-    float got_small = root_small->chemical(ChemicalID::Auxin);
+    float got_big   = root_big->local().chemical(ChemicalID::Auxin);
+    float got_small = root_small->local().chemical(ChemicalID::Auxin);
 
     REQUIRE(got_big   > 0.0f);
     REQUIRE(got_small > 0.0f);
@@ -205,13 +205,13 @@ TEST_CASE("PIN canalization: sustained flux builds auxin_flow_bias", "[pin]") {
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), r);
     seed->add_child(stem);
 
-    stem->chemical(ChemicalID::Auxin) = 5.0f;
+    stem->local().chemical(ChemicalID::Auxin) = 5.0f;
 
     // Fund maintenance so nodes don't starve.
     WorldParams world = default_world_params();
     world.starvation_ticks_max = 1000000u;
     world.light_level = 0.0f;
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
 
     // Before any ticks, bias should be zero.
     float bias_initial = 0.0f;
@@ -223,7 +223,7 @@ TEST_CASE("PIN canalization: sustained flux builds auxin_flow_bias", "[pin]") {
 
     // Replenish auxin each tick so flux stays sustained.
     for (int i = 0; i < 20; i++) {
-        stem->chemical(ChemicalID::Auxin) = 5.0f;
+        stem->local().chemical(ChemicalID::Auxin) = 5.0f;
         plant.tick(world);
     }
 
@@ -256,11 +256,11 @@ TEST_CASE("PIN canalization: bias decays when flux stops", "[pin]") {
     WorldParams world = default_world_params();
     world.starvation_ticks_max = 1000000u;
     world.light_level = 0.0f;
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 100.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 100.0f; });
 
     // Build up bias with sustained auxin flow.
     for (int i = 0; i < 20; i++) {
-        stem->chemical(ChemicalID::Auxin) = 5.0f;
+        stem->local().chemical(ChemicalID::Auxin) = 5.0f;
         plant.tick(world);
     }
     float bias_peak = 0.0f;
@@ -272,7 +272,7 @@ TEST_CASE("PIN canalization: bias decays when flux stops", "[pin]") {
 
     // Stop auxin — let the bias decay.
     for (int i = 0; i < 30; i++) {
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Auxin) = 0.0f; });
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Auxin) = 0.0f; });
         plant.tick(world);
     }
     float bias_after = 0.0f;
@@ -305,29 +305,29 @@ TEST_CASE("PIN anti-teleportation: received auxin stays in buffer until flush", 
     // Strip default meristems — their initial auxin would enter seed_collected and
     // inflate the total; root_apical would drain some away, breaking conservation.
     { auto ch = seed->children; for (Node* c : ch) plant.remove_subtree(c); }
-    seed->chemical(ChemicalID::Auxin) = 0.0f;
+    seed->local().chemical(ChemicalID::Auxin) = 0.0f;
 
     float r = 0.05f;
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.1f, 0.0f), r);
     seed->add_child(stem);
-    stem->chemical(ChemicalID::Auxin) = 2.0f;
+    stem->local().chemical(ChemicalID::Auxin) = 2.0f;
 
-    float seed_before = seed->chemical(ChemicalID::Auxin);
+    float seed_before = seed->local().chemical(ChemicalID::Auxin);
 
     pin_transport(plant, g);
 
     // The auxin moved from stem went to seed_collected → Phase B redistributed
-    // it (no root children → stays at seed via `seed->chemical(Auxin) += seed_collected`).
-    // So seed->chemical(Auxin) DID increase (Phase B remainder path is direct).
+    // it (no root children → stays at seed via `seed->local().chemical(Auxin) += seed_collected`).
+    // So seed->local().chemical(Auxin) DID increase (Phase B remainder path is direct).
     // This is intentional: Phase B writes directly so Phase C root nodes see it this tick.
     // Non-seed parents use transport_received — verify stem's parent path:
     // stem has NO children, so no parent->transport_received test needed here.
     // Instead verify the stem itself lost auxin (the basipetal pump ran).
-    float stem_lost = 2.0f - stem->chemical(ChemicalID::Auxin);
+    float stem_lost = 2.0f - stem->local().chemical(ChemicalID::Auxin);
     REQUIRE(stem_lost > 0.0f);
 
     // And the total auxin in the system is conserved (no auxin decay during pin_transport).
-    float total = stem->chemical(ChemicalID::Auxin) + seed->chemical(ChemicalID::Auxin);
+    float total = stem->local().chemical(ChemicalID::Auxin) + seed->local().chemical(ChemicalID::Auxin);
     for (auto& [id, amt] : seed->transport_received) {
         if (id == ChemicalID::Auxin) total += amt;
     }

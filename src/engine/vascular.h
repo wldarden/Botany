@@ -1,41 +1,4 @@
-// src/engine/vascular.h — Xylem & phloem vascular transport.
-// Global pass that moves sugar (phloem) and water+cytokinin (xylem)
-// via bulk flow, bypassing intermediate conduit nodes.
-// Local diffusion (Node::transport_with_children) handles everything else.
+// src/engine/vascular.h — formerly the old pairwise-Jacobi vascular transport.
+// Deleted in Phase F of the compartmented vascular refactor.
+// See vascular_sub_stepped.h for the live algorithm.
 #pragma once
-
-#include "engine/chemical/chemical.h"
-#include "engine/world_params.h"
-
-namespace botany {
-
-class Plant;
-struct Genome;
-class Node;
-
-// Run vascular transport for the entire plant.
-// Call once per tick, before the DFS tree walk.
-// Pass world so the call can gate optional debug logging via world.vascular_debug_log.
-void vascular_transport(Plant& plant, const Genome& g, const WorldParams& world);
-
-// Münch pressure-flow phloem resolve.
-// Three passes: leaf loading (pre-Jacobi), Jacobi pipe-network resolution,
-// meristem unloading (post-Jacobi).  Called from vascular_transport().
-void phloem_resolve(Plant& plant, const Genome& g, const WorldParams& world);
-
-// Xylem pressure-flow resolve.  Mass-conserving Jacobi pass for water and
-// cytokinin, driven by water-fraction gradient (dp = frac_src − frac_dst).
-// Cytokinin rides the water stream: cyto flow per edge = water_flow × sender
-// cytokinin concentration in water.  Called from vascular_transport().
-void xylem_resolve(Plant& plant, const Genome& g, const WorldParams& world);
-
-// Is this chemical transported via vasculature (bulk flow)?
-inline bool is_vascular_chemical(ChemicalID id) {
-    return id == ChemicalID::Sugar || id == ChemicalID::Water || id == ChemicalID::Cytokinin;
-}
-
-// Does this node have mature vasculature (xylem/phloem)?
-// Seed always has vasculature (trunk base / junction).
-bool has_vasculature(const Node& n, const Genome& g);
-
-} // namespace botany

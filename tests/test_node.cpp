@@ -19,10 +19,10 @@ TEST_CASE("Node creation with default values", "[node]") {
     REQUIRE(node.parent == nullptr);
     REQUIRE(node.children.empty());
     REQUIRE(node.age == 0);
-    REQUIRE(node.chemical(ChemicalID::Auxin) == 0.0f);
-    REQUIRE(node.chemical(ChemicalID::Cytokinin) == 0.0f);
+    REQUIRE(node.local().chemical(ChemicalID::Auxin) == 0.0f);
+    REQUIRE(node.local().chemical(ChemicalID::Cytokinin) == 0.0f);
     REQUIRE(node.is_meristem() == false);
-    REQUIRE(node.chemical(ChemicalID::Sugar) == 0.0f);
+    REQUIRE(node.local().chemical(ChemicalID::Sugar) == 0.0f);
 }
 
 TEST_CASE("add_child establishes parent-child relationship", "[node]") {
@@ -49,7 +49,7 @@ TEST_CASE("LEAF node stores leaf_size", "[node]") {
     node.leaf_size = 0.3f;
     REQUIRE(node.type == NodeType::LEAF);
     REQUIRE(node.leaf_size == 0.3f);
-    REQUIRE(node.chemical(ChemicalID::Sugar) == 0.0f);
+    REQUIRE(node.local().chemical(ChemicalID::Sugar) == 0.0f);
 }
 
 TEST_CASE("NodeType covers both meristem types", "[node]") {
@@ -139,9 +139,9 @@ TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]"
     parent_node->add_child(childA);
     parent_node->add_child(childB);
 
-    parent_node->chemical(ChemicalID::Sugar) = 0.3f;
-    childA->chemical(ChemicalID::Sugar) = 0.0f;
-    childB->chemical(ChemicalID::Sugar) = 0.0f;
+    parent_node->local().chemical(ChemicalID::Sugar) = 0.3f;
+    childA->local().chemical(ChemicalID::Sugar) = 0.0f;
+    childB->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     // bias_mult for childA = 1 + 1*(1+0) = 2.0, for childB = 1.0
     // childA should get 2/3 of the budget, childB 1/3
@@ -151,11 +151,11 @@ TEST_CASE("Canalization: biased child gets larger sugar share", "[canalization]"
     parent_node->transport_with_children(g);
     // Flush received buffers (normally done by tick())
     for (Node* c : parent_node->children) {
-        for (auto& [id, amt] : c->transport_received) c->chemical(id) += amt;
+        for (auto& [id, amt] : c->transport_received) c->local().chemical(id) += amt;
         c->transport_received.clear();
     }
 
-    REQUIRE(childA->chemical(ChemicalID::Sugar) > childB->chemical(ChemicalID::Sugar) * 1.5f);
+    REQUIRE(childA->local().chemical(ChemicalID::Sugar) > childB->local().chemical(ChemicalID::Sugar) * 1.5f);
 }
 
 TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization]") {
@@ -172,9 +172,9 @@ TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization
     parent_node->add_child(childA);
     parent_node->add_child(childB);
 
-    parent_node->chemical(ChemicalID::Sugar) = 0.3f;
-    childA->chemical(ChemicalID::Sugar) = 0.0f;
-    childB->chemical(ChemicalID::Sugar) = 0.0f;
+    parent_node->local().chemical(ChemicalID::Sugar) = 0.3f;
+    childA->local().chemical(ChemicalID::Sugar) = 0.0f;
+    childB->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     // Big biases — but weight=0 should make them irrelevant
     parent_node->auxin_flow_bias[childA] = 5.0f;
@@ -183,13 +183,13 @@ TEST_CASE("Canalization: zero canalization_weight disables bias", "[canalization
     parent_node->transport_with_children(g);
     // Flush received buffers (normally done by tick())
     for (Node* c : parent_node->children) {
-        for (auto& [id, amt] : c->transport_received) c->chemical(id) += amt;
+        for (auto& [id, amt] : c->transport_received) c->local().chemical(id) += amt;
         c->transport_received.clear();
     }
 
     // Both should get roughly equal sugar
-    float ratio = childA->chemical(ChemicalID::Sugar) /
-                  std::max(childB->chemical(ChemicalID::Sugar), 1e-8f);
+    float ratio = childA->local().chemical(ChemicalID::Sugar) /
+                  std::max(childB->local().chemical(ChemicalID::Sugar), 1e-8f);
     REQUIRE(ratio > 0.8f);
     REQUIRE(ratio < 1.2f);
 }
@@ -208,9 +208,9 @@ TEST_CASE("Canalization: transport with biases doesn't break child-to-parent flo
     parent_node->add_child(childA);
     parent_node->add_child(childB);
 
-    childA->chemical(ChemicalID::Auxin) = 5.0f;
-    childB->chemical(ChemicalID::Auxin) = 5.0f;
-    parent_node->chemical(ChemicalID::Auxin) = 0.0f;
+    childA->local().chemical(ChemicalID::Auxin) = 5.0f;
+    childB->local().chemical(ChemicalID::Auxin) = 5.0f;
+    parent_node->local().chemical(ChemicalID::Auxin) = 0.0f;
 
     parent_node->auxin_flow_bias[childA] = 2.0f;
     parent_node->auxin_flow_bias[childB] = 0.0f;
@@ -218,10 +218,10 @@ TEST_CASE("Canalization: transport with biases doesn't break child-to-parent flo
     parent_node->transport_with_children(g);
 
     // Parent should have received auxin from both children
-    REQUIRE(parent_node->chemical(ChemicalID::Auxin) > 0.0f);
+    REQUIRE(parent_node->local().chemical(ChemicalID::Auxin) > 0.0f);
     // Both children should have given some auxin
-    REQUIRE(childA->chemical(ChemicalID::Auxin) < 5.0f);
-    REQUIRE(childB->chemical(ChemicalID::Auxin) < 5.0f);
+    REQUIRE(childA->local().chemical(ChemicalID::Auxin) < 5.0f);
+    REQUIRE(childB->local().chemical(ChemicalID::Auxin) < 5.0f);
 }
 
 TEST_CASE("Canalization: auxin_flow_bias builds from auxin flux", "[canalization]") {
@@ -234,8 +234,8 @@ TEST_CASE("Canalization: auxin_flow_bias builds from auxin flux", "[canalization
     // Give shoot apical lots of sugar so it produces auxin and grows
     for (int i = 0; i < 10; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
         });
         plant.tick(world);
     }
@@ -271,8 +271,8 @@ TEST_CASE("Canalization: auxin_flow_bias decays without flux", "[canalization]")
     WorldParams world = default_world_params();
     for (int i = 0; i < 10; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Auxin) = 0.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Auxin) = 0.0f;
         });
         plant.tick(world);
     }
@@ -292,8 +292,8 @@ TEST_CASE("Canalization: auxin_flow_bias builds with sustained PIN flux", "[cana
 
     for (int i = 0; i < 10; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Cytokinin) = 1.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Cytokinin) = 1.0f;
         });
         plant.tick(world);
     }
@@ -331,8 +331,8 @@ TEST_CASE("Canalization: auxin_flow_bias lerps toward zero when flux stops", "[c
     WorldParams world = default_world_params();
     for (int i = 0; i < 20; i++) {
         plant.for_each_node_mut([](Node& n) {
-            n.chemical(ChemicalID::Sugar) = 100.0f;
-            n.chemical(ChemicalID::Auxin) = 0.0f;
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Auxin) = 0.0f;
         });
         plant.tick(world);
     }

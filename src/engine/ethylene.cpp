@@ -25,17 +25,17 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
     // Phase 1: Reset and compute local production
     for (auto& info : nodes) {
         Node& node = *info.node;
-        node.chemical(ChemicalID::Ethylene) = 0.0f;
+        node.local().chemical(ChemicalID::Ethylene) = 0.0f;
 
         // Trigger 1: Sugar starvation
-        if (node.chemical(ChemicalID::Sugar) <= 0.0f) {
-            node.chemical(ChemicalID::Ethylene) += g.ethylene_starvation_rate;
+        if (node.local().chemical(ChemicalID::Sugar) <= 0.0f) {
+            node.local().chemical(ChemicalID::Ethylene) += g.ethylene_starvation_rate;
         }
 
         // Trigger 2: Low light (LEAF only)
         if (auto* leaf = node.as_leaf()) {
             if (leaf->light_exposure < g.ethylene_shade_threshold) {
-                node.chemical(ChemicalID::Ethylene) += g.ethylene_shade_rate * (1.0f - leaf->light_exposure);
+                node.local().chemical(ChemicalID::Ethylene) += g.ethylene_shade_rate * (1.0f - leaf->light_exposure);
             }
         }
 
@@ -43,7 +43,7 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
         if (node.type == NodeType::LEAF &&
             node.age > g.ethylene_age_onset) {
             float age_past = static_cast<float>(node.age - g.ethylene_age_onset);
-            node.chemical(ChemicalID::Ethylene) += g.ethylene_age_rate * age_past
+            node.local().chemical(ChemicalID::Ethylene) += g.ethylene_age_rate * age_past
                            / static_cast<float>(g.ethylene_age_onset);
         }
 
@@ -57,7 +57,7 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
                 nearby_count++;
             }
         }
-        node.chemical(ChemicalID::Ethylene) += g.ethylene_crowding_rate * static_cast<float>(nearby_count);
+        node.local().chemical(ChemicalID::Ethylene) += g.ethylene_crowding_rate * static_cast<float>(nearby_count);
     }
 
     // Phase 2: Spatial gas diffusion (compute-then-apply)
@@ -66,7 +66,7 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
     float dr2 = dr * dr;
 
     for (size_t i = 0; i < nodes.size(); i++) {
-        if (nodes[i].node->chemical(ChemicalID::Ethylene) <= 0.0f) continue;
+        if (nodes[i].node->local().chemical(ChemicalID::Ethylene) <= 0.0f) continue;
         for (size_t j = 0; j < nodes.size(); j++) {
             if (i == j) continue;
             glm::vec3 diff = nodes[j].pos - nodes[i].pos;
@@ -74,12 +74,12 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
             if (dist2 >= dr2) continue;
             float dist = std::sqrt(dist2);
             float falloff = 1.0f - dist / dr;
-            received[j] += nodes[i].node->chemical(ChemicalID::Ethylene) * falloff;
+            received[j] += nodes[i].node->local().chemical(ChemicalID::Ethylene) * falloff;
         }
     }
 
     for (size_t i = 0; i < nodes.size(); i++) {
-        nodes[i].node->chemical(ChemicalID::Ethylene) += received[i];
+        nodes[i].node->local().chemical(ChemicalID::Ethylene) += received[i];
     }
 }
 

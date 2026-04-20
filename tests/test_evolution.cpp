@@ -50,7 +50,7 @@ TEST_CASE("Genome round-trips through StructuredGenome", "[evolution]") {
 TEST_CASE("Genome template has linkage groups", "[evolution]") {
     auto tmpl = botany::build_genome_template(botany::default_genome());
     auto& groups = tmpl.linkage_groups();
-    REQUIRE(groups.size() == 12);
+    REQUIRE(groups.size() == 13);
 
     // Verify auxin group has 20 genes (removed auxin_age_half_life)
     bool found_auxin = false;

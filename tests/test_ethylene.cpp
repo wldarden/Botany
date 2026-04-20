@@ -15,7 +15,7 @@ TEST_CASE("Starvation produces ethylene", "[ethylene]") {
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 0.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     // Place far from other nodes so spatial diffusion doesn't interfere
     stem->position = glm::vec3(100.0f, 100.0f, 100.0f);
@@ -23,7 +23,7 @@ TEST_CASE("Starvation produces ethylene", "[ethylene]") {
     WorldParams wp = default_world_params();
     compute_ethylene(plant, wp);
 
-    REQUIRE_THAT(stem->chemical(ChemicalID::Ethylene), WithinAbs(g.ethylene_starvation_rate, 0.1));
+    REQUIRE_THAT(stem->local().chemical(ChemicalID::Ethylene), WithinAbs(g.ethylene_starvation_rate, 0.1));
 }
 
 TEST_CASE("Fed node produces no starvation ethylene", "[ethylene]") {
@@ -32,13 +32,13 @@ TEST_CASE("Fed node produces no starvation ethylene", "[ethylene]") {
 
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 5.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 5.0f;
     stem->position = glm::vec3(100.0f, 100.0f, 100.0f);
 
     WorldParams wp = default_world_params();
     compute_ethylene(plant, wp);
 
-    REQUIRE(stem->chemical(ChemicalID::Ethylene) < 0.01f);
+    REQUIRE(stem->local().chemical(ChemicalID::Ethylene) < 0.01f);
 }
 
 TEST_CASE("Shaded leaf produces ethylene", "[ethylene]") {
@@ -47,7 +47,7 @@ TEST_CASE("Shaded leaf produces ethylene", "[ethylene]") {
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     leaf->as_leaf()->light_exposure = 0.1f;
     leaf->position = glm::vec3(100.0f, 100.0f, 100.0f);
     plant.seed_mut()->add_child(leaf);
@@ -56,7 +56,7 @@ TEST_CASE("Shaded leaf produces ethylene", "[ethylene]") {
     compute_ethylene(plant, wp);
 
     float expected = g.ethylene_shade_rate * (1.0f - 0.1f);
-    REQUIRE(leaf->chemical(ChemicalID::Ethylene) > expected * 0.5f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Ethylene) > expected * 0.5f);
 }
 
 TEST_CASE("Well-lit leaf produces no shade ethylene", "[ethylene]") {
@@ -65,7 +65,7 @@ TEST_CASE("Well-lit leaf produces no shade ethylene", "[ethylene]") {
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     leaf->as_leaf()->light_exposure = 0.8f;
     leaf->position = glm::vec3(100.0f, 100.0f, 100.0f);
     plant.seed_mut()->add_child(leaf);
@@ -73,7 +73,7 @@ TEST_CASE("Well-lit leaf produces no shade ethylene", "[ethylene]") {
     WorldParams wp = default_world_params();
     compute_ethylene(plant, wp);
 
-    REQUIRE(leaf->chemical(ChemicalID::Ethylene) < 0.01f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Ethylene) < 0.01f);
 }
 
 TEST_CASE("Old leaf produces age ethylene", "[ethylene]") {
@@ -82,7 +82,7 @@ TEST_CASE("Old leaf produces age ethylene", "[ethylene]") {
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     leaf->as_leaf()->light_exposure = 1.0f;
     leaf->age = g.ethylene_age_onset + 360;
     leaf->position = glm::vec3(100.0f, 100.0f, 100.0f);
@@ -92,7 +92,7 @@ TEST_CASE("Old leaf produces age ethylene", "[ethylene]") {
     compute_ethylene(plant, wp);
 
     float expected = g.ethylene_age_rate * 360.0f / static_cast<float>(g.ethylene_age_onset);
-    REQUIRE(leaf->chemical(ChemicalID::Ethylene) > expected * 0.5f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Ethylene) > expected * 0.5f);
 }
 
 TEST_CASE("Crowded nodes produce ethylene", "[ethylene]") {
@@ -101,13 +101,13 @@ TEST_CASE("Crowded nodes produce ethylene", "[ethylene]") {
 
     glm::vec3 center(5.0f, 5.0f, 5.0f);
     Node* target = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.05f);
-    target->chemical(ChemicalID::Sugar) = 1.0f;
+    target->local().chemical(ChemicalID::Sugar) = 1.0f;
     target->position = center;
     plant.seed_mut()->add_child(target);
 
     for (int i = 0; i < 5; i++) {
         Node* n = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.05f);
-        n->chemical(ChemicalID::Sugar) = 1.0f;
+        n->local().chemical(ChemicalID::Sugar) = 1.0f;
         n->position = center + glm::vec3(0.1f * i, 0.0f, 0.0f);
         plant.seed_mut()->add_child(n);
     }
@@ -116,7 +116,7 @@ TEST_CASE("Crowded nodes produce ethylene", "[ethylene]") {
     WorldParams wp = default_world_params();
     compute_ethylene(plant, wp);
 
-    REQUIRE(target->chemical(ChemicalID::Ethylene) > 0.1f);
+    REQUIRE(target->local().chemical(ChemicalID::Ethylene) > 0.1f);
 }
 
 TEST_CASE("Spatial diffusion spreads ethylene to nearby nodes", "[ethylene]") {
@@ -124,43 +124,43 @@ TEST_CASE("Spatial diffusion spreads ethylene to nearby nodes", "[ethylene]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* source = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.05f);
-    source->chemical(ChemicalID::Sugar) = 0.0f;
+    source->local().chemical(ChemicalID::Sugar) = 0.0f;
     source->position = glm::vec3(10.0f, 10.0f, 10.0f);
     plant.seed_mut()->add_child(source);
 
     Node* nearby = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.05f);
-    nearby->chemical(ChemicalID::Sugar) = 1.0f;
+    nearby->local().chemical(ChemicalID::Sugar) = 1.0f;
     nearby->position = glm::vec3(10.5f, 10.0f, 10.0f);
     plant.seed_mut()->add_child(nearby);
 
     Node* far = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.05f);
-    far->chemical(ChemicalID::Sugar) = 1.0f;
+    far->local().chemical(ChemicalID::Sugar) = 1.0f;
     far->position = glm::vec3(15.0f, 10.0f, 10.0f);
     plant.seed_mut()->add_child(far);
 
     WorldParams wp = default_world_params();
     compute_ethylene(plant, wp);
 
-    REQUIRE(nearby->chemical(ChemicalID::Ethylene) > 0.0f);
-    REQUIRE(far->chemical(ChemicalID::Ethylene) < 0.01f);
+    REQUIRE(nearby->local().chemical(ChemicalID::Ethylene) > 0.0f);
+    REQUIRE(far->local().chemical(ChemicalID::Ethylene) < 0.01f);
 }
 
 TEST_CASE("Ethylene resets to zero before recomputing", "[ethylene]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    plant.seed_mut()->chemical(ChemicalID::Ethylene) = 999.0f;
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 1.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Ethylene) = 999.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->position = glm::vec3(100.0f, 100.0f, 100.0f);
 
     plant.for_each_node_mut([](Node& n) {
-        n.chemical(ChemicalID::Sugar) = 1.0f;
+        n.local().chemical(ChemicalID::Sugar) = 1.0f;
     });
 
     WorldParams wp = default_world_params();
     compute_ethylene(plant, wp);
 
-    REQUIRE(plant.seed()->chemical(ChemicalID::Ethylene) < 999.0f);
+    REQUIRE(plant.seed()->local().chemical(ChemicalID::Ethylene) < 999.0f);
 }
 
 TEST_CASE("Leaf above ethylene threshold begins senescence", "[ethylene][abscission]") {
@@ -169,8 +169,8 @@ TEST_CASE("Leaf above ethylene threshold begins senescence", "[ethylene][absciss
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 0.1f;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 0.1f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();
@@ -185,8 +185,8 @@ TEST_CASE("Leaf below ethylene threshold stays healthy", "[ethylene][abscission]
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold * 0.5f;
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold * 0.5f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();
@@ -201,9 +201,9 @@ TEST_CASE("Senescing leaf is removed after senescence_duration", "[ethylene][abs
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
-    leaf->chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 0.1f;
+    leaf->local().chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 0.1f;
     leaf->as_leaf()->senescence_ticks = g.senescence_duration - 1; // almost done
-    leaf->chemical(ChemicalID::Sugar) = 1.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->add_child(leaf);
 
     uint32_t count_before = plant.node_count();
