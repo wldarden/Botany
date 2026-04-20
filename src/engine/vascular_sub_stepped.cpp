@@ -5,8 +5,44 @@
 #include "engine/node/node.h"
 #include <glm/geometric.hpp>
 #include <cmath>
+#include <vector>
 
 namespace botany {
+
+namespace {
+
+// Flat view of the plant for efficient sub-step iteration.  Populated once
+// at the start of vascular_sub_stepped(), then reused across all N iterations.
+struct FlatNodes {
+    std::vector<Node*> all;             // every node, DFS order
+    std::vector<Node*> conduits;        // only nodes with phloem/xylem
+    std::vector<Node*> leaves;          // LeafNode only
+    std::vector<Node*> roots;           // RootNode only
+    std::vector<Node*> apicals;         // ApicalNode only (includes SA)
+    std::vector<Node*> root_apicals;    // RootApicalNode only
+};
+
+void collect_dfs(Node* n, FlatNodes& flat) {
+    if (!n) return;
+    flat.all.push_back(n);
+    if (n->phloem() || n->xylem()) flat.conduits.push_back(n);
+    switch (n->type) {
+        case NodeType::LEAF:        flat.leaves.push_back(n); break;
+        case NodeType::ROOT:        flat.roots.push_back(n); break;
+        case NodeType::APICAL:      flat.apicals.push_back(n); break;
+        case NodeType::ROOT_APICAL: flat.root_apicals.push_back(n); break;
+        default: break;
+    }
+    for (Node* child : n->children) collect_dfs(child, flat);
+}
+
+FlatNodes flatten(Plant& plant) {
+    FlatNodes flat;
+    collect_dfs(plant.seed_mut(), flat);
+    return flat;
+}
+
+} // anonymous namespace
 
 void vascular_sub_stepped(Plant& /*plant*/, const Genome& /*g*/, const WorldParams& /*world*/) {
     // Empty stub — per-sub-step logic is added in Tasks 10-18.
