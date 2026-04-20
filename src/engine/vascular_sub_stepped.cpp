@@ -62,6 +62,22 @@ void vascular_sub_stepped(Plant& plant, const Genome& g, const WorldParams& worl
     }
 
     // --- Part B: Sub-step loop (N iterations) ---
+    //
+    // Order: inject → Jacobi → radial → extract.
+    //
+    // Earlier the order was inject → radial → extract → Jacobi, which had a
+    // pathological failure mode for cytokinin: root apicals injected cyto
+    // into their parent root's xylem, then radial flow immediately absorbed
+    // most of it into that root's local_env (because radial equilibrates
+    // between xylem and local every sub-step), and Jacobi only ran AFTER
+    // that absorption.  The result was ~37 mg of cytokinin stranded in
+    // deep root local pools and 0 reaching any stem xylem.
+    //
+    // Running Jacobi before radial gives the pressure wave a chance to
+    // propagate longitudinally (root.xylem → seed.xylem → stem.xylem → ...)
+    // before radial absorption at each node pulls chemical out into local.
+    // Extract runs last so sinks (meristems, leaves) see the post-Jacobi,
+    // post-radial conduit state when pulling their demand.
     for (uint32_t iter = 0; iter < N; ++iter) {
         // Step 1: Inject at sources (leaves for sugar, root apicals for cytokinin).
         for (size_t i = 0; i < flat.all.size(); ++i) {
@@ -71,25 +87,25 @@ void vascular_sub_stepped(Plant& plant, const Genome& g, const WorldParams& worl
             }
         }
 
-        // Step 2: Radial flow on every conduit (stem, root).
-        for (Node* n : flat.conduits) {
-            radial_flow_step(*n, N, g);
-        }
-
-        // Step 3: Extract at sinks (meristems for sugar, leaves/meristems for water).
-        for (size_t i = 0; i < flat.all.size(); ++i) {
-            const VascularBudget& b = budgets[i];
-            if (b.sugar_demand > 0.0f || b.water_demand > 0.0f) {
-                extract_step(*flat.all[i], b, N, g);
-            }
-        }
-
-        // Step 4: Longitudinal Jacobi across every conduit edge.
+        // Step 2: Longitudinal Jacobi across every conduit edge.
         for (Node* n : flat.conduits) {
             for (Node* child : n->children) {
                 if (child->phloem() || child->xylem()) {
                     jacobi_step(*n, *child, g);
                 }
+            }
+        }
+
+        // Step 3: Radial flow on every conduit (stem, root).
+        for (Node* n : flat.conduits) {
+            radial_flow_step(*n, N, g);
+        }
+
+        // Step 4: Extract at sinks (meristems for sugar, leaves/meristems for water).
+        for (size_t i = 0; i < flat.all.size(); ++i) {
+            const VascularBudget& b = budgets[i];
+            if (b.sugar_demand > 0.0f || b.water_demand > 0.0f) {
+                extract_step(*flat.all[i], b, N, g);
             }
         }
     }

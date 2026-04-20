@@ -257,12 +257,16 @@ TEST_CASE("full vascular_sub_stepped delivers sugar to apex within N hops", "[va
 
     vascular_sub_stepped(plant, g, world);
 
-    // The tip stem is 10 hops from seed.  N=20 sub-steps means 20 Jacobi
-    // iterations, so pressure wave reaches the tip.  The absolute amount
-    // is small (thin stems have tiny phloem cross-section) but must be
-    // strictly positive — any nonzero value confirms propagation.
-    float tip_phloem = tip_stem->phloem()->chemical(ChemicalID::Sugar);
-    REQUIRE(tip_phloem > 1e-8f);
+    // The tip stem is 10 hops from seed.  After N=20 sub-steps of
+    // inject → Jacobi → radial → extract, sugar has propagated to the
+    // tip's pool AND been radially redistributed into its local_env.
+    // We check both — the sum — because the split between phloem and
+    // local at steady state depends on capacity ratios and isn't a
+    // meaningful invariant.  What matters is that SOME sugar reached
+    // the tip in one tick.
+    float tip_total = tip_stem->local().chemical(ChemicalID::Sugar)
+                    + tip_stem->phloem()->chemical(ChemicalID::Sugar);
+    REQUIRE(tip_total > 1e-8f);
 }
 
 TEST_CASE("vascular_sub_stepped conserves mass", "[vascular_sub_stepped][integration][conservation]") {
