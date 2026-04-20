@@ -413,22 +413,40 @@ void jacobi_step(Node& parent, Node& child, const Genome& g) {
     }
 }
 
-// Returns the length of the internode (distance from parent to this node).
-// For the seed (no parent), returns 1.0 so the seed has a meaningful capacity.
-static float node_length(const Node& n) {
+// Returns the length of the internode (distance from parent to this node)
+// FOR CAPACITY CALCULATIONS.  For the seed (no parent), returns 1.0 so the
+// seed has a meaningful capacity.
+//
+// Floor at 5 × tip_offset (5mm at default geometry).  Freshly-spawned
+// internodes have geometric length = tip_offset (1mm), which gives them
+// sub-µg transport capacity and makes them flow bottlenecks in the chain.
+// This is an artifact of our discretization — a real plant's xylem is a
+// continuous pipe whose flow rate doesn't care how we chop it into
+// segments.  By flooring the effective length, newly-spawned short
+// internodes get "plant segment" capacity rather than their literal
+// geometric tiny length.  Geometry (for rendering, physics, droop,
+// phototropism etc) is unaffected.
+static float node_length(const Node& n, const Genome& g) {
     if (!n.parent) return 1.0f;
-    return glm::length(n.offset);
+    const float geometric = glm::length(n.offset);
+    // Floor at 2 × tip_offset.  5× floored too aggressively — with bigger
+    // caps, radial_flow_step's max_equalize_volume = 0.5 × min(cap) also
+    // scales up, which makes root xylems absorb cytokinin into local faster
+    // than Jacobi can propagate it upward, starving shoot meristems.
+    // 2× gives a modest capacity boost without over-amplifying radial.
+    const float floor = 2.0f * g.tip_offset;
+    return std::max(floor, geometric);
 }
 
 float phloem_capacity(const Node& n, const Genome& g) {
     if (!n.phloem()) return 0.0f;
-    const float L = node_length(n);
+    const float L = node_length(n, g);
     return 3.14159265358979f * n.radius * n.radius * L * g.phloem_fraction;
 }
 
 float xylem_capacity(const Node& n, const Genome& g) {
     if (!n.xylem()) return 0.0f;
-    const float L = node_length(n);
+    const float L = node_length(n, g);
     return 3.14159265358979f * n.radius * n.radius * L * g.xylem_fraction;
 }
 
