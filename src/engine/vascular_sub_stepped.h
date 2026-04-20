@@ -62,4 +62,11 @@ void radial_flow_step(Node& conduit, uint32_t N, const Genome& g);
 float phloem_capacity(const Node& n, const Genome& g);
 float xylem_capacity(const Node& n, const Genome& g);
 
+// One Jacobi pass between two adjacent conduit nodes.  Equalizes both
+// phloem (sugar) and xylem (water + cytokinin) pressures between them.
+// Pure neighbor equalizer — has no awareness of sources or sinks.  Pressure
+// field created by inject/extract at node locations drives routing
+// automatically.
+void jacobi_step(Node& parent, Node& child, const Genome& g);
+
 } // namespace botany

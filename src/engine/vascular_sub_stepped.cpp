@@ -234,6 +234,71 @@ void radial_flow_step(Node& n, uint32_t N, const Genome& g) {
     }
 }
 
+void jacobi_step(Node& parent, Node& child, const Genome& g) {
+    // Phloem sugar.
+    if (auto* pp = parent.phloem()) {
+        if (auto* cp = child.phloem()) {
+            const float cap_p = phloem_capacity(parent, g);
+            const float cap_c = phloem_capacity(child,  g);
+            if (cap_p > 1e-8f && cap_c > 1e-8f) {
+                const float pressure_p = pp->chemical(ChemicalID::Sugar) / cap_p;
+                const float pressure_c = cp->chemical(ChemicalID::Sugar) / cap_c;
+                const float base_cond  = std::min(cap_p, cap_c);
+                const float bias       = parent.get_bias_multiplier(&child, g);
+                const float conductance = base_cond * bias;
+                float flow = conductance * (pressure_p - pressure_c);
+                const float max_move = 0.5f * std::min(cap_p, cap_c);
+                flow = std::clamp(flow, -max_move, max_move);
+                if (flow > 0.0f) flow = std::min(flow, pp->chemical(ChemicalID::Sugar));
+                else             flow = -std::min(-flow, cp->chemical(ChemicalID::Sugar));
+
+                pp->chemical(ChemicalID::Sugar) -= flow;
+                cp->chemical(ChemicalID::Sugar) += flow;
+            }
+        }
+    }
+
+    // Xylem water + cytokinin.
+    if (auto* pp = parent.xylem()) {
+        if (auto* cp = child.xylem()) {
+            const float cap_p = xylem_capacity(parent, g);
+            const float cap_c = xylem_capacity(child,  g);
+            if (cap_p > 1e-8f && cap_c > 1e-8f) {
+                const float pressure_p = pp->chemical(ChemicalID::Water) / cap_p;
+                const float pressure_c = cp->chemical(ChemicalID::Water) / cap_c;
+                const float base_cond  = std::min(cap_p, cap_c);
+                const float bias       = parent.get_bias_multiplier(&child, g);
+                const float conductance = base_cond * bias;
+                float flow = conductance * (pressure_p - pressure_c);
+                const float max_move = 0.5f * std::min(cap_p, cap_c);
+                flow = std::clamp(flow, -max_move, max_move);
+                if (flow > 0.0f) flow = std::min(flow, pp->chemical(ChemicalID::Water));
+                else             flow = -std::min(-flow, cp->chemical(ChemicalID::Water));
+
+                // Water move.
+                pp->chemical(ChemicalID::Water) -= flow;
+                cp->chemical(ChemicalID::Water) += flow;
+
+                // Cytokinin rides with water.
+                if (std::abs(flow) > 1e-8f) {
+                    TransportPool* src = (flow > 0.0f) ? pp : cp;
+                    TransportPool* dst = (flow > 0.0f) ? cp : pp;
+                    // Water in source BEFORE the transfer.
+                    const float water_source_before = (flow > 0.0f)
+                        ? pp->chemical(ChemicalID::Water) + flow
+                        : cp->chemical(ChemicalID::Water) - flow;
+                    if (water_source_before > 1e-8f) {
+                        const float cyto_ratio = std::abs(flow) / water_source_before;
+                        const float cyto_move  = src->chemical(ChemicalID::Cytokinin) * cyto_ratio;
+                        src->chemical(ChemicalID::Cytokinin) -= cyto_move;
+                        dst->chemical(ChemicalID::Cytokinin) += cyto_move;
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Returns the length of the internode (distance from parent to this node).
 // For the seed (no parent), returns 1.0 so the seed has a meaningful capacity.
 static float node_length(const Node& n) {

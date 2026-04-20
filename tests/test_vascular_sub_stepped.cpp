@@ -203,3 +203,32 @@ TEST_CASE("radial permeability is smaller for thicker stems", "[vascular_sub_ste
     float perm_mature = radial_permeability_sugar(2.0f, g);
     REQUIRE(perm_mature < perm_young);
 }
+
+TEST_CASE("Jacobi equalizes two connected phloem pools", "[vascular_sub_stepped][jacobi]") {
+    Genome g = default_genome();
+    StemNode parent_stem(1, glm::vec3(0), 0.02f);
+    parent_stem.offset = glm::vec3(0.0f, 0.05f, 0.0f);
+    StemNode child_stem(2, glm::vec3(0, 0.05f, 0), 0.02f);
+    child_stem.offset = glm::vec3(0.0f, 0.05f, 0.0f);
+    parent_stem.add_child(&child_stem);
+    child_stem.parent = &parent_stem;
+
+    parent_stem.phloem()->chemical(ChemicalID::Sugar) = 1.0f;
+    child_stem.phloem()->chemical(ChemicalID::Sugar)  = 0.0f;
+
+    float total_before = parent_stem.phloem()->chemical(ChemicalID::Sugar)
+                       + child_stem.phloem()->chemical(ChemicalID::Sugar);
+
+    // Many Jacobi iterations should bring pressures close together.
+    for (int i = 0; i < 100; ++i) {
+        jacobi_step(parent_stem, child_stem, g);
+    }
+
+    float total_after = parent_stem.phloem()->chemical(ChemicalID::Sugar)
+                      + child_stem.phloem()->chemical(ChemicalID::Sugar);
+
+    REQUIRE(total_after == Catch::Approx(total_before).margin(1e-4f));
+    // Some sugar moved from parent to child.
+    REQUIRE(child_stem.phloem()->chemical(ChemicalID::Sugar) > 0.0f);
+    REQUIRE(parent_stem.phloem()->chemical(ChemicalID::Sugar) < 1.0f);
+}
