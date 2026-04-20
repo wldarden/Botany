@@ -93,7 +93,19 @@ void RootApicalNode::absorb_water(const Genome& g, const WorldParams& world) {
 }
 
 void RootApicalNode::check_spawn(Plant& plant, const Genome& g) {
-    if (parent && ticks_since_last_node >= g.root_plastochron && starvation_ticks == 0) {
+    // dist_from_parent guard mirrors ApicalNode::check_spawn.  Without it,
+    // a starved root apical that stops elongating still spawns one internode
+    // per plastochron tick — and each such spawn creates a zero-length root
+    // node (because growth_dir was reset to 0 by the previous spawn and
+    // never re-rolled due to elongate()'s early-return).  These zero-length
+    // nodes have zero xylem/phloem capacity and permanently trap any
+    // chemical injected into them (observed: 37 mg of cytokinin stranded
+    // in a chain of zero-cap roots at y≈-0.76 after 484 ticks).
+    const float dist_from_parent = glm::length(offset);
+    if (parent
+        && ticks_since_last_node >= g.root_plastochron
+        && dist_from_parent >= g.tip_offset
+        && starvation_ticks == 0) {
         spawn_internode(plant, g);
     }
 }
