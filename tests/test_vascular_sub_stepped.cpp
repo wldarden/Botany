@@ -232,3 +232,77 @@ TEST_CASE("Jacobi equalizes two connected phloem pools", "[vascular_sub_stepped]
     REQUIRE(child_stem.phloem()->chemical(ChemicalID::Sugar) > 0.0f);
     REQUIRE(parent_stem.phloem()->chemical(ChemicalID::Sugar) < 1.0f);
 }
+
+TEST_CASE("full vascular_sub_stepped delivers sugar to apex within N hops", "[vascular_sub_stepped][integration]") {
+    Genome g = default_genome();
+    WorldParams world;
+    world.vascular_substeps = 20;
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Build a 10-stem chain above the seed.
+    Node* tip_stem = plant.seed_mut();
+    for (int i = 0; i < 10; ++i) {
+        Node* stem = plant.create_node(NodeType::STEM,
+            glm::vec3(0.0f, 0.05f * (i + 1), 0.0f), 0.015f);
+        tip_stem->add_child(stem);
+        tip_stem = stem;
+    }
+
+    // Zero all sugar; pile 10 g at the seed's phloem.
+    plant.for_each_node_mut([&](Node& n) {
+        n.local().chemical(ChemicalID::Sugar) = 0.0f;
+        if (auto* p = n.phloem()) p->chemical(ChemicalID::Sugar) = 0.0f;
+    });
+    plant.seed_mut()->phloem()->chemical(ChemicalID::Sugar) = 10.0f;
+
+    vascular_sub_stepped(plant, g, world);
+
+    // The tip stem is 10 hops from seed.  N=20 sub-steps means 20 Jacobi
+    // iterations, so pressure wave reaches the tip.  The absolute amount
+    // is small (thin stems have tiny phloem cross-section) but must be
+    // strictly positive — any nonzero value confirms propagation.
+    float tip_phloem = tip_stem->phloem()->chemical(ChemicalID::Sugar);
+    REQUIRE(tip_phloem > 1e-8f);
+}
+
+TEST_CASE("vascular_sub_stepped conserves mass", "[vascular_sub_stepped][integration][conservation]") {
+    Genome g = default_genome();
+    WorldParams world;
+    world.vascular_substeps = 20;
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Build: seed + one stem + one leaf.
+    Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0, 0.05f, 0), 0.015f);
+    plant.seed_mut()->add_child(stem);
+    Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.02f, 0.05f, 0), 0.01f);
+    stem->add_child(leaf);
+
+    // Seed sugar and water in various compartments.
+    plant.seed_mut()->phloem()->chemical(ChemicalID::Sugar) = 1.0f;
+    stem->phloem()->chemical(ChemicalID::Sugar)             = 0.5f;
+    leaf->local().chemical(ChemicalID::Sugar)               = 2.0f;
+    plant.seed_mut()->xylem()->chemical(ChemicalID::Water)  = 1.0f;
+    stem->xylem()->chemical(ChemicalID::Water)              = 0.5f;
+
+    // Pre-sum across all pools.
+    float sugar_before = 0.0f, water_before = 0.0f;
+    plant.for_each_node([&](const Node& n) {
+        sugar_before += n.local().chemical(ChemicalID::Sugar);
+        water_before += n.local().chemical(ChemicalID::Water);
+        if (auto* p = n.phloem()) sugar_before += p->chemical(ChemicalID::Sugar);
+        if (auto* x = n.xylem())  water_before += x->chemical(ChemicalID::Water);
+    });
+
+    vascular_sub_stepped(plant, g, world);
+
+    float sugar_after = 0.0f, water_after = 0.0f;
+    plant.for_each_node([&](const Node& n) {
+        sugar_after += n.local().chemical(ChemicalID::Sugar);
+        water_after += n.local().chemical(ChemicalID::Water);
+        if (auto* p = n.phloem()) sugar_after += p->chemical(ChemicalID::Sugar);
+        if (auto* x = n.xylem())  water_after += x->chemical(ChemicalID::Water);
+    });
+
+    REQUIRE(sugar_after == Catch::Approx(sugar_before).margin(1e-4f));
+    REQUIRE(water_after == Catch::Approx(water_before).margin(1e-4f));
+}

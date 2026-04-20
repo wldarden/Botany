@@ -49,8 +49,50 @@ FlatNodes flatten(Plant& plant) {
 
 } // anonymous namespace
 
-void vascular_sub_stepped(Plant& /*plant*/, const Genome& /*g*/, const WorldParams& /*world*/) {
-    // Empty stub — per-sub-step logic is added in Tasks 10-18.
+void vascular_sub_stepped(Plant& plant, const Genome& g, const WorldParams& world) {
+    const uint32_t N = std::max<uint32_t>(1, world.vascular_substeps);
+
+    FlatNodes flat = flatten(plant);
+
+    // --- Part A: Budget snapshot (computed once) ---
+    std::vector<VascularBudget> budgets;
+    budgets.reserve(flat.all.size());
+    for (Node* n : flat.all) {
+        budgets.push_back(compute_budget(*n, g, world));
+    }
+
+    // --- Part B: Sub-step loop (N iterations) ---
+    for (uint32_t iter = 0; iter < N; ++iter) {
+        // Step 1: Inject at sources (leaves for sugar, root apicals for cytokinin).
+        for (size_t i = 0; i < flat.all.size(); ++i) {
+            const VascularBudget& b = budgets[i];
+            if (b.sugar_supply > 0.0f || b.cytokinin_supply > 0.0f) {
+                inject_step(*flat.all[i], b, N, g);
+            }
+        }
+
+        // Step 2: Radial flow on every conduit (stem, root).
+        for (Node* n : flat.conduits) {
+            radial_flow_step(*n, N, g);
+        }
+
+        // Step 3: Extract at sinks (meristems for sugar, leaves/meristems for water).
+        for (size_t i = 0; i < flat.all.size(); ++i) {
+            const VascularBudget& b = budgets[i];
+            if (b.sugar_demand > 0.0f || b.water_demand > 0.0f) {
+                extract_step(*flat.all[i], b, N, g);
+            }
+        }
+
+        // Step 4: Longitudinal Jacobi across every conduit edge.
+        for (Node* n : flat.conduits) {
+            for (Node* child : n->children) {
+                if (child->phloem() || child->xylem()) {
+                    jacobi_step(*n, *child, g);
+                }
+            }
+        }
+    }
 }
 
 VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& /*world*/) {
