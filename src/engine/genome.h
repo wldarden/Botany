@@ -371,8 +371,16 @@ inline Genome default_genome() {
         .base_radial_permeability_water = 1.0f,
         .radial_floor_fraction_water    = 0.1f,
         .radial_half_radius_water       = 0.3f,
-        .phloem_fraction                = 0.05f,  // 5% of cross-section is sieve tubes
-        .xylem_fraction                 = 0.2f,   // 20% of cross-section is vessels
+        .phloem_fraction                = 0.3f,   // portion of π·r² allocated to sieve tubes.
+                                                  //   Biological 5% is too small for our pipe
+                                                  //   math: π·r²·L·0.05 at thin stems gives
+                                                  //   sub-µg capacities and Jacobi max_move
+                                                  //   clamps limit per-tick shoot delivery to
+                                                  //   ~10⁻⁴ g — well below shoot demand.  Tuned
+                                                  //   up to 30% for adequate flow rate.
+        .xylem_fraction                 = 0.5f,   // same issue — bumped from 20% to 50%.
+                                                  //   Real xylem can be 30–80% of stem cross-
+                                                  //   section so 50% is within biological range.
         .leaf_reserve_fraction_sugar    = 0.3f,   // matches existing phloem_reserve_fraction value
         .meristem_sink_target_fraction  = 0.05f,  // matches existing meristem_sink_fraction
         .leaf_turgor_target_fraction    = 0.7f,   // leaves aim to fill to 70% of water_cap
