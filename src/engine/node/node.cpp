@@ -615,4 +615,33 @@ const ApicalNode* Node::as_apical() const { return type == NodeType::APICAL ? st
 RootApicalNode*       Node::as_root_apical()       { return type == NodeType::ROOT_APICAL ? static_cast<RootApicalNode*>(this) : nullptr; }
 const RootApicalNode* Node::as_root_apical() const { return type == NodeType::ROOT_APICAL ? static_cast<const RootApicalNode*>(this) : nullptr; }
 
+// Walk-up helpers for finding upstream conduits
+TransportPool* Node::nearest_phloem_upstream() {
+    for (Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->phloem()) return p;
+    }
+    return nullptr;
+}
+
+const TransportPool* Node::nearest_phloem_upstream() const {
+    for (const Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->phloem()) return p;
+    }
+    return nullptr;
+}
+
+TransportPool* Node::nearest_xylem_upstream() {
+    for (Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->xylem()) return p;
+    }
+    return nullptr;
+}
+
+const TransportPool* Node::nearest_xylem_upstream() const {
+    for (const Node* n = parent; n != nullptr; n = n->parent) {
+        if (auto p = n->xylem()) return p;
+    }
+    return nullptr;
+}
+
 } // namespace botany

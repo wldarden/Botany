@@ -75,3 +75,38 @@ TEST_CASE("LeafNode/ApicalNode/RootApicalNode return nullptr pools", "[compartme
     REQUIRE(root_apical.phloem() == nullptr);
     REQUIRE(root_apical.xylem()  == nullptr);
 }
+
+TEST_CASE("nearest_phloem_upstream finds parent stem", "[compartments][walkup]") {
+    StemNode stem(1, glm::vec3(0), 0.015f);
+    LeafNode leaf(2, glm::vec3(0.05f, 0, 0), 0.01f);
+    stem.add_child(&leaf);
+    leaf.parent = &stem;
+    REQUIRE(leaf.nearest_phloem_upstream() == stem.phloem());
+}
+
+TEST_CASE("nearest_phloem_upstream walks past non-conduit ancestors", "[compartments][walkup]") {
+    StemNode stem(1, glm::vec3(0), 0.015f);
+    ApicalNode apical(2, glm::vec3(0.05f, 0, 0), 0.01f);
+    LeafNode leaf(3, glm::vec3(0.08f, 0, 0), 0.01f);
+    stem.add_child(&apical);
+    apical.parent = &stem;
+    apical.add_child(&leaf);
+    leaf.parent = &apical;
+    // Leaf's direct parent is apical (no phloem).  Walk-up must skip
+    // past the apical and find the stem.
+    REQUIRE(leaf.nearest_phloem_upstream() == stem.phloem());
+}
+
+TEST_CASE("nearest_phloem_upstream returns nullptr when no upstream conduit", "[compartments][walkup]") {
+    LeafNode orphan(1, glm::vec3(0), 0.01f);
+    // No parent set.
+    REQUIRE(orphan.nearest_phloem_upstream() == nullptr);
+}
+
+TEST_CASE("nearest_xylem_upstream finds parent root", "[compartments][walkup]") {
+    RootNode root(1, glm::vec3(0, -0.05f, 0), 0.015f);
+    RootApicalNode ra(2, glm::vec3(0, -0.10f, 0), 0.01f);
+    root.add_child(&ra);
+    ra.parent = &root;
+    REQUIRE(ra.nearest_xylem_upstream() == root.xylem());
+}

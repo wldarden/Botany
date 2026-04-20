@@ -107,6 +107,15 @@ public:
     virtual TransportPool* xylem()  { return nullptr; }
     virtual const TransportPool* xylem()  const { return nullptr; }
 
+    // Walk-up: find the nearest ancestor that owns a TransportPool of the
+    // given kind.  Used by leaves, apicals, and root apicals (which have no
+    // pool of their own) to locate the parent conduit they load into or
+    // unload from.  Returns nullptr if no ancestor has a matching pool.
+    TransportPool* nearest_phloem_upstream();
+    const TransportPool* nearest_phloem_upstream() const;
+    TransportPool* nearest_xylem_upstream();
+    const TransportPool* nearest_xylem_upstream() const;
+
     // --- Tick pipeline ---
     void tick(Plant& plant, const WorldParams& world);       // non-virtual: all universal processes
     virtual float maintenance_cost(const WorldParams& world) const;
