@@ -75,12 +75,6 @@ public:
     LocalEnv& local() { return local_env; }
     const LocalEnv& local() const { return local_env; }
 
-    // Legacy accessor — forwards to local().chemical(id).  Retained for the
-    // duration of Phase B; all call sites migrate to node.local().chemical(id)
-    // in Task 4.  Remove after sweep is complete.
-    float& chemical(ChemicalID id) { return local_env.chemical(id); }
-    float chemical(ChemicalID id) const { return local_env.chemical(id); }
-
     // Transport received buffer — chemicals received from parent's Phase 2
     // this tick. NOT visible to this node's own transport (anti-teleportation).
     // Flushed into chemical() after this node's transport completes.
