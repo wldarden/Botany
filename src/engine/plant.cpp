@@ -7,6 +7,7 @@
 #include "engine/node/tissues/root_apical.h"
 #include "engine/ethylene.h"
 #include "engine/vascular.h"
+#include "engine/vascular_sub_stepped.h"
 #include "engine/pin_transport.h"
 #include "engine/perf_log.h"
 #include "engine/world_params.h"
@@ -173,10 +174,9 @@ void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
     primary_sa_id_this_tick = -1;
     primary_ra_id_this_tick = -1;
 
-    pre_transport_growth(world);                // nodes claim sugar for growth before vascular
-    vascular_transport(*this, genome_, world);  // bulk flow for sugar/water/cytokinin
-    pin_transport(*this, genome_);              // PIN-mediated polar auxin transport
-    tick_recursive(*nodes_[0], *this, world);
+    pin_transport(*this, genome_);              // PIN-mediated polar auxin transport (before metabolism)
+    tick_recursive(*nodes_[0], *this, world);   // Phase 1: per-node metabolism
+    vascular_sub_stepped(*this, genome_, world); // Phase 2: vascular transport (after metabolism)
     flush_removals();
 
     // After the DFS walk + removals: if either primary meristem's tracker is
