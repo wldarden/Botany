@@ -124,3 +124,48 @@ TEST_CASE("inject step: leaf pushes sugar into parent stem phloem", "[vascular_s
     REQUIRE(leaf_after   == Catch::Approx(leaf_before   - budget_slice).margin(1e-5f));
     REQUIRE(phloem_after == Catch::Approx(phloem_before + budget_slice).margin(1e-5f));
 }
+
+TEST_CASE("extract step: meristem pulls sugar from parent phloem", "[vascular_sub_stepped][extract]") {
+    Genome g = default_genome();
+    WorldParams world;
+    StemNode stem(1, glm::vec3(0), 0.02f);
+    stem.offset = glm::vec3(0.0f, 0.05f, 0.0f);
+    ApicalNode apical(2, glm::vec3(0.05f, 0, 0), 0.01f);
+    stem.add_child(&apical);
+    apical.parent = &stem;
+    apical.active = true;
+
+    stem.phloem()->chemical(ChemicalID::Sugar) = 5.0f;
+    apical.local().chemical(ChemicalID::Sugar) = 0.0f;
+
+    VascularBudget b = compute_budget(apical, g, world);
+    REQUIRE(b.sugar_demand > 0.0f);
+    float slice = b.sugar_demand / 10.0f;
+
+    extract_step(apical, b, /* N */ 10, g);
+
+    // Sugar moved from phloem to meristem local, up to slice.
+    REQUIRE(apical.local().chemical(ChemicalID::Sugar) == Catch::Approx(slice).margin(1e-5f));
+    REQUIRE(stem.phloem()->chemical(ChemicalID::Sugar) == Catch::Approx(5.0f - slice).margin(1e-5f));
+}
+
+TEST_CASE("extract step capped by available phloem sugar", "[vascular_sub_stepped][extract]") {
+    Genome g = default_genome();
+    WorldParams world;
+    StemNode stem(1, glm::vec3(0), 0.02f);
+    stem.offset = glm::vec3(0.0f, 0.05f, 0.0f);
+    ApicalNode apical(2, glm::vec3(0.05f, 0, 0), 0.01f);
+    stem.add_child(&apical);
+    apical.parent = &stem;
+    apical.active = true;
+
+    stem.phloem()->chemical(ChemicalID::Sugar) = 0.01f;  // almost dry
+    apical.local().chemical(ChemicalID::Sugar) = 0.0f;
+
+    VascularBudget b = compute_budget(apical, g, world);
+    extract_step(apical, b, /* N */ 10, g);
+
+    // Capped by phloem availability — no negative phloem.
+    REQUIRE(stem.phloem()->chemical(ChemicalID::Sugar) >= 0.0f);
+    REQUIRE(apical.local().chemical(ChemicalID::Sugar) <= 0.01f);
+}

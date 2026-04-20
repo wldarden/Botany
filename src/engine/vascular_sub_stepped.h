@@ -24,6 +24,12 @@ VascularBudget compute_budget(Node& n, const Genome& g, const WorldParams& world
 // sugar_supply or cytokinin_supply budget (leaves, root apicals).
 void inject_step(Node& source, const VascularBudget& b, uint32_t N, const Genome& g);
 
+// Sink extraction: pull budget/N from nearest upstream conduit into sink's
+// local_env.  Capped by actual pool content so the pool never goes negative.
+// Water extraction also carries cytokinin proportionally (cytokinin rides in
+// xylem solution).
+void extract_step(Node& sink, const VascularBudget& b, uint32_t N, const Genome& g);
+
 // Sub-stepped vascular transport.  Replaces the pairwise-Jacobi
 // vascular_transport in Phase E.  For the duration of Phase D this function
 // coexists with the old one but is not wired into Plant::tick() yet.

@@ -120,6 +120,37 @@ void inject_step(Node& source, const VascularBudget& b, uint32_t N, const Genome
     }
 }
 
+void extract_step(Node& sink, const VascularBudget& b, uint32_t N, const Genome& /*g*/) {
+    if (N == 0) return;
+
+    if (b.sugar_demand > 0.0f) {
+        if (auto* source_pool = sink.nearest_phloem_upstream()) {
+            const float slice  = b.sugar_demand / static_cast<float>(N);
+            const float actual = std::min(slice, source_pool->chemical(ChemicalID::Sugar));
+            source_pool->chemical(ChemicalID::Sugar) -= actual;
+            sink.local().chemical(ChemicalID::Sugar) += actual;
+        }
+    }
+
+    if (b.water_demand > 0.0f) {
+        if (auto* source_pool = sink.nearest_xylem_upstream()) {
+            const float slice  = b.water_demand / static_cast<float>(N);
+            const float actual = std::min(slice, source_pool->chemical(ChemicalID::Water));
+            source_pool->chemical(ChemicalID::Water) -= actual;
+            sink.local().chemical(ChemicalID::Water) += actual;
+            // Cytokinin rides along passively — move cytokinin proportional
+            // to water drawn from this pool.
+            const float water_after = source_pool->chemical(ChemicalID::Water);
+            if (water_after + actual > 1e-8f) {
+                const float cyto_ratio = actual / (water_after + actual);
+                const float cyto_move  = source_pool->chemical(ChemicalID::Cytokinin) * cyto_ratio;
+                source_pool->chemical(ChemicalID::Cytokinin) -= cyto_move;
+                sink.local().chemical(ChemicalID::Cytokinin) += cyto_move;
+            }
+        }
+    }
+}
+
 float radial_permeability_sugar(float radius, const Genome& g) {
     const float base   = g.base_radial_permeability_sugar;
     const float floor  = g.radial_floor_fraction_sugar;
