@@ -2,6 +2,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 
 namespace botany {
 
@@ -28,3 +29,14 @@ struct ChemicalDef {
 };
 
 } // namespace botany
+
+// std::hash specialization — defined here (where ChemicalID lives) so any
+// translation unit that includes chemical.h gets a consistent definition.
+namespace std {
+    template<>
+    struct hash<botany::ChemicalID> {
+        std::size_t operator()(botany::ChemicalID id) const noexcept {
+            return static_cast<std::size_t>(id);
+        }
+    };
+}
