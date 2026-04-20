@@ -53,15 +53,15 @@ TEST_CASE("cytokinin: RA accumulates > 0.04 with low default diffusion rate", "[
     REQUIRE(ra->as_root_apical()->active);   // primary RA starts active
 
     // Prime with plenty of sugar/water so RA is never starved or turgor-limited
-    seed->chemical(ChemicalID::Sugar) = 100.0f;
-    ra->chemical(ChemicalID::Sugar)   = 50.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
+    ra->local().chemical(ChemicalID::Sugar)   = 50.0f;
 
     WorldParams world = cytokinin_test_world();
     for (int i = 0; i < 100; i++) plant.tick(world);
 
     // With rate=0.02: RA_eq ≈ 0.06  → PASS
     // With rate=0.10: RA_eq ≈ 0.027 → FAIL
-    REQUIRE(ra->chemical(ChemicalID::Cytokinin) > 0.04f);
+    REQUIRE(ra->local().chemical(ChemicalID::Cytokinin) > 0.04f);
 }
 
 // -----------------------------------------------------------------------
@@ -82,8 +82,8 @@ TEST_CASE("cytokinin: lower diffusion rate → higher RA accumulation", "[cytoki
     for (Node* c : seed_high->children) {
         if (c->type == NodeType::ROOT_APICAL) { ra_high = c; break; }
     }
-    seed_high->chemical(ChemicalID::Sugar) = 100.0f;
-    ra_high->chemical(ChemicalID::Sugar)   = 50.0f;
+    seed_high->local().chemical(ChemicalID::Sugar) = 100.0f;
+    ra_high->local().chemical(ChemicalID::Sugar)   = 50.0f;
 
     // Low-diffusion plant
     Genome g_low = cytokinin_test_genome();
@@ -95,8 +95,8 @@ TEST_CASE("cytokinin: lower diffusion rate → higher RA accumulation", "[cytoki
     for (Node* c : seed_low->children) {
         if (c->type == NodeType::ROOT_APICAL) { ra_low = c; break; }
     }
-    seed_low->chemical(ChemicalID::Sugar) = 100.0f;
-    ra_low->chemical(ChemicalID::Sugar)   = 50.0f;
+    seed_low->local().chemical(ChemicalID::Sugar) = 100.0f;
+    ra_low->local().chemical(ChemicalID::Sugar)   = 50.0f;
 
     WorldParams world = cytokinin_test_world();
     for (int i = 0; i < 100; i++) {
@@ -104,8 +104,8 @@ TEST_CASE("cytokinin: lower diffusion rate → higher RA accumulation", "[cytoki
         plant_low.tick(world);
     }
 
-    REQUIRE(ra_low->chemical(ChemicalID::Cytokinin) >
-            ra_high->chemical(ChemicalID::Cytokinin));
+    REQUIRE(ra_low->local().chemical(ChemicalID::Cytokinin) >
+            ra_high->local().chemical(ChemicalID::Cytokinin));
 }
 
 // -----------------------------------------------------------------------
@@ -137,16 +137,16 @@ TEST_CASE("cytokinin: active RA produces cytokinin, dormant does not", "[cytokin
 
     // Prime sugar, then zero ALL cytokinin so the first tick shows
     // only self-production (no bootstrap diffusion across nodes).
-    seed->chemical(ChemicalID::Sugar) = 100.0f;
-    ra_active->chemical(ChemicalID::Sugar)  = 50.0f;
-    ra_dormant->chemical(ChemicalID::Sugar) = 50.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
+    ra_active->local().chemical(ChemicalID::Sugar)  = 50.0f;
+    ra_dormant->local().chemical(ChemicalID::Sugar) = 50.0f;
     for (Node* c : seed->children)
-        c->chemical(ChemicalID::Cytokinin) = 0.0f;
-    seed->chemical(ChemicalID::Cytokinin) = 0.0f;
+        c->local().chemical(ChemicalID::Cytokinin) = 0.0f;
+    seed->local().chemical(ChemicalID::Cytokinin) = 0.0f;
 
     WorldParams world = cytokinin_test_world();
     plant.tick(world);  // single tick: production only, negligible diffusion
 
-    REQUIRE(ra_active->chemical(ChemicalID::Cytokinin)  > 0.0f);
-    REQUIRE(ra_dormant->chemical(ChemicalID::Cytokinin) == 0.0f);
+    REQUIRE(ra_active->local().chemical(ChemicalID::Cytokinin)  > 0.0f);
+    REQUIRE(ra_dormant->local().chemical(ChemicalID::Cytokinin) == 0.0f);
 }

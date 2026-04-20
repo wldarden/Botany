@@ -22,7 +22,7 @@ TEST_CASE("Young stem produces sugar when exposed to light", "[stem_photosynthes
     Plant plant(g, glm::vec3(0.0f));
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.02f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 100.0f;  // plenty for maintenance
+    stem->local().chemical(ChemicalID::Sugar) = 100.0f;  // plenty for maintenance
 
     WorldParams wp = default_world_params();
     wp.light_level = 1.0f;
@@ -42,7 +42,7 @@ TEST_CASE("Mature stem (radius >= threshold) produces no sugar", "[stem_photosyn
     Plant plant(g, glm::vec3(0.0f));
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.1f);  // radius=0.1 >> threshold
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 100.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     WorldParams wp = default_world_params();
     wp.light_level = 1.0f;
@@ -63,7 +63,7 @@ TEST_CASE("Zero light stops green stem photosynthesis", "[stem_photosynthesis]")
     Plant plant(g, glm::vec3(0.0f));
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.02f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 100.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     WorldParams wp = default_world_params();
     wp.light_level = 0.0f;
@@ -85,13 +85,13 @@ TEST_CASE("Stem photosynthesis proportional to surface area (longer = more)", "[
     Plant plant_short(g, glm::vec3(0.0f));
     Node* short_stem = plant_short.create_node(NodeType::STEM, glm::vec3(0.0f, 0.3f, 0.0f), 0.02f);
     plant_short.seed_mut()->add_child(short_stem);
-    short_stem->chemical(ChemicalID::Sugar) = 100.0f;
+    short_stem->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     // Long stem: length ~1.0 dm
     Plant plant_long(g, glm::vec3(0.0f));
     Node* long_stem = plant_long.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.02f);
     plant_long.seed_mut()->add_child(long_stem);
-    long_stem->chemical(ChemicalID::Sugar) = 100.0f;
+    long_stem->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     WorldParams wp = default_world_params();
     wp.light_level = 1.0f;
@@ -116,7 +116,7 @@ TEST_CASE("Stem photosynthesis credited correctly to plant sugar_produced", "[st
     Plant plant(g, glm::vec3(0.0f));
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.02f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 100.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 100.0f;
     // Freeze elongation so length stays exactly at 0.5
     stem->age = g.internode_maturation_ticks;
 
@@ -141,7 +141,7 @@ TEST_CASE("Stem photosynthesis rate zero disables production", "[stem_photosynth
     Plant plant(g, glm::vec3(0.0f));
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.02f);
     plant.seed_mut()->add_child(stem);
-    stem->chemical(ChemicalID::Sugar) = 100.0f;
+    stem->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     WorldParams wp = default_world_params();
     wp.light_level = 1.0f;
@@ -185,9 +185,9 @@ TEST_CASE("Apical meristem starves without leaf sugar supply", "[stem_photosynth
     REQUIRE(sa != nullptr);
 
     // Zero every node's sugar — SA has no external source
-    seed->chemical(ChemicalID::Sugar) = 0.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 0.0f;
     for (Node* c : seed->children)
-        c->chemical(ChemicalID::Sugar) = 0.0f;
+        c->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     for (int i = 0; i < 5; i++) plant.tick(world);
 

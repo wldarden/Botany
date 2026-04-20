@@ -17,7 +17,7 @@ using Catch::Matchers::WithinAbs;
 static void flush_buffers(Plant& plant) {
     plant.for_each_node_mut([](Node& n) {
         for (auto& [id, amount] : n.transport_received) {
-            n.chemical(id) += amount;
+            n.local().chemical(id) += amount;
         }
         n.transport_received.clear();
     });
@@ -31,23 +31,23 @@ TEST_CASE("LEAF nodes produce sugar proportional to light and leaf_size", "[suga
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.5f;
-    leaf->chemical(ChemicalID::Water) = 100.0f;  // ensure full stomatal conductance
+    leaf->local().chemical(ChemicalID::Water) = 100.0f;  // ensure full stomatal conductance
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();
     wp.light_level = 2.0f;
 
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 0.0f;  // isolate leaf from transport
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 0.0f;  // isolate leaf from transport
     compute_light_exposure(plant, wp);
     float light_exp = leaf->as_leaf()->light_exposure;  // read after compute_light_exposure
     leaf->tick(plant, wp);
 
-    REQUIRE(leaf->chemical(ChemicalID::Sugar) > 0.0f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Sugar) > 0.0f);
     // photosynthesis = light_exposure * angle_eff(1.0) * light_level * leaf_size² * production_rate
     // Note: leaf growth and maintenance consume some sugar in the same tick (within 0.01 tolerance)
     float ls = leaf->as_leaf()->leaf_size;
     float expected = light_exp * wp.light_level * ls * ls * wp.sugar_production_rate;
-    REQUIRE_THAT(leaf->chemical(ChemicalID::Sugar), WithinAbs(expected, 0.01f));
+    REQUIRE_THAT(leaf->local().chemical(ChemicalID::Sugar), WithinAbs(expected, 0.01f));
 }
 
 TEST_CASE("Zero light produces zero sugar", "[sugar]") {
@@ -61,12 +61,12 @@ TEST_CASE("Zero light produces zero sugar", "[sugar]") {
     WorldParams wp = default_world_params();
     wp.light_level = 0.0f;
 
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 0.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 0.0f;
     compute_light_exposure(plant, wp);
     leaf->tick(plant, wp);
 
     // No light + no parent sugar = leaf stays at 0 (transport has nothing to move)
-    REQUIRE(leaf->chemical(ChemicalID::Sugar) < 1e-6f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Sugar) < 1e-6f);
 }
 
 TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
@@ -74,7 +74,7 @@ TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     // Zero out any initial sugar (e.g. seed_sugar) so we only measure production
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
 
     WorldParams wp = default_world_params();
     compute_light_exposure(plant, wp);
@@ -82,10 +82,10 @@ TEST_CASE("Non-LEAF nodes do not produce sugar", "[sugar]") {
     // Tick only non-leaf nodes — they should not produce sugar
     plant.for_each_node_mut([&](Node& n) {
         if (n.type != NodeType::LEAF) {
-            float before = n.chemical(ChemicalID::Sugar);
+            float before = n.local().chemical(ChemicalID::Sugar);
             // Non-leaf nodes have no production logic, sugar stays 0
             // (transport might move sugar, but all start at 0)
-            REQUIRE(n.chemical(ChemicalID::Sugar) == 0.0f);
+            REQUIRE(n.local().chemical(ChemicalID::Sugar) == 0.0f);
         }
     });
 }
@@ -119,11 +119,11 @@ TEST_CASE("Sugar cannot go below zero after maintenance", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     // Zero all sugar, tick — sugar should stay >= 0
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0001f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0001f; });
     plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
 
     plant.for_each_node([](const Node& n) {
-        REQUIRE(n.chemical(ChemicalID::Sugar) >= 0.0f);
+        REQUIRE(n.local().chemical(ChemicalID::Sugar) >= 0.0f);
     });
 }
 
@@ -147,16 +147,16 @@ TEST_CASE("Sugar diffuses from high to low concentration", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* seed = plant.seed_mut();
-    seed->chemical(ChemicalID::Sugar) = 100.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
 
-    float seed_before = seed->chemical(ChemicalID::Sugar);
+    float seed_before = seed->local().chemical(ChemicalID::Sugar);
     // Parent distributes to children collectively
     seed->transport_with_children(g);
     flush_buffers(plant);
 
-    REQUIRE(seed->chemical(ChemicalID::Sugar) < seed_before);
+    REQUIRE(seed->local().chemical(ChemicalID::Sugar) < seed_before);
     for (const Node* child : seed->children) {
-        REQUIRE(child->chemical(ChemicalID::Sugar) > 0.0f);
+        REQUIRE(child->local().chemical(ChemicalID::Sugar) > 0.0f);
     }
 }
 
@@ -164,10 +164,10 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));
 
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 100.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     float total_before = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_before += n.chemical(ChemicalID::Sugar); });
+    plant.for_each_node([&](const Node& n) { total_before += n.local().chemical(ChemicalID::Sugar); });
 
     // Run several rounds of local transport (one pass per round)
     for (int i = 0; i < 5; i++) {
@@ -178,7 +178,7 @@ TEST_CASE("Sugar diffusion preserves total sugar", "[sugar]") {
     }
 
     float total_after = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_after += n.chemical(ChemicalID::Sugar); });
+    plant.for_each_node([&](const Node& n) { total_after += n.local().chemical(ChemicalID::Sugar); });
 
     REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-4));
 }
@@ -192,18 +192,18 @@ TEST_CASE("Transport moves sugar from full parent to empty children", "[sugar]")
         plant.seed_mut()->add_child(c);
     }
     // Zero all children, give seed a full load
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 10.0f;
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     float child_before = 0.0f;
-    for (const Node* c : plant.seed()->children) { child_before += c->chemical(ChemicalID::Sugar); }
+    for (const Node* c : plant.seed()->children) { child_before += c->local().chemical(ChemicalID::Sugar); }
 
     // One round of transport: seed should distribute to children
     plant.seed_mut()->transport_with_children(g);
     flush_buffers(plant);
 
     float child_after = 0.0f;
-    for (const Node* c : plant.seed()->children) { child_after += c->chemical(ChemicalID::Sugar); }
+    for (const Node* c : plant.seed()->children) { child_after += c->local().chemical(ChemicalID::Sugar); }
 
     REQUIRE(child_after > child_before);  // children received sugar from seed
 }
@@ -223,19 +223,19 @@ TEST_CASE("Sugar diffusion conserves total across many ticks", "[sugar]") {
     }
 
     // Give sugar to just a few nodes
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 50.0f;
-    plant.seed_mut()->children[0]->chemical(ChemicalID::Sugar) = 20.0f;
-    plant.seed_mut()->children[2]->chemical(ChemicalID::Sugar) = 10.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 50.0f;
+    plant.seed_mut()->children[0]->local().chemical(ChemicalID::Sugar) = 20.0f;
+    plant.seed_mut()->children[2]->local().chemical(ChemicalID::Sugar) = 10.0f;
 
     float total_before = 0.0f;
-    plant.for_each_node([&](const Node& n) { total_before += n.chemical(ChemicalID::Sugar); });
+    plant.for_each_node([&](const Node& n) { total_before += n.local().chemical(ChemicalID::Sugar); });
 
     for (int ticks : {1, 5, 15, 50}) {
         // Reset to initial distribution
-        plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
-        plant.seed_mut()->chemical(ChemicalID::Sugar) = 50.0f;
-        plant.seed_mut()->children[0]->chemical(ChemicalID::Sugar) = 20.0f;
-        plant.seed_mut()->children[2]->chemical(ChemicalID::Sugar) = 10.0f;
+        plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
+        plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 50.0f;
+        plant.seed_mut()->children[0]->local().chemical(ChemicalID::Sugar) = 20.0f;
+        plant.seed_mut()->children[2]->local().chemical(ChemicalID::Sugar) = 10.0f;
 
         for (int t = 0; t < ticks; t++) {
             plant.for_each_node_mut([&](Node& n) {
@@ -244,14 +244,14 @@ TEST_CASE("Sugar diffusion conserves total across many ticks", "[sugar]") {
             // Flush received buffers (normally done by tick())
             plant.for_each_node_mut([](Node& n) {
                 for (auto& [id, amt] : n.transport_received) {
-                    n.chemical(id) += amt;
+                    n.local().chemical(id) += amt;
                 }
                 n.transport_received.clear();
             });
         }
 
         float total_after = 0.0f;
-        plant.for_each_node([&](const Node& n) { total_after += n.chemical(ChemicalID::Sugar); });
+        plant.for_each_node([&](const Node& n) { total_after += n.local().chemical(ChemicalID::Sugar); });
 
         REQUIRE_THAT(total_after, WithinAbs(total_before, 1e-3));
     }
@@ -264,7 +264,7 @@ TEST_CASE("Starvation ticks increment when sugar is zero", "[sugar]") {
     Plant plant(g, glm::vec3(0.0f));
 
     Node* seed = plant.seed_mut();
-    seed->chemical(ChemicalID::Sugar) = 0.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
 
@@ -277,7 +277,7 @@ TEST_CASE("Starvation ticks reset when sugar is available", "[sugar]") {
 
     Node* seed = plant.seed_mut();
     seed->starvation_ticks = 10;
-    seed->chemical(ChemicalID::Sugar) = 100.0f;
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
 
     plant.for_each_node_mut([&](Node& n) { n.tick(plant, default_world_params()); });
 
@@ -299,7 +299,7 @@ TEST_CASE("Starved non-seed nodes are pruned after max starvation ticks", "[suga
     uint32_t count_before = plant.node_count();
     child->starvation_ticks = 100; // way past max
     // Zero all sugar so parent transport can't rescue the starving child
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
 
     WorldParams wp = default_world_params();
     wp.starvation_ticks_max = 50;
@@ -343,7 +343,7 @@ TEST_CASE("Subtree removal cleans up all descendants", "[sugar]") {
 
     // Starve A — should remove A, B, and C
     a->starvation_ticks = 100;
-    plant.for_each_node_mut([](Node& n) { n.chemical(ChemicalID::Sugar) = 0.0f; });
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
 
     WorldParams wp = default_world_params();
     wp.starvation_ticks_max = 50;
@@ -374,7 +374,7 @@ TEST_CASE("Leaf tick runs full produce-diffuse-consume cycle", "[sugar]") {
     compute_light_exposure(plant, wp);
     leaf->tick(plant, wp);  // produces sugar locally
 
-    REQUIRE(leaf->chemical(ChemicalID::Sugar) > 0.0f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Sugar) > 0.0f);
 }
 
 // === Sugar cap tests ===
@@ -449,15 +449,15 @@ TEST_CASE("Production skipped when leaf sugar is at cap", "[sugar]") {
 
     // Fill leaf to its cap
     float cap = sugar_cap(*leaf, g);
-    leaf->chemical(ChemicalID::Sugar) = cap;
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 0.0f;
+    leaf->local().chemical(ChemicalID::Sugar) = cap;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     WorldParams wp = default_world_params();
     compute_light_exposure(plant, wp);
     leaf->tick(plant, wp);
 
     // Sugar should not have increased past cap (production skipped at cap)
-    REQUIRE(leaf->chemical(ChemicalID::Sugar) <= cap + 1e-6f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Sugar) <= cap + 1e-6f);
 }
 
 TEST_CASE("Production works normally when leaf is below cap", "[sugar]") {
@@ -466,18 +466,18 @@ TEST_CASE("Production works normally when leaf is below cap", "[sugar]") {
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.5f;
-    leaf->chemical(ChemicalID::Sugar) = 0.0f;
-    leaf->chemical(ChemicalID::Water) = 100.0f;  // ensure full stomatal conductance
+    leaf->local().chemical(ChemicalID::Sugar) = 0.0f;
+    leaf->local().chemical(ChemicalID::Water) = 100.0f;  // ensure full stomatal conductance
     plant.seed_mut()->add_child(leaf);
 
     WorldParams wp = default_world_params();
     wp.light_level = 2.0f;
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 0.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     compute_light_exposure(plant, wp);
     leaf->tick(plant, wp);
 
-    REQUIRE(leaf->chemical(ChemicalID::Sugar) > 0.0f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Sugar) > 0.0f);
 }
 
 TEST_CASE("Senescing leaf produces no sugar", "[sugar]") {
@@ -491,12 +491,12 @@ TEST_CASE("Senescing leaf produces no sugar", "[sugar]") {
 
     WorldParams wp = default_world_params();
     wp.light_level = 2.0f;
-    plant.seed_mut()->chemical(ChemicalID::Sugar) = 0.0f;
+    plant.seed_mut()->local().chemical(ChemicalID::Sugar) = 0.0f;
 
     compute_light_exposure(plant, wp);
     leaf->tick(plant, wp);
 
     // Senescing leaf should not produce sugar
-    REQUIRE(leaf->chemical(ChemicalID::Sugar) < 1e-6f);
+    REQUIRE(leaf->local().chemical(ChemicalID::Sugar) < 1e-6f);
 }
 
