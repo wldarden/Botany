@@ -19,6 +19,7 @@
 #include "engine/sugar.h"
 #include "engine/node/meristems/helpers.h"
 #include "engine/chemical/chemical_registry.h"
+#include "engine/ui_helpers.h"
 #include "renderer/renderer.h"
 #include "format.h"
 #include <filesystem>
@@ -876,6 +877,46 @@ int main(int argc, char* argv[]) {
 
             if (ImGui::Begin("Node Inspector", &g_show_node_panel, ImGuiWindowFlags_AlwaysAutoResize)) {
                 const Node& sel = *g_selected_node;
+
+                // --- IDENTITY ---
+                {
+                    const char* type_str = "?";
+                    switch (sel.type) {
+                        case NodeType::STEM:        type_str = "STEM"; break;
+                        case NodeType::ROOT:        type_str = "ROOT"; break;
+                        case NodeType::LEAF:        type_str = "LEAF"; break;
+                        case NodeType::APICAL:      type_str = "APICAL"; break;
+                        case NodeType::ROOT_APICAL: type_str = "ROOT_APICAL"; break;
+                    }
+                    ImGui::Text("ID: #%u  Type: %s", sel.id, type_str);
+                    ImGui::Text("Age: %u ticks (%.1f days)", sel.age, sel.age / 24.0f);
+                    ImGui::Text("Length: %s  Radius: %s", fmt_dist(glm::length(sel.offset)), fmt_dist(sel.radius));
+                    float cross_section = 3.14159f * sel.radius * sel.radius;
+                    ImGui::Text("Cross-section: %.4f dm\xC2\xB2", cross_section);
+                    ImGui::Text("Height (y): %.2f m", sel.position.y / 10.0f);  // dm -> m
+                    ImGui::Text("Nodes to seed: %d", nodes_to_seed(sel));
+
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    if (sel.as_stem() || sel.as_root()) {
+                        uint32_t mat_ticks = sel.as_stem()
+                            ? mg.internode_maturation_ticks
+                            : mg.root_internode_maturation_ticks;
+                        bool mature = (sel.parent == nullptr) || (sel.age >= mat_ticks);
+                        ImGui::Text("Elongation: %s (age %u/%u)", mature ? "mature" : "growing", sel.age, mat_ticks);
+                        float hm = hydraulic_maturity(sel, mg) * 100.0f;
+                        ImGui::Text("Hydraulic maturity: %.0f%% closed", hm);
+                        ImGui::Text("PIN saturation: %.2f", sel.get_parent_auxin_flow_bias());
+                    }
+                    ImGui::Text("Starvation: %u ticks", sel.starvation_ticks);
+                    if (auto* leaf = sel.as_leaf()) {
+                        if (leaf->senescence_ticks > 0)
+                            ImGui::Text("Senescence: %u / %u ticks", leaf->senescence_ticks, mg.senescence_duration);
+                        else
+                            ImGui::Text("Senescence: healthy");
+                    }
+                }
+                ImGui::Separator();
+                // --- (existing panel content continues below) ---
 
                 // Node type
                 const char* type_str = "?";
