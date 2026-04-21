@@ -1,8 +1,13 @@
 #include "engine/ui_helpers.h"
 #include "engine/node/node.h"
+#include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/vascular_sub_stepped.h"
+#include <glm/geometric.hpp>
+#include <cmath>
 
 namespace botany {
 
@@ -23,11 +28,34 @@ const TransportPool* vascular_scope(const Node& n, ChemicalID chem) {
     return nullptr;
 }
 
-float compute_maintenance_cost(const Node& n, const Genome& g, const WorldParams& w) {
-    // Phase 1 stub — Task 18 replaces this with exact per-type formulas cross-checked
-    // against each subclass's pay_maintenance() override. For now return 0 so the
-    // starvation overlay gets a sensible "no demand" reading until then.
-    (void)n; (void)g; (void)w;
+float compute_maintenance_cost(const Node& n, const Genome& /*g*/, const WorldParams& w) {
+    // Preview of what pay_maintenance() (i.e., maintenance_cost() virtual call) would
+    // return for this node.  Must match each subclass's maintenance_cost() exactly.
+    // Update here whenever those overrides change.
+
+    if (n.as_stem()) {
+        // StemNode::maintenance_cost — living ring scaled by lateral surface area (πrL)
+        float length = std::max(glm::length(n.offset), 0.01f);
+        return w.sugar_maintenance_stem * 3.14159f * n.radius * length;
+    }
+    if (n.as_root()) {
+        // RootNode::maintenance_cost — same model as stem, root-tissue rate
+        float length = std::max(glm::length(n.offset), 0.01f);
+        return w.sugar_maintenance_root * 3.14159f * n.radius * length;
+    }
+    if (auto* lf = n.as_leaf()) {
+        // LeafNode::maintenance_cost — scales with leaf area (leaf_size²)
+        return w.sugar_maintenance_leaf * lf->leaf_size * lf->leaf_size;
+    }
+    if (auto* ap = n.as_apical()) {
+        // ApicalNode::maintenance_cost — active meristems pay flat rate; dormant pay 0
+        return ap->active ? w.sugar_maintenance_meristem : 0.0f;
+    }
+    if (auto* ra = n.as_root_apical()) {
+        // RootApicalNode::maintenance_cost — same as apical
+        return ra->active ? w.sugar_maintenance_meristem : 0.0f;
+    }
+    // Base Node::maintenance_cost returns 0 — seed node falls here
     return 0.0f;
 }
 
