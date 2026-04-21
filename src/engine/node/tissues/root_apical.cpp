@@ -181,6 +181,7 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
 void RootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
     Node* bud = plant.create_node(NodeType::ROOT_APICAL, lateral_offset, g.root_initial_radius * 0.5f);
     bud->as_root_apical()->active = false;
+    bud->ever_active = false;  // dormant lateral — renderer skips until activated
     internode->add_child(bud);
     bud->position = internode->position + bud->offset;
 }
@@ -203,6 +204,7 @@ bool RootApicalNode::can_activate(const Genome& g, const WorldParams& world) con
 }
 
 void RootApicalNode::activate(const Genome& g, const WorldParams& world) {
+    ever_active = true;
     active = true;
     local().chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
     radius = g.root_initial_radius;
