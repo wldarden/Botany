@@ -84,6 +84,7 @@ add_library(botany_engine STATIC
     src/engine/vascular_sub_stepped.cpp
     src/engine/engine.cpp
     src/engine/world_params.cpp
+    src/engine/ui_helpers.cpp
 )
 target_include_directories(botany_engine PUBLIC src)
 target_link_libraries(botany_engine PUBLIC glm::glm)
