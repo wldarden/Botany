@@ -174,6 +174,7 @@ void LeafNode::expand(const Genome& g, const WorldParams& world) {
     float produced = growth_fraction * g.leaf_growth_auxin_multiplier * g.leaf_auxin_baseline;
     local().chemical(ChemicalID::Auxin) += produced;
     tick_auxin_produced += produced;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Auxin)] += produced;
 
     // Extend petiole proportionally as leaf grows
     // Target offset length = base_offset + petiole_length * (leaf_size / max_leaf_size)

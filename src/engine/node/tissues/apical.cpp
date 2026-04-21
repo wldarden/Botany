@@ -69,6 +69,7 @@ void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldPar
     float produced = modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
     local().chemical(ChemicalID::Auxin) += produced;
     tick_auxin_produced += produced;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Auxin)] += produced;
 }
 
 void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams& world) {

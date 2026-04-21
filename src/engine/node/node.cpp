@@ -613,7 +613,10 @@ void Node::update_canalization(const Genome& g) {
 void Node::decay_chemicals(const Genome& g) {
     for (const auto& dp : diffusion_params(g)) {
         if (dp.decay_rate > 0.0f) {
-            local().chemical(dp.id) *= (1.0f - dp.decay_rate);
+            float& chem = local().chemical(dp.id);
+            float before = chem;
+            chem *= (1.0f - dp.decay_rate);
+            tick_chem_consumed[static_cast<size_t>(dp.id)] += (before - chem);
         }
     }
 }

@@ -62,6 +62,7 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     float produced_auxin = g.root_tip_auxin_production_rate * mf_auxin;
     local().chemical(ChemicalID::Auxin) += produced_auxin;
     tick_auxin_produced += produced_auxin;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Auxin)] += produced_auxin;
 
     // Cytokinin: floor 0.05 (smaller than auxin's 0.1) — CK has less
     // conjugate-pool buffering than auxin, so its response to sugar is sharper.
