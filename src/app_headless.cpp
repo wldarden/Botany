@@ -116,6 +116,7 @@ int main(int argc, char* argv[]) {
     std::string debug_log_path;    // optional; empty = no debug log
     std::string economy_log_path;  // optional; empty = no global economy log
     std::string chain_profile_path; // optional; empty = no chain-profile dump
+    bool no_recording = false;     // if true, skip the per-tick .bin recording entirely
     bool num_ticks_set = false;
     bool output_path_set = false;
 
@@ -127,6 +128,8 @@ int main(int argc, char* argv[]) {
             economy_log_path = argv[++a];
         } else if (arg == "--chain-profile" && a + 1 < argc) {
             chain_profile_path = argv[++a];
+        } else if (arg == "--no-recording") {
+            no_recording = true;
         } else if (!num_ticks_set && arg[0] != '-') {
             num_ticks = std::atoi(arg.c_str());
             num_ticks_set = true;
@@ -136,7 +139,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    std::cout << "Running " << num_ticks << " ticks, saving to " << output_path << std::endl;
+    if (no_recording) {
+        std::cout << "Running " << num_ticks << " ticks, recording DISABLED (--no-recording)" << std::endl;
+    } else {
+        std::cout << "Running " << num_ticks << " ticks, saving to " << output_path << std::endl;
+    }
     if (!debug_log_path.empty()) {
         std::cout << "Debug log: " << debug_log_path << std::endl;
     }
@@ -152,17 +159,23 @@ int main(int argc, char* argv[]) {
         std::cout << "Global economy log: " << economy_log_path << std::endl;
     }
 
-    std::ofstream file(output_path, std::ios::binary);
-    if (!file) {
-        std::cerr << "Failed to open " << output_path << std::endl;
-        return 1;
+    // Recording file: only opened/written when --no-recording is not set.
+    // Skipping the per-tick save dramatically reduces I/O for long sims and
+    // keeps disk usage flat; the sim is then compute-only.  Still emit the
+    // chain-profile and final node count for validation.
+    std::ofstream file;
+    if (!no_recording) {
+        file.open(output_path, std::ios::binary);
+        if (!file) {
+            std::cerr << "Failed to open " << output_path << std::endl;
+            return 1;
+        }
+        save_recording_header(file, g, static_cast<uint32_t>(num_ticks));
     }
-
-    save_recording_header(file, g, static_cast<uint32_t>(num_ticks));
 
     for (int i = 0; i < num_ticks; i++) {
         engine.tick();
-        save_tick(file, engine, 0);
+        if (!no_recording) save_tick(file, engine, 0);
 
         if ((i + 1) % 50 == 0) {
             std::cout << "Tick " << (i + 1) << "/" << num_ticks
