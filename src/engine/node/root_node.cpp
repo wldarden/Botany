@@ -48,6 +48,7 @@ void RootNode::thicken(const Genome& g, const WorldParams& world) {
 
     float actual_rate = g.cambium_responsiveness * bias * sugar_gf;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_stem_growth;
     radius += actual_rate;
 }
 
@@ -75,6 +76,7 @@ void RootNode::elongate(const Genome& g, const WorldParams& world) {
 
     float actual_rate = effective_rate * sugar_gf * water_gf;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_stem_growth;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;
     }

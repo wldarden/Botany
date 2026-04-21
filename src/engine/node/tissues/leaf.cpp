@@ -96,6 +96,7 @@ float LeafNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams
     local().chemical(ChemicalID::Sugar) += sugar_produced;
     local().chemical(ChemicalID::Sugar) = std::min(local().chemical(ChemicalID::Sugar), cap);
     float delta = local().chemical(ChemicalID::Sugar) - sugar_before;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Sugar)] += delta;
 
     // Photosynthesis water cost: small deduction proportional to sugar produced
     float water_cost = sugar_produced * g.photosynthesis_water_ratio;
@@ -129,6 +130,7 @@ void LeafNode::phototropism(const Genome& g, const WorldParams& world) {
     if (local().chemical(ChemicalID::Sugar) < cost) return;
 
     local().chemical(ChemicalID::Sugar) -= cost;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += cost;
     float c = std::cos(turn);
     float s = std::sin(turn);
     glm::vec3 new_dir = dir * c
@@ -160,6 +162,7 @@ void LeafNode::expand(const Genome& g, const WorldParams& world) {
 
     leaf_size += growth;
     local().chemical(ChemicalID::Sugar) -= cost;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += cost;
 
     // Auxin production: growing leaves produce auxin proportional to growth rate.
     // No growth (full size, stressed, starved) → zero auxin.

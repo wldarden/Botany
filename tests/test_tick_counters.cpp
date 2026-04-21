@@ -34,13 +34,21 @@ TEST_CASE("tick counters: leaf sugar counter is readable after spin-up", "[tick_
     // spin up until a leaf exists
     for (int i = 0; i < 200; ++i) engine.tick();
     bool found_leaf = false;
+    float total_produced = 0.0f;
     engine.get_plant(pid).for_each_node([&](const Node& n) {
         if (auto* lf = n.as_leaf(); lf && lf->leaf_size > 0.01f) {
             found_leaf = true;
             float produced = n.tick_chem_produced[static_cast<size_t>(ChemicalID::Sugar)];
-            INFO("Sugar counter readable on active leaf");
-            REQUIRE(produced >= 0.0f);  // loose: just non-negative — tightened in phase 2
+            // Each leaf either produced sugar this tick or was at cap (correctly zero).
+            // The counter is never negative.
+            INFO("Sugar counter non-negative on active leaf");
+            REQUIRE(produced >= 0.0f);
+            total_produced += produced;
         }
     });
     REQUIRE(found_leaf);
+    // At least some leaves must have produced sugar this tick —
+    // the instrumentation path is reachable.
+    INFO("At least one leaf produced sugar this tick");
+    REQUIRE(total_produced > 0.0f);
 }

@@ -149,6 +149,7 @@ void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
 
     float actual_rate = g.root_growth_rate * gf;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_root_growth;
     offset += growth_dir * actual_rate;
 }
 
@@ -221,6 +222,7 @@ void RootApicalNode::activate(const Genome& g, const WorldParams& world) {
     ever_active = true;
     active = true;
     local().chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += world.sugar_cost_activation;
     radius = g.root_initial_radius;
 }
 

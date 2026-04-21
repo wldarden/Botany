@@ -67,6 +67,7 @@ void Node::tick(Plant& plant, const WorldParams& world) {
     float s0 = local().chemical(ChemicalID::Sugar);
     deduct_maintenance_sugar(world);
     tick_sugar_maintenance = s0 - local().chemical(ChemicalID::Sugar);
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += tick_sugar_maintenance;
 
     float s1 = local().chemical(ChemicalID::Sugar);
     update_tissue(plant, world);
