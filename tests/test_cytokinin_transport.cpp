@@ -8,6 +8,7 @@
 #include "engine/world_params.h"
 #include "engine/chemical/chemical.h"
 #include "engine/node/tissues/root_apical.h"
+#include <glm/geometric.hpp>
 
 using namespace botany;
 
@@ -174,4 +175,50 @@ TEST_CASE("cytokinin: active RA produces cytokinin, dormant does not", "[cytokin
     });
     REQUIRE(cyto_from_active  > 0.0f);
     REQUIRE(ra_dormant->local().chemical(ChemicalID::Cytokinin) == 0.0f);
+}
+
+// -----------------------------------------------------------------------
+// Test 4: RA elongation halts when local cytokinin drops to zero.
+//
+// The new gate ties elongation rate to local CK (not auxin). With sugar
+// and water plentiful but CK zeroed each tick, the RA should not advance.
+// -----------------------------------------------------------------------
+TEST_CASE("cytokinin: RA elongation stops with zero local cytokinin", "[cytokinin]") {
+    Genome g = cytokinin_test_genome();
+    // Re-enable root growth (the test-genome zeroes it).
+    g.root_growth_rate = 0.004f;
+    // Disable self-production of CK so we can keep local CK at 0 artificially.
+    g.root_cytokinin_production_rate = 0.0f;
+
+    Plant plant(g, glm::vec3(0.0f));
+    Node* seed = plant.seed_mut();
+    RootApicalNode* ra = nullptr;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::ROOT_APICAL) { ra = c->as_root_apical(); break; }
+    }
+    REQUIRE(ra != nullptr);
+
+    // Prime sugar/water so sugar/water gates are satisfied.
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
+    ra->local().chemical(ChemicalID::Sugar)   = 50.0f;
+    ra->local().chemical(ChemicalID::Water)   = 1.0f;
+
+    // Zero CK before the loop starts so the gate is inactive from tick 1.
+    ra->local().chemical(ChemicalID::Cytokinin) = 0.0f;
+
+    // Capture starting offset length.
+    float start_offset_len = glm::length(ra->offset);
+
+    WorldParams world = cytokinin_test_world();
+    // Tick N times, zeroing CK at every tick after update_tissue runs.
+    for (int i = 0; i < 20; ++i) {
+        plant.tick(world);
+        ra->local().chemical(ChemicalID::Cytokinin) = 0.0f;
+        ra->local().chemical(ChemicalID::Sugar)   = 50.0f;  // keep primed
+        ra->local().chemical(ChemicalID::Water)   = 1.0f;
+    }
+
+    // With CK pinned to 0, offset should not have grown meaningfully.
+    float end_offset_len = glm::length(ra->offset);
+    REQUIRE(end_offset_len - start_offset_len < 1e-4f);
 }

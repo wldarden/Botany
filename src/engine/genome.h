@@ -81,6 +81,7 @@ struct Genome {
     float root_cytokinin_production_rate; // baseline cytokinin produced per tick (mirrors apical_auxin_baseline)
     float root_tip_auxin_production_rate; // auxin produced by root tips (PIN recycling local maximum)
     float root_auxin_growth_threshold;    // Km for auxin-gated root growth fraction
+    float root_ck_growth_floor;            // Km for CK-gated root elongation — low so trace CK permits growth; zero CK stops it
     float root_auxin_activation_threshold; // min auxin to activate dormant root meristem
     float root_cytokinin_inhibition_threshold; // cytokinin above this inhibits root activation
 
@@ -285,6 +286,7 @@ inline Genome default_genome() {
         .root_cytokinin_production_rate = 0.15f,   // cytokinin per unit auxin — moderate signal
         .root_tip_auxin_production_rate = 0.0f,    // TEMP DISABLED — testing pure external-auxin gating on RA elongation.  Real root tips do produce local auxin via PIN recycling, but with self-production off we can verify the shoot→root auxin delivery loop is actually plumbed end-to-end.
         .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation (mirrors SAM's cytokinin_growth_threshold pattern)
+        .root_ck_growth_floor = 0.001f,             // low Km — trace CK permits growth, zero stops it
         .root_auxin_activation_threshold = 0.05f,   // low bar — a little auxin activates roots
         .root_cytokinin_inhibition_threshold = 0.15f, // mirrors auxin_threshold for symmetric branching control
 
