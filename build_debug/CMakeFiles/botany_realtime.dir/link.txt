@@ -1,1 +1,0 @@
-/usr/bin/c++ -g -arch x86_64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/botany_realtime.dir/src/app_realtime.cpp.o -o botany_realtime  libbotany_engine.a libbotany_renderer.a libimgui.a libbotany_engine.a _deps/glm-build/glm/libglm.a libglad_gl.a _deps/glfw-build/src/libglfw3.a -framework Cocoa -framework IOKit -framework CoreFoundation

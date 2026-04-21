@@ -1,2 +1,0 @@
-/usr/bin/ar qc libbotany_serialization.a CMakeFiles/botany_serialization.dir/src/serialization/serializer.cpp.o
-/usr/bin/ranlib libbotany_serialization.a
