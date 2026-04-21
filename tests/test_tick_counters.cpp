@@ -1,5 +1,6 @@
 // tests/test_tick_counters.cpp
 #include <array>
+#include <cmath>
 #include <catch2/catch_test_macros.hpp>
 #include "engine/engine.h"
 #include "engine/plant.h"
@@ -84,6 +85,27 @@ TEST_CASE("tick counters: GA and Ethylene produced populate after spin-up", "[ti
     // Ethylene: compute_ethylene() is currently not wired into Plant::tick_tree(),
     // so no ethylene is produced in the running engine — zero is correct here.
     REQUIRE(total_eth_prod >= 0.0f);
+}
+
+TEST_CASE("tick counters: phloem flux+cap populated on mature tree", "[tick_counters][edge_flux][phloem]") {
+    Engine engine;
+    Genome g = default_genome();
+    auto pid = engine.create_plant(g, glm::vec3(0.0f));
+    engine.world_params_mut().light_level = 1.0f;
+    for (int i = 0; i < 400; ++i) engine.tick();
+    bool any_flux = false, any_cap = false;
+    const size_t SI = static_cast<size_t>(ChemicalID::Sugar);
+    engine.get_plant(pid).for_each_node([&](const Node& n) {
+        for (const auto& [c, f] : n.tick_edge_flux[SI]) {
+            if (std::fabs(f) > 0.0f) any_flux = true;
+        }
+        for (const auto& [c, k] : n.tick_edge_cap[SI]) {
+            if (k > 0.0f) any_cap = true;
+        }
+    });
+    INFO("Phloem flux and cap should both be populated after 400 ticks of photosynthesis");
+    REQUIRE(any_flux);
+    REQUIRE(any_cap);
 }
 
 TEST_CASE("tick counters: per-chem mass balance smoke test", "[tick_counters][balance]") {

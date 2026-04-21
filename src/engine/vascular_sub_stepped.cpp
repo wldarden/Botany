@@ -399,6 +399,16 @@ void jacobi_step(Node& parent, Node& child, const Genome& g) {
 
                 pp->chemical(ChemicalID::Sugar) -= flow;
                 cp->chemical(ChemicalID::Sugar) += flow;
+
+                // --- Per-edge instrumentation (phloem sugar) ---
+                // Accumulate signed flux and theoretical cap across all N sub-steps.
+                // flow is positive when sugar moves parent→child, negative when reversed.
+                // cap_this_substep = base_cond (bottleneck capacity, before bias).
+                // Over the full tick this sums to base_cond * N, the total theoretical
+                // throughput for "Transport Capacity Used" overlay (flux / cap).
+                const size_t SI = static_cast<size_t>(ChemicalID::Sugar);
+                parent.tick_edge_flux[SI][&child] += flow;
+                parent.tick_edge_cap[SI][&child]  += base_cond;
             }
         }
     }
