@@ -117,13 +117,13 @@ All chemical access goes through explicit compartment accessors:
 
 **Two transport pathways:**
 
-1. **Sub-stepped vascular bulk flow** (`vascular_sub_stepped.cpp`) — N iterations per tick of:
-   1. **Inject** — sources (leaves push sugar, root apicals push cytokinin) transfer `budget/N` into their walk-up parent's conduit
-   2. **Radial flow** — stem/root `local_env` ⇄ own `phloem`/`xylem`, rate-limited by radius-dependent `radial_permeability(r)` (see Radial Permeability section)
-   3. **Extract** — sinks (meristems pull sugar, leaves/meristems pull water) transfer `budget/N` from their walk-up parent's conduit
-   4. **Longitudinal Jacobi** — one pass of neighbor pressure equalization across every (parent, child) edge that has matching conduit pools
+1. **Sub-stepped vascular bulk flow** (`vascular_sub_stepped.cpp`) — N iterations per tick in this order:
+   1. **Inject** — sources transfer `budget/N` into their walk-up parent's conduit.  Sources: leaves push sugar into parent phloem; seed pushes its reserve sugar into its own phloem; root nodes and root apicals push water into their own / parent's xylem (root pressure); root apicals also push their produced cytokinin into parent xylem.
+   2. **Longitudinal Jacobi** — one pass of neighbor pressure equalization across every (parent, child) edge that has matching conduit pools. Pushes CK through xylem chain from root to shoot; pushes sugar through phloem; pushes water through xylem.
+   3. **Radial flow** — stem/root `local_env` ⇄ own `phloem`/`xylem`, rate-limited by radius-dependent `radial_permeability(r)` (see Radial Permeability section). Cytokinin is NOT subject to radial flow (vascular-only).
+   4. **Extract** — sinks transfer `budget/N` from their walk-up parent's conduit.  Sinks: apical and root apical meristems pull sugar from phloem; leaves (transpiration) and meristems (turgor) pull water from xylem. Cytokinin rides along proportionally with water drawn from the xylem pool.
 
-   Jacobi is a pure neighbor equalizer — no global awareness of sources or sinks. Pressure fields created by local injection and extraction drive routing automatically.
+   Ordering changed 2026-04-20: previously `inject → radial → extract → Jacobi`, which stranded freshly-injected CK in root xylem because radial immediately absorbed it into root `local_env` before Jacobi could propagate it upward. New order lets pressure waves traverse the xylem chain before radial absorption pulls chemicals back out. Jacobi is a pure neighbor equalizer — no global awareness of sources or sinks. Pressure fields created by inject and extract drive routing automatically.
 
 2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk, handles only signaling chemicals: auxin, gibberellin, stress. Short-range cell-to-cell transport. Uses `transport_received` buffer for anti-teleportation (chemicals move at most one hop per tick).
    - **Cytokinin is owned end-to-end by the vascular system.** Local diffusion explicitly skips CK on any edge touching a vascular conduit (stem/root at or above `vascular_radius_threshold`). Without this skip, local diffusion on specialty-to-conduit edges (e.g., RA → parent ROOT) would drain the RA's freshly produced CK into the parent's `local` pool before vascular inject could move it into the xylem — where it would be stranded with no routing.
@@ -132,13 +132,13 @@ All chemical access goes through explicit compartment accessors:
 
 | Chemical | Pathway | Notes |
 |----------|---------|-------|
-| Auxin | Local diffusion | Polar cell-to-cell, basipetal bias (-0.1) |
+| Auxin | PIN transport + local diffusion | `pin_transport.cpp` handles polar shoot→seed→root cascade (Phase A/B/C); `diffuse_auxin_across_seed_junction` bridges shoot↔root at the seed; local diffusion handles last-mile within non-conduit neighborhoods. Basipetal bias (-0.1) on shoot side, inverted to (+0.1) on root side so the shifted equilibrium always favors flowing toward tips. |
 | Gibberellin | Local diffusion | Short-range, local to producing leaf |
 | Stress | Local diffusion | Local mechanical alarm signal |
 | Ethylene | Spatial gas diffusion | Global 3D pass (reset each tick) |
-| Sugar | Vascular (phloem) + radial | Leaves (source) → phloem → radial into stem local_env; direct pull at meristems |
-| Water | Vascular (xylem) + radial | Roots absorb → radial into xylem → direct pull at leaves/meristems |
-| Cytokinin | Vascular (xylem) | Rides xylem stream proportionally with water |
+| Sugar | Vascular (phloem): inject + Jacobi + radial + extract | Leaves (source) and seed (reserve source) push into phloem via inject; Jacobi propagates along phloem chain; radial exchanges with stem/root `local_env`; meristems pull from phloem via extract |
+| Water | Vascular (xylem): inject + Jacobi + radial + extract | Roots absorb from soil into `local_env`; root nodes and root apicals push water into xylem via inject (root pressure); Jacobi propagates; radial exchanges with stem/root `local_env`; leaves and meristems pull from xylem via extract |
+| Cytokinin | Vascular (xylem): inject + Jacobi + extract (no radial) | Root apicals produce CK locally from sugar+water metabolic state; inject pushes CK into nearest upstream xylem; Jacobi propagates along xylem chain; extract moves CK into sink `local_env` proportionally with water drawn. No radial — CK stays in conduits until a sink explicitly pulls it. |
 
 **Vasculature admission:** Inline check in `transport_with_children()` — stems/roots with `radius >= vascular_radius_threshold` (0.01 dm) have conduit pools. The seed is always a conduit junction. Leaves and meristems never have conduits; they access the nearest ancestor's pools via walk-up helpers. Since `initial_radius` (0.015 dm) is above the threshold, newly spawned internodes qualify from birth.
 
@@ -148,18 +148,28 @@ All chemical access goes through explicit compartment accessors:
 
 ### Vascular Sources and Sinks
 
-**Phloem (sugar):** Leaves with `local_env` sugar above `leaf_reserve_fraction_sugar × sugar_cap` are sources. Apical and root apical meristems (refilling to `meristem_sink_target_fraction × sugar_cap`) are sinks.
+**Phloem (sugar):**
+- Sources: leaves (surplus over `leaf_reserve_fraction_sugar × sugar_cap`), seed (mobilizing its reserve — the STEM with no parent actively pushes sugar above reserve into its own phloem, analogous to root pressure for water).
+- Sinks: apical and root apical meristems (refilling to `meristem_sink_target_fraction × sugar_cap`).
 
-**Xylem (water + cytokinin):** Root nodes and root apicals absorb water into their `local_env`, which then loads into their own xylem via radial flow. Leaves (transpiration demand, refilling to `leaf_turgor_target_fraction × water_cap`) and shoot apicals are sinks.
+**Xylem (water):**
+- Sources: root nodes and root apicals (root pressure — actively push `water_local − reserve` into their own / parent's xylem each tick; models the osmotic pumping real plants use before transpiration ramps up).
+- Sinks: leaves (transpiration demand, refilling to `leaf_turgor_target_fraction × water_cap`) and shoot apical meristems.
+
+**Xylem (cytokinin):**
+- Source: root apicals only (inject their full `local().Cytokinin` into the nearest upstream xylem each tick; CK production at the RA is driven by `root_cytokinin_production_rate × mf_cyto(sugar, water)` — NOT gated on local auxin post-2026-04-20).
+- Sink: any node drawing water from xylem extract — CK rides along proportionally with the water drawn.
 
 ### Auxin, Cytokinin, Sugar in local_env
 
-**Auxin** (local diffusion, bias -0.1, basipetal):
+**Auxin** (PIN transport + local diffusion, bias -0.1 shoot / +0.1 root-inverted):
 - Persistent across ticks (not reset)
 - Produced by `ApicalNode` each tick (modulated by growth rate)
 - Also produced by growing `LeafNode` proportional to growth rate (zero when full-size)
-- Shoot axillary buds sense **parent's** auxin level; activate when low
-- Decays by `auxin_decay_rate` per tick
+- Also produced at a small floor by `RootApicalNode` (`root_tip_auxin_production_rate ≈ 0.002`, self-equilibrium ~0.017 — just enough for PIN recycling and lateral root initiation, below `root_auxin_activation_threshold = 0.01` so deep laterals activate on their own floor without needing shoot-delivered auxin)
+- Shoot axillary buds sense **parent stem's** auxin level to judge apical dominance; activate when it drops
+- Primary flow path is PIN (`pin_transport.cpp`), not local diffusion — diffusion handles "last mile" within non-conduit neighborhoods only
+- Decays by `auxin_decay_rate` per tick (0.12, half-life ~5.4h). Intentionally short-range: long-distance shoot↔root signaling is handled by CK/sugar in vascular, not auxin.
 
 **Cytokinin** (long-distance via xylem; produced at RAs from local metabolic state):
 - Persistent across ticks (not reset)
@@ -254,7 +264,11 @@ Ethylene is **reset to zero every tick** (signal model). Four production trigger
 
 ## Tick Control Flow
 
-`Plant::tick_tree()` runs two phases in order — **metabolism first, vascular after**:
+`Plant::tick_tree()` runs three phases in order:
+
+**Phase 0 — Polar auxin transport** (before per-node metabolism):
+1. `diffuse_auxin_across_seed_junction()` — explicit shoot↔root auxin bridge.  Takes a Fickian diffusion fraction from every shoot-child to every root-child of the seed, bypassing `seed.local`.  Runs FIRST so it can move auxin while it's still at the shoot children's local pools.
+2. `pin_transport()` — PIN-mediated polar auxin transport. Phase A: shoot post-order, each shoot node pumps its local auxin into the parent's `transport_received` buffer (or `seed_collected` local accumulator for direct shoot children of seed).  Phase B: seed distributes `seed_collected` to root children of seed by radius share.  Phase C: root pre-order, each root node receives its forwarded auxin and passes the remainder deeper, accumulating any overflow in its `local()`.
 
 **Phase 1 — Per-node metabolism** (`tick_recursive()`): DFS walk from seed. Parent ticks before children. Each `Node::tick()`:
 1. `age++`
@@ -268,7 +282,7 @@ Ethylene is **reset to zero every tick** (signal model). Four production trigger
 
 Children are ticked recursively after step 8 using a snapshot of the children list (safe for reparenting).
 
-**Phase 2 — Vascular transport** (`vascular_sub_stepped()`): N-sub-stepped loop of inject → radial → extract → Jacobi — see Chemical Transport Model above.
+**Phase 2 — Vascular transport** (`vascular_sub_stepped()`): N-sub-stepped loop of inject → Jacobi → radial → extract — see Chemical Transport Model above.
 
 Ordering is **metabolism first, vascular after**. This gives a 1-tick lag between a leaf producing sugar (into `local_env` during Phase 1 of tick N) and that sugar being loaded into phloem (during Phase 2 of tick N, which reads the just-produced budget). At 1-hour tick granularity this is biologically defensible — real plants buffer an hour of sugar in mesophyll cells easily.
 
@@ -277,7 +291,7 @@ Ordering is **metabolism first, vascular after**. This gives a 1-tick lag betwee
 ## Key Design Decisions
 - **Meristems are nodes** — 2 meristem types (`ApicalNode`, `RootApicalNode`) extend `Node` directly. Real children in the tree graph, participate in chemical transport naturally. No axillary node types.
 - **Compartmented chemical model** — every node has a `local_env`; stems/roots additionally have typed `phloem` and `xylem` TransportPools. Specialty nodes use walk-up helpers (`nearest_phloem_upstream()` / `nearest_xylem_upstream()`) to reach their nearest ancestor's conduit.
-- **Sub-stepped vascular with fixed N** — N iterations per tick of inject → radial → extract → Jacobi. Budgets computed once before the loop and amortized evenly. Fixed N produces realistic hydraulic limitation on tall plants — distal apices get less supply when chains exceed N.
+- **Sub-stepped vascular with fixed N** — N iterations per tick of inject → Jacobi → radial → extract. Budgets computed once before the loop and amortized evenly. Fixed N produces realistic hydraulic limitation on tall plants — distal apices get less supply when chains exceed N.
 - **Radial permeability asymmetry** — young thin stems are leaky (lots of radial exchange), mature trunks asymptote toward a low floor. This is what makes the vascular system act like a highway: old trunk tissue stops bleeding sugar/water so it reaches the canopy.
 - **Tick-then-vascular ordering** — per-node metabolism runs first (Phase 1), vascular transport after (Phase 2). The 1-tick lag between photosynthesis and phloem loading is biologically defensible at 1-hour granularity.
 - **Vascular admission is radius-gated inline** — stems/roots with `radius >= vascular_radius_threshold` (0.01 dm) have conduit pools. No age gate. Since `initial_radius` (0.015 dm) is above the threshold, new internodes join the network immediately. Inline check in `transport_with_children()`, not a separate function.
