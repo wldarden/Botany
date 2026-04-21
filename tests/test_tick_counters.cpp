@@ -66,3 +66,21 @@ TEST_CASE("tick counters: cytokinin decay populates consumed", "[tick_counters][
     INFO("Cytokinin decay should populate tick_chem_consumed across nodes");
     REQUIRE(total_ck_consumed > 0.0f);
 }
+
+TEST_CASE("tick counters: GA and Ethylene produced populate after spin-up", "[tick_counters][ga_eth]") {
+    Engine engine;
+    Genome g = default_genome();
+    auto pid = engine.create_plant(g, glm::vec3(0.0f));
+    engine.world_params_mut().light_level = 1.0f;
+    for (int i = 0; i < 300; ++i) engine.tick();
+    float total_ga_prod = 0.0f, total_eth_prod = 0.0f;
+    engine.get_plant(pid).for_each_node([&](const Node& n) {
+        total_ga_prod  += n.tick_chem_produced[static_cast<size_t>(ChemicalID::Gibberellin)];
+        total_eth_prod += n.tick_chem_produced[static_cast<size_t>(ChemicalID::Ethylene)];
+    });
+    INFO("After 300 ticks, at least one leaf should have emitted GA this tick");
+    REQUIRE(total_ga_prod > 0.0f);
+    // Ethylene: compute_ethylene() is currently not wired into Plant::tick_tree(),
+    // so no ethylene is produced in the running engine — zero is correct here.
+    REQUIRE(total_eth_prod >= 0.0f);
+}

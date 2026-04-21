@@ -31,7 +31,9 @@ void LeafNode::update_tissue(Plant& plant, const WorldParams& world) {
 
 void LeafNode::produce_gibberellin(const Genome& g) {
     if (age < g.ga_leaf_age_max && leaf_size > 1e-6f && senescence_ticks == 0) {
-        local().chemical(ChemicalID::Gibberellin) += leaf_size * g.ga_production_rate;
+        float ga_amt = leaf_size * g.ga_production_rate;
+        local().chemical(ChemicalID::Gibberellin) += ga_amt;
+        tick_chem_produced[static_cast<size_t>(ChemicalID::Gibberellin)] += ga_amt;
     }
 }
 
