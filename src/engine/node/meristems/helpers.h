@@ -83,11 +83,14 @@ inline glm::vec3 perturb(const glm::vec3& dir, float max_angle) {
     return glm::normalize(dir * std::cos(tilt) + radial * std::sin(tilt));
 }
 
-// Compute growth fraction: sugar funds growth, cytokinin gates the rate.
-// Cytokinin is produced by photosynthesizing leaves — no producing leaves = no growth.
-// Cytokinin uses Michaelis-Menten kinetics: cyt / (cyt + Km). No hard cap —
-// more cytokinin always helps, but with diminishing returns. Meristems far
-// from roots get less cytokinin and grow proportionally slower.
+// Compute growth fraction: sugar funds growth; a permissive-signal chemical
+// gates the rate.  Called by two sites:
+//   (a) ApicalNode::elongate — sugar + cytokinin delivered via xylem from roots
+//   (b) RootApicalNode::elongate — sugar + cytokinin produced locally at the RA
+// Both use Michaelis-Menten: signal / (signal + Km).  No hard cap — more
+// signal always helps, with diminishing returns.  The parameter name
+// "cytokinin" reflects the dominant caller pattern; semantically it's any
+// chemical you want to graded-gate the rate on.
 inline float growth_fraction(float sugar, float max_cost,
                              float cytokinin, float cyt_threshold) {
     if (max_cost < 1e-6f) return 1.0f;
