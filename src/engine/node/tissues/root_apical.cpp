@@ -77,6 +77,7 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     float cyto_produced = g.root_cytokinin_production_rate * mf_cyto;
     local().chemical(ChemicalID::Cytokinin) += cyto_produced;
     tick_cytokinin_produced += cyto_produced;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Cytokinin)] += cyto_produced;
 
     ticks_since_last_node++;
     elongate(g, world);

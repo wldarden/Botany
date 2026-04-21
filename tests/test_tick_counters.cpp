@@ -52,3 +52,17 @@ TEST_CASE("tick counters: leaf sugar counter is readable after spin-up", "[tick_
     INFO("At least one leaf produced sugar this tick");
     REQUIRE(total_produced > 0.0f);
 }
+
+TEST_CASE("tick counters: cytokinin decay populates consumed", "[tick_counters][ck]") {
+    Engine engine;
+    Genome g = default_genome();
+    auto pid = engine.create_plant(g, glm::vec3(0.0f));
+    engine.world_params_mut().light_level = 1.0f;
+    for (int i = 0; i < 300; ++i) engine.tick();
+    float total_ck_consumed = 0.0f;
+    engine.get_plant(pid).for_each_node([&](const Node& n) {
+        total_ck_consumed += n.tick_chem_consumed[static_cast<size_t>(ChemicalID::Cytokinin)];
+    });
+    INFO("Cytokinin decay should populate tick_chem_consumed across nodes");
+    REQUIRE(total_ck_consumed > 0.0f);
+}
