@@ -1,4 +1,5 @@
 // tests/test_tick_counters.cpp
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include "engine/engine.h"
 #include "engine/plant.h"
@@ -83,4 +84,47 @@ TEST_CASE("tick counters: GA and Ethylene produced populate after spin-up", "[ti
     // Ethylene: compute_ethylene() is currently not wired into Plant::tick_tree(),
     // so no ethylene is produced in the running engine — zero is correct here.
     REQUIRE(total_eth_prod >= 0.0f);
+}
+
+TEST_CASE("tick counters: per-chem mass balance smoke test", "[tick_counters][balance]") {
+    Engine engine;
+    Genome g = default_genome();
+    auto pid = engine.create_plant(g, glm::vec3(0.0f));
+    engine.world_params_mut().light_level = 1.0f;
+    for (int i = 0; i < 400; ++i) engine.tick();
+
+    // Accumulate per-chem produced/consumed across all nodes for a single final tick
+    std::array<float, static_cast<size_t>(ChemicalID::Count)> total_prod{}, total_cons{};
+    engine.get_plant(pid).for_each_node([&](const Node& n) {
+        for (size_t i = 0; i < total_prod.size(); ++i) {
+            total_prod[i] += n.tick_chem_produced[i];
+            total_cons[i] += n.tick_chem_consumed[i];
+        }
+    });
+
+    // All counters non-negative
+    for (size_t i = 0; i < total_prod.size(); ++i) {
+        INFO("chem index " << i << " produced=" << total_prod[i] << " consumed=" << total_cons[i]);
+        REQUIRE(total_prod[i] >= 0.0f);
+        REQUIRE(total_cons[i] >= 0.0f);
+    }
+
+    // At least one chem should show both produced and consumed activity.
+    // Sugar is the most reliable — photosynthesis produces it, maintenance consumes it.
+    const size_t SI = static_cast<size_t>(ChemicalID::Sugar);
+    INFO("Sugar: produced=" << total_prod[SI] << " consumed=" << total_cons[SI]);
+    REQUIRE(total_prod[SI] > 0.0f);
+    REQUIRE(total_cons[SI] > 0.0f);
+
+    // Water should be produced (by roots) and consumed (by leaves).
+    const size_t WI = static_cast<size_t>(ChemicalID::Water);
+    INFO("Water: produced=" << total_prod[WI] << " consumed=" << total_cons[WI]);
+    REQUIRE(total_prod[WI] > 0.0f);
+    REQUIRE(total_cons[WI] > 0.0f);
+
+    // Auxin should be produced (apicals, leaves, root apicals) and consumed (decay).
+    const size_t AI = static_cast<size_t>(ChemicalID::Auxin);
+    INFO("Auxin: produced=" << total_prod[AI] << " consumed=" << total_cons[AI]);
+    REQUIRE(total_prod[AI] > 0.0f);
+    REQUIRE(total_cons[AI] > 0.0f);
 }
