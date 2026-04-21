@@ -3,6 +3,7 @@
 #include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/root_apical.h"
 
 using namespace botany;
 
@@ -428,4 +429,29 @@ TEST_CASE("Transport: cytokinin crosses seed node from root to shoot", "[hormone
     // Cytokinin accumulates at its source (root tip), so root level stays higher
     // than shoot level — we only require shoot > 0, i.e. transport DID cross the seed.
     REQUIRE(shoot->local().chemical(ChemicalID::Cytokinin) > 0.0f);
+}
+
+TEST_CASE("Cytokinin: RA produces CK without any local auxin", "[hormone]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
+
+    RootApicalNode* ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
+    });
+    REQUIRE(ra != nullptr);
+    REQUIRE(ra->active);
+
+    // Prime sugar + water, zero local auxin.
+    ra->local().chemical(ChemicalID::Sugar) = 1.0f;
+    ra->local().chemical(ChemicalID::Water) = 1.0f;
+    ra->local().chemical(ChemicalID::Auxin) = 0.0f;
+    ra->tick_cytokinin_produced = 0.0f;
+
+    // Tick the RA directly (bypasses vascular so we observe update_tissue only).
+    ra->tick(plant, world);
+
+    // With decoupled production, CK should be produced regardless of auxin.
+    REQUIRE(ra->tick_cytokinin_produced > 0.0f);
 }

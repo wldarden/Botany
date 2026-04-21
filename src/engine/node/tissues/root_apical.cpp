@@ -65,12 +65,15 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 
     // Cytokinin: floor 0.05 (smaller than auxin's 0.1) — CK has less
     // conjugate-pool buffering than auxin, so its response to sugar is sharper.
-    // This is the primary root-to-shoot feedback brake: low root sugar → low
-    // CK → less CK delivered to shoot via xylem → fewer SA activations.
+    // CK production is driven purely by local metabolic state (sugar + water).
+    // It is NOT gated on local auxin — in real root tips, CK synthesis reflects
+    // "this tip is metabolically healthy," independent of the distant shoot.
+    // (Prior versions gated on local_auxin, which broke for tall plants where
+    // shoot-derived auxin never reaches the RA; see hormone-biology spec.)
     float mf_cyto = metabolic_factor(
         local().chemical(ChemicalID::Sugar), g.cytokinin_sugar_half_saturation, 0.05f,
         local().chemical(ChemicalID::Water), g.cytokinin_water_half_saturation, 0.05f);
-    float cyto_produced = g.root_cytokinin_production_rate * local().chemical(ChemicalID::Auxin) * mf_cyto;
+    float cyto_produced = g.root_cytokinin_production_rate * mf_cyto;
     local().chemical(ChemicalID::Cytokinin) += cyto_produced;
     tick_cytokinin_produced += cyto_produced;
 
