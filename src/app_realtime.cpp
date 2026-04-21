@@ -916,321 +916,6 @@ int main(int argc, char* argv[]) {
                     }
                 }
                 ImGui::Separator();
-                // --- (existing panel content continues below) ---
-
-                // Node type
-                const char* type_str = "?";
-                switch (sel.type) {
-                    case NodeType::STEM:           type_str = "STEM"; break;
-                    case NodeType::ROOT:           type_str = "ROOT"; break;
-                    case NodeType::LEAF:           type_str = "LEAF"; break;
-                    case NodeType::APICAL:         type_str = "APICAL"; break;
-                    case NodeType::ROOT_APICAL:    type_str = "ROOT_APICAL"; break;
-                }
-                ImGui::Text("Type: %s", type_str);
-
-                // Meristem info with growth factor breakdown
-                if (auto* ap = sel.as_apical()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-                    ImGui::Text("Meristem: %s", ap->active ? "active" : "dormant");
-                    if (ap->active) {
-                        float max_cost = mg.growth_rate * mw.sugar_cost_meristem_growth;
-                        float sugar_gf = (max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
-                        float cyt = sel.local().chemical(ChemicalID::Cytokinin);
-                        float cyt_gf = cyt / (cyt + std::max(mg.cytokinin_growth_threshold, 1e-6f));
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        float total = sugar_gf * cyt_gf * water_gf;
-                        ImGui::Text("Growth: %.1f%%", total * 100);
-                        ImGui::Text("  Sugar: %3.0f%%  Cyt: %3.0f%%  Water: %3.0f%%",
-                                    sugar_gf * 100, cyt_gf * 100, water_gf * 100);
-                    } else {
-                        // Activation conditions for dormant shoot apicals — shown as % toward each threshold
-                        float stem_auxin = sel.parent ? sel.parent->local().chemical(ChemicalID::Auxin) : sel.local().chemical(ChemicalID::Auxin);
-                        float local_cyt = sel.parent ? sel.parent->local().chemical(ChemicalID::Cytokinin) : sel.local().chemical(ChemicalID::Cytokinin);
-                        float sugar = sel.local().chemical(ChemicalID::Sugar);
-                        bool auxin_ok = stem_auxin < mg.auxin_threshold;
-                        bool cyt_ok = local_cyt >= mg.cytokinin_threshold;
-                        bool sugar_ok = sugar >= mw.sugar_cost_activation;
-                        // Auxin must be LOW: 100% = at zero (perfect), 0% = at/above threshold
-                        float auxin_pct = (mg.auxin_threshold > 1e-6f)
-                            ? std::max(0.0f, (mg.auxin_threshold - stem_auxin) / mg.auxin_threshold * 100.0f)
-                            : (auxin_ok ? 100.0f : 0.0f);
-                        // Cyt must be HIGH: 100% = at/above threshold, lower is worse
-                        float cyt_pct = (mg.cytokinin_threshold > 1e-6f)
-                            ? std::min(local_cyt / mg.cytokinin_threshold * 100.0f, 100.0f)
-                            : (cyt_ok ? 100.0f : 0.0f);
-                        // Sugar must cover activation cost: 100% = fully funded
-                        float sugar_pct = (mw.sugar_cost_activation > 1e-6f)
-                            ? std::min(sugar / mw.sugar_cost_activation * 100.0f, 100.0f)
-                            : (sugar_ok ? 100.0f : 0.0f);
-                        ImGui::Text("Activation: %s", (auxin_ok && cyt_ok && sugar_ok) ? "READY" : "blocked");
-                        ImGui::Text("  Auxin: %3.0f%%  Cyt: %3.0f%%  Sugar: %3.0f%%",
-                                    auxin_pct, cyt_pct, sugar_pct);
-                    }
-                } else if (auto* ra = sel.as_root_apical()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-                    ImGui::Text("Meristem: %s", ra->active ? "active" : "dormant");
-                    if (ra->active) {
-                        float max_cost = mg.root_growth_rate * mw.sugar_cost_root_growth;
-                        float sugar_gf = (max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        float total = sugar_gf * water_gf;
-                        ImGui::Text("Growth: %.1f%%", total * 100);
-                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%",
-                                    sugar_gf * 100, water_gf * 100);
-                    } else {
-                        // Activation conditions for dormant root apicals — shown as % toward each threshold
-                        float auxin = sel.local().chemical(ChemicalID::Auxin);
-                        float cyt = sel.local().chemical(ChemicalID::Cytokinin);
-                        float sugar = sel.local().chemical(ChemicalID::Sugar);
-                        bool auxin_ok = auxin >= mg.root_auxin_activation_threshold;
-                        bool cyt_ok = cyt <= mg.root_cytokinin_inhibition_threshold;
-                        bool sugar_ok = sugar >= mw.sugar_cost_activation;
-                        // Auxin must be HIGH: 100% = at/above threshold
-                        float auxin_pct = (mg.root_auxin_activation_threshold > 1e-6f)
-                            ? std::min(auxin / mg.root_auxin_activation_threshold * 100.0f, 100.0f)
-                            : (auxin_ok ? 100.0f : 0.0f);
-                        // Cyt must be LOW: 100% = at zero (perfect), 0% = at/above threshold
-                        float cyt_pct = (mg.root_cytokinin_inhibition_threshold > 1e-6f)
-                            ? std::max(0.0f, (mg.root_cytokinin_inhibition_threshold - cyt) / mg.root_cytokinin_inhibition_threshold * 100.0f)
-                            : (cyt_ok ? 100.0f : 0.0f);
-                        // Sugar must cover activation cost: 100% = fully funded
-                        float sugar_pct = (mw.sugar_cost_activation > 1e-6f)
-                            ? std::min(sugar / mw.sugar_cost_activation * 100.0f, 100.0f)
-                            : (sugar_ok ? 100.0f : 0.0f);
-                        ImGui::Text("Activation: %s", (auxin_ok && cyt_ok && sugar_ok) ? "READY" : "blocked");
-                        ImGui::Text("  Auxin: %3.0f%%  Cyt: %3.0f%%  Sugar: %3.0f%%",
-                                    auxin_pct, cyt_pct, sugar_pct);
-                    }
-                } else if (auto* leaf = sel.as_leaf()) {
-                    // Leaf expansion growth fraction
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-                    if (leaf->leaf_size >= mg.max_leaf_size) {
-                        ImGui::Text("Growth: 0%% (full size)");
-                    } else {
-                        float auxin = sel.local().chemical(ChemicalID::Auxin);
-                        float auxin_sat = auxin / (auxin + std::max(mg.leaf_auxin_half_saturation, 1e-6f));
-                        float auxin_boost = 1.0f + mg.leaf_auxin_max_boost * auxin_sat;
-                        float remaining = mg.max_leaf_size - leaf->leaf_size;
-                        float max_growth = mg.leaf_growth_rate * auxin_boost;
-                        float water_gf = meristem_helpers::turgor_fraction(
-                            sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        float growth_cap = std::min(max_growth, remaining) * water_gf;
-                        float sugar_gf = (growth_cap > 1e-6f)
-                            ? std::min(sel.local().chemical(ChemicalID::Sugar) / (growth_cap * mw.sugar_cost_leaf_growth), 1.0f)
-                            : 1.0f;
-                        ImGui::Text("Growth: %.1f%%", water_gf * sugar_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%  Auxin: %3.0f%%",
-                                    sugar_gf * 100.0f, water_gf * 100.0f, auxin_sat * 100.0f);
-                    }
-                } else if (sel.as_stem()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-                    float density_scale = mg.wood_density / mw.reference_wood_density;
-
-                    // Elongation (rate-limited by sugar + water; modulated by GA/eth/auxin/stress)
-                    if (!sel.parent || sel.age >= mg.internode_maturation_ticks) {
-                        ImGui::Text("Elongate: 0%% (mature)");
-                    } else {
-                        float ga_mult = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
-                        float eth_fac = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
-                        float str_fac = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Stress) * mg.stress_elongation_inhibition);
-                        float axn_boost = meristem_helpers::auxin_growth_factor(
-                            sel.local().chemical(ChemicalID::Auxin), mg.stem_auxin_max_boost, mg.stem_auxin_half_saturation);
-                        float eff_rate = mg.internode_elongation_rate * ga_mult * eth_fac * str_fac * axn_boost;
-                        float eff_cost = eff_rate * mw.sugar_cost_stem_growth * density_scale;
-                        float sugar_gf = (eff_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / eff_cost, 1.0f) : 1.0f;
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        ImGui::Text("Elongate: %.1f%%", sugar_gf * water_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%", sugar_gf * 100.0f, water_gf * 100.0f);
-                    }
-
-                    // Thickening (bias-driven, sugar-limited)
-                    float bias = sel.get_parent_auxin_flow_bias();
-                    if (bias < 1e-6f) {
-                        ImGui::Text("Thicken:  0%% (no flux)");
-                    } else {
-                        float thicken_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth * density_scale;
-                        float sugar_gf = (thicken_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
-                        ImGui::Text("Thicken:  %.1f%%", sugar_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Bias: %.4f", sugar_gf * 100.0f, bias);
-                    }
-                } else if (sel.as_root()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-
-                    // Elongation (rate-limited by sugar + water; modulated by GA/eth/auxin)
-                    if (!sel.parent || sel.age >= mg.root_internode_maturation_ticks) {
-                        ImGui::Text("Elongate: 0%% (mature)");
-                    } else {
-                        float ga_mult = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
-                        float eth_fac = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
-                        float axn_boost = meristem_helpers::auxin_growth_factor(
-                            sel.local().chemical(ChemicalID::Auxin), mg.root_auxin_max_boost, mg.root_auxin_half_saturation);
-                        float eff_rate = mg.root_internode_elongation_rate * ga_mult * eth_fac * axn_boost;
-                        float eff_cost = eff_rate * mw.sugar_cost_stem_growth;
-                        float sugar_gf = (eff_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / eff_cost, 1.0f) : 1.0f;
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        ImGui::Text("Elongate: %.1f%%", sugar_gf * water_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%", sugar_gf * 100.0f, water_gf * 100.0f);
-                    }
-
-                    // Thickening (bias-driven, sugar-limited; no density scale for roots)
-                    float bias = sel.get_parent_auxin_flow_bias();
-                    if (bias < 1e-6f) {
-                        ImGui::Text("Thicken:  0%% (no flux)");
-                    } else {
-                        float thicken_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth;
-                        float sugar_gf = (thicken_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
-                        ImGui::Text("Thicken:  %.1f%%", sugar_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Bias: %.4f", sugar_gf * 100.0f, bias);
-                    }
-                } else if (sel.as_stem()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-                    float density_scale = mg.wood_density / mw.reference_wood_density;
-
-                    // Thickening: vascular-history driven, proportional to auxin_flow_bias
-                    float bias = sel.get_parent_auxin_flow_bias();
-                    float thicken_max_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth * density_scale;
-                    float thicken_sugar_gf = (thicken_max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_max_cost, 1.0f) : 1.0f;
-                    float stress_boost = 1.0f + sel.local().chemical(ChemicalID::Stress) * mg.stress_thickening_boost;
-                    float thicken_rate = (bias >= 1e-6f) ? (mg.cambium_responsiveness * bias * thicken_sugar_gf * stress_boost) : 0.0f;
-                    ImGui::Text("Thicken:  bias=%.4f  rate=%s/tick", bias, fmt_dist(thicken_rate));
-                    ImGui::Text("  Sugar: %.0f%%  Stress: %.2fx", thicken_sugar_gf * 100.0f, stress_boost);
-
-                    // Elongation: GA/ethylene/auxin/stress modulated, sugar+water gated
-                    float current_len = glm::length(sel.offset);
-                    float ga_elong = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
-                    float eth_elong = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
-                    float stress_elong = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Stress) * mg.stress_elongation_inhibition);
-                    float auxin_elong = meristem_helpers::auxin_growth_factor(
-                        sel.local().chemical(ChemicalID::Auxin), mg.stem_auxin_max_boost, mg.stem_auxin_half_saturation);
-                    float eff_rate = mg.internode_elongation_rate * ga_elong * eth_elong * stress_elong * auxin_elong;
-                    float max_len = mg.max_internode_length * (1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_length_sensitivity);
-                    float elong_cost = eff_rate * mw.sugar_cost_stem_growth * density_scale;
-                    float elong_sug = (elong_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
-                    float elong_wat = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                    if (!sel.parent || sel.age >= mg.internode_maturation_ticks) {
-                        ImGui::Text("Elongate: mature (age %u / %u)", sel.age, mg.internode_maturation_ticks);
-                    } else {
-                        ImGui::Text("Elongate: %s / %s  rate=%s/tick",
-                                    fmt_dist(current_len), fmt_dist(max_len),
-                                    fmt_dist(eff_rate * elong_sug * elong_wat));
-                        ImGui::Text("  GA: %.2fx  Eth: %.0f%%  Auxin: %.2fx  Stress: %.0f%%",
-                                    ga_elong, eth_elong * 100.0f, auxin_elong, stress_elong * 100.0f);
-                        ImGui::Text("  Sugar: %.0f%%  Water: %.0f%%",
-                                    elong_sug * 100.0f, elong_wat * 100.0f);
-                    }
-                } else if (sel.as_root()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-
-                    // Water absorption: gradient-based, self-limiting when root is full
-                    float root_len = std::max(glm::length(sel.offset), 0.01f);
-                    float surface_area = 2.0f * 3.14159f * sel.radius * root_len;
-                    float rwcap = water_cap(sel, mg);
-                    float fill_frac = (rwcap > 1e-6f) ? sel.local().chemical(ChemicalID::Water) / rwcap : 1.0f;
-                    float gradient = std::max(0.0f, mw.soil_moisture - fill_frac);
-                    float absorbed = mg.water_absorption_rate * surface_area * gradient;
-                    ImGui::Text("Absorb: +%s/tick", fmt_vol(absorbed));
-                    ImGui::Text("  Area: %.3f dm\xC2\xB2  Gradient: %.0f%%  Fill: %.0f%%",
-                                surface_area, gradient * 100.0f, fill_frac * 100.0f);
-
-                    // Thickening: same vascular-driven model as stem (no density scale for roots)
-                    float bias = sel.get_parent_auxin_flow_bias();
-                    float thicken_max_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth;
-                    float thicken_sugar_gf = (thicken_max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_max_cost, 1.0f) : 1.0f;
-                    float thicken_rate = (bias >= 1e-6f) ? (mg.cambium_responsiveness * bias * thicken_sugar_gf) : 0.0f;
-                    ImGui::Text("Thicken:  bias=%.4f  rate=%s/tick", bias, fmt_dist(thicken_rate));
-                    ImGui::Text("  Sugar: %.0f%%", thicken_sugar_gf * 100.0f);
-
-                    // Elongation: GA/ethylene/auxin modulated, sugar+water gated
-                    float current_len = glm::length(sel.offset);
-                    float ga_elong = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
-                    float eth_elong = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
-                    float auxin_elong = meristem_helpers::auxin_growth_factor(
-                        sel.local().chemical(ChemicalID::Auxin), mg.root_auxin_max_boost, mg.root_auxin_half_saturation);
-                    float eff_rate = mg.root_internode_elongation_rate * ga_elong * eth_elong * auxin_elong;
-                    float max_len = mg.max_internode_length * (1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_length_sensitivity);
-                    float elong_cost = eff_rate * mw.sugar_cost_stem_growth;
-                    float elong_sug = (elong_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
-                    float elong_wat = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), rwcap);
-                    if (!sel.parent || sel.age >= mg.root_internode_maturation_ticks) {
-                        ImGui::Text("Elongate: mature (age %u / %u)", sel.age, mg.root_internode_maturation_ticks);
-                    } else {
-                        ImGui::Text("Elongate: %s / %s  rate=%s/tick",
-                                    fmt_dist(current_len), fmt_dist(max_len),
-                                    fmt_dist(eff_rate * elong_sug * elong_wat));
-                        ImGui::Text("  GA: %.2fx  Eth: %.0f%%  Auxin: %.2fx",
-                                    ga_elong, eth_elong * 100.0f, auxin_elong);
-                        ImGui::Text("  Sugar: %.0f%%  Water: %.0f%%",
-                                    elong_sug * 100.0f, elong_wat * 100.0f);
-                    }
-                }
-
-                ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);
-                ImGui::Text("Radius: %s", fmt_dist(sel.radius));
-                ImGui::Text("Length: %s", fmt_dist(glm::length(sel.offset)));
-                if (auto* leaf = sel.as_leaf()) {
-                    const Genome& lg = engine.get_plant(plant_id).genome();
-                    const WorldParams& lw = engine.world_params();
-                    float leaf_area = leaf->leaf_size * leaf->leaf_size;
-                    float angle_eff = 1.0f;
-                    float flen = glm::length(leaf->facing);
-                    if (flen > 1e-4f) angle_eff = std::max(0.0f, (leaf->facing / flen).y);
-
-                    // Leaf size + progress
-                    ImGui::Text("Leaf Size: %s / %s (%.0f%%)",
-                                fmt_dist(leaf->leaf_size), fmt_dist(lg.max_leaf_size),
-                                100.0f * leaf->leaf_size / std::max(lg.max_leaf_size, 1e-6f));
-                    ImGui::Text("Light: %.1f%%  Angle eff: %.0f%%",
-                                leaf->light_exposure * 100.0f, angle_eff * 100.0f);
-
-                    // Photosynthesis with stomatal conductance
-                    float lwcap = water_cap(sel, lg);
-                    float stomatal = (lwcap > 1e-6f)
-                        ? std::min(std::max(sel.local().chemical(ChemicalID::Water) / lwcap, 0.2f), 1.0f)
-                        : 1.0f;
-                    float production = leaf->light_exposure * angle_eff
-                        * lw.light_level * leaf_area
-                        * lw.sugar_production_rate * stomatal;
-                    ImGui::Text("Photo: %s/tick  Stomatal: %.0f%%",
-                                fmt_mass_rate(production), stomatal * 100.0f);
-
-                    // Transpiration
-                    float transpiration = lg.transpiration_rate * leaf_area * leaf->light_exposure;
-                    ImGui::Text("Transpire: -%s/tick", fmt_vol(transpiration));
-
-                    // Expansion grow choice
-                    if (leaf->leaf_size < lg.max_leaf_size) {
-                        float auxin_boost = meristem_helpers::auxin_growth_factor(
-                            sel.local().chemical(ChemicalID::Auxin), lg.leaf_auxin_max_boost, lg.leaf_auxin_half_saturation);
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), lwcap);
-                        float max_growth = lg.leaf_growth_rate * auxin_boost;
-                        float expand_cost = max_growth * lw.sugar_cost_leaf_growth;
-                        float expand_sug = (expand_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / expand_cost, 1.0f) : 1.0f;
-                        ImGui::Text("Expand:  Auxin: %.2fx  Water: %.0f%%  Sugar: %.0f%%",
-                                    auxin_boost, water_gf * 100.0f, expand_sug * 100.0f);
-                    } else {
-                        ImGui::Text("Expand: full size");
-                    }
-
-                    // Carbon balance and senescence
-                    ImGui::Text("Carbon deficit: %u ticks", leaf->deficit_ticks);
-                    if (leaf->senescence_ticks > 0) {
-                        ImGui::Text("Senescence: %u / %u ticks", leaf->senescence_ticks, lg.senescence_duration);
-                    } else {
-                        ImGui::Text("Senescence: healthy");
-                    }
-                }
-                ImGui::Text("Starvation: %u ticks", sel.starvation_ticks);
-                ImGui::Text("Children: %d", static_cast<int>(sel.children.size()));
-
-                ImGui::Separator();
 
                 // --- Per-edge transport capacity / actual-flow helpers ---
                 // Max Trans.: sum the diffusion-formula cap across all edges touching this
@@ -1340,6 +1025,218 @@ int main(int argc, char* argv[]) {
                     ImGui::Text("  Transport:    0");
                 }
 
+                ImGui::Separator();
+
+                // --- ACTIVITY ---
+                ImGui::Text("Activity:");
+                ImGui::Separator();
+                if (auto* ap = sel.as_apical()) {
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    const WorldParams& mw = engine.world_params();
+                    ImGui::Text("Meristem: %s", ap->active ? "active" : "dormant");
+                    if (ap->active) {
+                        float max_cost = mg.growth_rate * mw.sugar_cost_meristem_growth;
+                        float sugar_gf = (max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+                        float cyt = sel.local().chemical(ChemicalID::Cytokinin);
+                        float cyt_gf = cyt / (cyt + std::max(mg.cytokinin_growth_threshold, 1e-6f));
+                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
+                        float total = sugar_gf * cyt_gf * water_gf;
+                        ImGui::Text("Growth: %.1f%%", total * 100);
+                        ImGui::Text("  Sugar: %3.0f%%  Cyt: %3.0f%%  Water: %3.0f%%",
+                                    sugar_gf * 100, cyt_gf * 100, water_gf * 100);
+                    } else {
+                        // Activation conditions for dormant shoot apicals — shown as % toward each threshold
+                        float stem_auxin = sel.parent ? sel.parent->local().chemical(ChemicalID::Auxin) : sel.local().chemical(ChemicalID::Auxin);
+                        float local_cyt = sel.parent ? sel.parent->local().chemical(ChemicalID::Cytokinin) : sel.local().chemical(ChemicalID::Cytokinin);
+                        float sugar = sel.local().chemical(ChemicalID::Sugar);
+                        bool auxin_ok = stem_auxin < mg.auxin_threshold;
+                        bool cyt_ok = local_cyt >= mg.cytokinin_threshold;
+                        bool sugar_ok = sugar >= mw.sugar_cost_activation;
+                        // Auxin must be LOW: 100% = at zero (perfect), 0% = at/above threshold
+                        float auxin_pct = (mg.auxin_threshold > 1e-6f)
+                            ? std::max(0.0f, (mg.auxin_threshold - stem_auxin) / mg.auxin_threshold * 100.0f)
+                            : (auxin_ok ? 100.0f : 0.0f);
+                        // Cyt must be HIGH: 100% = at/above threshold, lower is worse
+                        float cyt_pct = (mg.cytokinin_threshold > 1e-6f)
+                            ? std::min(local_cyt / mg.cytokinin_threshold * 100.0f, 100.0f)
+                            : (cyt_ok ? 100.0f : 0.0f);
+                        // Sugar must cover activation cost: 100% = fully funded
+                        float sugar_pct = (mw.sugar_cost_activation > 1e-6f)
+                            ? std::min(sugar / mw.sugar_cost_activation * 100.0f, 100.0f)
+                            : (sugar_ok ? 100.0f : 0.0f);
+                        ImGui::Text("Activation: %s", (auxin_ok && cyt_ok && sugar_ok) ? "READY" : "blocked");
+                        ImGui::Text("  Auxin: %3.0f%%  Cyt: %3.0f%%  Sugar: %3.0f%%",
+                                    auxin_pct, cyt_pct, sugar_pct);
+                    }
+                } else if (auto* ra = sel.as_root_apical()) {
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    const WorldParams& mw = engine.world_params();
+                    ImGui::Text("Meristem: %s", ra->active ? "active" : "dormant");
+                    if (ra->active) {
+                        float max_cost = mg.root_growth_rate * mw.sugar_cost_root_growth;
+                        float sugar_gf = (max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
+                        float total = sugar_gf * water_gf;
+                        ImGui::Text("Growth: %.1f%%", total * 100);
+                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%",
+                                    sugar_gf * 100, water_gf * 100);
+                    } else {
+                        // Activation conditions for dormant root apicals — shown as % toward each threshold
+                        float auxin = sel.local().chemical(ChemicalID::Auxin);
+                        float cyt = sel.local().chemical(ChemicalID::Cytokinin);
+                        float sugar = sel.local().chemical(ChemicalID::Sugar);
+                        bool auxin_ok = auxin >= mg.root_auxin_activation_threshold;
+                        bool cyt_ok = cyt <= mg.root_cytokinin_inhibition_threshold;
+                        bool sugar_ok = sugar >= mw.sugar_cost_activation;
+                        // Auxin must be HIGH: 100% = at/above threshold
+                        float auxin_pct = (mg.root_auxin_activation_threshold > 1e-6f)
+                            ? std::min(auxin / mg.root_auxin_activation_threshold * 100.0f, 100.0f)
+                            : (auxin_ok ? 100.0f : 0.0f);
+                        // Cyt must be LOW: 100% = at zero (perfect), 0% = at/above threshold
+                        float cyt_pct = (mg.root_cytokinin_inhibition_threshold > 1e-6f)
+                            ? std::max(0.0f, (mg.root_cytokinin_inhibition_threshold - cyt) / mg.root_cytokinin_inhibition_threshold * 100.0f)
+                            : (cyt_ok ? 100.0f : 0.0f);
+                        // Sugar must cover activation cost: 100% = fully funded
+                        float sugar_pct = (mw.sugar_cost_activation > 1e-6f)
+                            ? std::min(sugar / mw.sugar_cost_activation * 100.0f, 100.0f)
+                            : (sugar_ok ? 100.0f : 0.0f);
+                        ImGui::Text("Activation: %s", (auxin_ok && cyt_ok && sugar_ok) ? "READY" : "blocked");
+                        ImGui::Text("  Auxin: %3.0f%%  Cyt: %3.0f%%  Sugar: %3.0f%%",
+                                    auxin_pct, cyt_pct, sugar_pct);
+                    }
+                } else if (auto* leaf = sel.as_leaf()) {
+                    const Genome& lg = engine.get_plant(plant_id).genome();
+                    const WorldParams& lw = engine.world_params();
+                    float leaf_area = leaf->leaf_size * leaf->leaf_size;
+                    float angle_eff = 1.0f;
+                    float flen = glm::length(leaf->facing);
+                    if (flen > 1e-4f) angle_eff = std::max(0.0f, (leaf->facing / flen).y);
+
+                    // Leaf size + progress
+                    ImGui::Text("Leaf Size: %s / %s (%.0f%%)",
+                                fmt_dist(leaf->leaf_size), fmt_dist(lg.max_leaf_size),
+                                100.0f * leaf->leaf_size / std::max(lg.max_leaf_size, 1e-6f));
+                    ImGui::Text("Light: %.1f%%  Angle eff: %.0f%%",
+                                leaf->light_exposure * 100.0f, angle_eff * 100.0f);
+
+                    // Photosynthesis with stomatal conductance
+                    float lwcap = water_cap(sel, lg);
+                    float stomatal = (lwcap > 1e-6f)
+                        ? std::min(std::max(sel.local().chemical(ChemicalID::Water) / lwcap, 0.2f), 1.0f)
+                        : 1.0f;
+                    float production = leaf->light_exposure * angle_eff
+                        * lw.light_level * leaf_area
+                        * lw.sugar_production_rate * stomatal;
+                    ImGui::Text("Photo: %s/tick  Stomatal: %.0f%%",
+                                fmt_mass_rate(production), stomatal * 100.0f);
+
+                    // Transpiration
+                    float transpiration = lg.transpiration_rate * leaf_area * leaf->light_exposure;
+                    ImGui::Text("Transpire: -%s/tick", fmt_vol(transpiration));
+
+                    // Expansion grow choice
+                    if (leaf->leaf_size < lg.max_leaf_size) {
+                        float auxin_boost = meristem_helpers::auxin_growth_factor(
+                            sel.local().chemical(ChemicalID::Auxin), lg.leaf_auxin_max_boost, lg.leaf_auxin_half_saturation);
+                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), lwcap);
+                        float max_growth = lg.leaf_growth_rate * auxin_boost;
+                        float expand_cost = max_growth * lw.sugar_cost_leaf_growth;
+                        float expand_sug = (expand_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / expand_cost, 1.0f) : 1.0f;
+                        ImGui::Text("Expand:  Auxin: %.2fx  Water: %.0f%%  Sugar: %.0f%%",
+                                    auxin_boost, water_gf * 100.0f, expand_sug * 100.0f);
+                    } else {
+                        ImGui::Text("Expand: full size");
+                    }
+
+                    // Carbon balance
+                    ImGui::Text("Carbon deficit: %u ticks", leaf->deficit_ticks);
+                } else if (sel.as_stem()) {
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    const WorldParams& mw = engine.world_params();
+                    float density_scale = mg.wood_density / mw.reference_wood_density;
+
+                    // Thickening: vascular-history driven, proportional to auxin_flow_bias
+                    float bias = sel.get_parent_auxin_flow_bias();
+                    float thicken_max_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth * density_scale;
+                    float thicken_sugar_gf = (thicken_max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_max_cost, 1.0f) : 1.0f;
+                    float stress_boost = 1.0f + sel.local().chemical(ChemicalID::Stress) * mg.stress_thickening_boost;
+                    float thicken_rate = (bias >= 1e-6f) ? (mg.cambium_responsiveness * bias * thicken_sugar_gf * stress_boost) : 0.0f;
+                    ImGui::Text("Thicken:  bias=%.4f  rate=%s/tick", bias, fmt_dist(thicken_rate));
+                    ImGui::Text("  Sugar: %.0f%%  Stress: %.2fx", thicken_sugar_gf * 100.0f, stress_boost);
+
+                    // Elongation: GA/ethylene/auxin/stress modulated, sugar+water gated
+                    float current_len = glm::length(sel.offset);
+                    float ga_elong = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
+                    float eth_elong = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
+                    float stress_elong = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Stress) * mg.stress_elongation_inhibition);
+                    float auxin_elong = meristem_helpers::auxin_growth_factor(
+                        sel.local().chemical(ChemicalID::Auxin), mg.stem_auxin_max_boost, mg.stem_auxin_half_saturation);
+                    float eff_rate = mg.internode_elongation_rate * ga_elong * eth_elong * stress_elong * auxin_elong;
+                    float max_len = mg.max_internode_length * (1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_length_sensitivity);
+                    float elong_cost = eff_rate * mw.sugar_cost_stem_growth * density_scale;
+                    float elong_sug = (elong_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
+                    float elong_wat = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
+                    if (!sel.parent || sel.age >= mg.internode_maturation_ticks) {
+                        ImGui::Text("Elongate: mature (age %u / %u)", sel.age, mg.internode_maturation_ticks);
+                    } else {
+                        ImGui::Text("Elongate: %s / %s  rate=%s/tick",
+                                    fmt_dist(current_len), fmt_dist(max_len),
+                                    fmt_dist(eff_rate * elong_sug * elong_wat));
+                        ImGui::Text("  GA: %.2fx  Eth: %.0f%%  Auxin: %.2fx  Stress: %.0f%%",
+                                    ga_elong, eth_elong * 100.0f, auxin_elong, stress_elong * 100.0f);
+                        ImGui::Text("  Sugar: %.0f%%  Water: %.0f%%",
+                                    elong_sug * 100.0f, elong_wat * 100.0f);
+                    }
+                } else if (sel.as_root()) {
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    const WorldParams& mw = engine.world_params();
+
+                    // Water absorption: gradient-based, self-limiting when root is full
+                    float root_len = std::max(glm::length(sel.offset), 0.01f);
+                    float surface_area = 2.0f * 3.14159f * sel.radius * root_len;
+                    float rwcap = water_cap(sel, mg);
+                    float fill_frac = (rwcap > 1e-6f) ? sel.local().chemical(ChemicalID::Water) / rwcap : 1.0f;
+                    float gradient = std::max(0.0f, mw.soil_moisture - fill_frac);
+                    float absorbed = mg.water_absorption_rate * surface_area * gradient;
+                    ImGui::Text("Absorb: +%s/tick", fmt_vol(absorbed));
+                    ImGui::Text("  Area: %.3f dm\xC2\xB2  Gradient: %.0f%%  Fill: %.0f%%",
+                                surface_area, gradient * 100.0f, fill_frac * 100.0f);
+
+                    // Thickening: same vascular-driven model as stem (no density scale for roots)
+                    float bias = sel.get_parent_auxin_flow_bias();
+                    float thicken_max_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth;
+                    float thicken_sugar_gf = (thicken_max_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_max_cost, 1.0f) : 1.0f;
+                    float thicken_rate = (bias >= 1e-6f) ? (mg.cambium_responsiveness * bias * thicken_sugar_gf) : 0.0f;
+                    ImGui::Text("Thicken:  bias=%.4f  rate=%s/tick", bias, fmt_dist(thicken_rate));
+                    ImGui::Text("  Sugar: %.0f%%", thicken_sugar_gf * 100.0f);
+
+                    // Elongation: GA/ethylene/auxin modulated, sugar+water gated
+                    float current_len = glm::length(sel.offset);
+                    float ga_elong = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
+                    float eth_elong = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
+                    float auxin_elong = meristem_helpers::auxin_growth_factor(
+                        sel.local().chemical(ChemicalID::Auxin), mg.root_auxin_max_boost, mg.root_auxin_half_saturation);
+                    float eff_rate = mg.root_internode_elongation_rate * ga_elong * eth_elong * auxin_elong;
+                    float max_len = mg.max_internode_length * (1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_length_sensitivity);
+                    float elong_cost = eff_rate * mw.sugar_cost_stem_growth;
+                    float elong_sug = (elong_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
+                    float elong_wat = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), rwcap);
+                    if (!sel.parent || sel.age >= mg.root_internode_maturation_ticks) {
+                        ImGui::Text("Elongate: mature (age %u / %u)", sel.age, mg.root_internode_maturation_ticks);
+                    } else {
+                        ImGui::Text("Elongate: %s / %s  rate=%s/tick",
+                                    fmt_dist(current_len), fmt_dist(max_len),
+                                    fmt_dist(eff_rate * elong_sug * elong_wat));
+                        ImGui::Text("  GA: %.2fx  Eth: %.0f%%  Auxin: %.2fx",
+                                    ga_elong, eth_elong * 100.0f, auxin_elong);
+                        ImGui::Text("  Sugar: %.0f%%  Water: %.0f%%",
+                                    elong_sug * 100.0f, elong_wat * 100.0f);
+                    }
+                }
+                ImGui::Separator();
+
+                // --- NAVIGATION ---
+                ImGui::Text("Navigation:");
                 ImGui::Separator();
 
                 // Helper: node type as string
