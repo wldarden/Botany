@@ -872,7 +872,7 @@ int main(int argc, char* argv[]) {
             int w, h;
             glfwGetWindowSize(window, &w, &h);
             ImGui::SetNextWindowPos(ImVec2(static_cast<float>(w) - 320, 10), ImGuiCond_Once);
-            ImGui::SetNextWindowSize(ImVec2(310, 0), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(ImVec2(480, 0), ImGuiCond_Once);
             if (g_show_economy_modal) ImGui::SetNextWindowFocus();
 
             if (ImGui::Begin("Node Inspector", &g_show_node_panel, ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -1268,59 +1268,60 @@ int main(int argc, char* argv[]) {
                 float sugar_max   = chem_max_trans(gnm.sugar_base_transport,   gnm.sugar_transport_scale);
                 float water_max   = chem_max_trans(gnm.water_base_transport,   gnm.water_transport_scale);
 
-                ImGui::Text("Chemical Levels:");
-                if (ImGui::BeginTable("chemicals", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("Chemical",     ImGuiTableColumnFlags_WidthFixed, 70);
-                    ImGui::TableSetupColumn("Self",         ImGuiTableColumnFlags_WidthFixed, 70);
-                    ImGui::TableSetupColumn("Transporting", ImGuiTableColumnFlags_WidthFixed, 80);
-                    ImGui::TableSetupColumn("Max Trans.",   ImGuiTableColumnFlags_WidthFixed, 80);
+                ImGui::Text("Chemicals:");
+                if (ImGui::BeginTable("chemicals", 10, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+                    ImGui::TableSetupColumn("Chem");
+                    ImGui::TableSetupColumn("L lvl"); ImGui::TableSetupColumn("L +"); ImGui::TableSetupColumn("L -");
+                    ImGui::TableSetupColumn("V lvl"); ImGui::TableSetupColumn("V +"); ImGui::TableSetupColumn("V -");
+                    ImGui::TableSetupColumn("T lvl"); ImGui::TableSetupColumn("T +"); ImGui::TableSetupColumn("T -");
                     ImGui::TableHeadersRow();
 
-                    // Sugar
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Sugar");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_mass(sel.local().chemical(ChemicalID::Sugar)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_mass(std::fabs(sel.tick_sugar_transport)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_mass(sugar_max));
+                    struct Row { const char* name; ChemicalID id; const char* (*fmt)(float); };
+                    Row rows[] = {
+                        {"Sugar",  ChemicalID::Sugar,       fmt_mass},
+                        {"Water",  ChemicalID::Water,       fmt_vol },
+                        {"Auxin",  ChemicalID::Auxin,       fmt_au  },
+                        {"Cyt",    ChemicalID::Cytokinin,   fmt_au  },
+                        {"GA",     ChemicalID::Gibberellin, fmt_au  },
+                        {"Eth",    ChemicalID::Ethylene,    fmt_au  },
+                        {"Stress", ChemicalID::Stress,      fmt_au  },
+                    };
+                    for (const Row& r : rows) {
+                        const size_t idx = static_cast<size_t>(r.id);
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0); ImGui::Text("%s", r.name);
 
-                    // Auxin (dimensionless signaling units)
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Auxin");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Auxin)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(auxin_flux_sum));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(auxin_max));
+                        // Local
+                        float l_lvl = sel.local().chemical(r.id);
+                        float l_p = sel.tick_chem_produced[idx];
+                        float l_c = sel.tick_chem_consumed[idx];
+                        ImGui::TableSetColumnIndex(1); ImGui::Text("%s", r.fmt(l_lvl));
+                        ImGui::TableSetColumnIndex(2); ImGui::Text("%s", r.fmt(l_p));
+                        ImGui::TableSetColumnIndex(3); ImGui::Text("%s", r.fmt(l_c));
 
-                    // Cytokinin (dimensionless signaling units)
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Cyt");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Cytokinin)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(cyt_max));
-
-                    // Gibberellin
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("GA");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Gibberellin)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(ga_max));
-
-                    // Ethylene
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Eth");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Ethylene)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(eth_max));
-
-                    // Water (capacity-based resource, ml)
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Water");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_vol(sel.local().chemical(ChemicalID::Water)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_vol(water_max));
-
+                        // Vasculature
+                        const TransportPool* vp = vascular_scope(sel, r.id);
+                        if (vp) {
+                            float v_lvl = vp->chemical(r.id);
+                            ImGui::TableSetColumnIndex(4); ImGui::Text("%s", r.fmt(v_lvl));
+                            ImGui::TableSetColumnIndex(5); ImGui::Text("\xE2\x80\x94");  // em dash — vasc-scope produced/consumed deferred
+                            ImGui::TableSetColumnIndex(6); ImGui::Text("\xE2\x80\x94");
+                            // Total
+                            ImGui::TableSetColumnIndex(7); ImGui::Text("%s", r.fmt(l_lvl + v_lvl));
+                            ImGui::TableSetColumnIndex(8); ImGui::Text("%s", r.fmt(l_p));
+                            ImGui::TableSetColumnIndex(9); ImGui::Text("%s", r.fmt(l_c));
+                        } else {
+                            ImGui::TableSetColumnIndex(4); ImGui::Text("\xE2\x80\x94");
+                            ImGui::TableSetColumnIndex(5); ImGui::Text("\xE2\x80\x94");
+                            ImGui::TableSetColumnIndex(6); ImGui::Text("\xE2\x80\x94");
+                            ImGui::TableSetColumnIndex(7); ImGui::Text("%s", r.fmt(l_lvl));
+                            ImGui::TableSetColumnIndex(8); ImGui::Text("%s", r.fmt(l_p));
+                            ImGui::TableSetColumnIndex(9); ImGui::Text("%s", r.fmt(l_c));
+                        }
+                    }
                     ImGui::EndTable();
                 }
-
+                ImGui::TextDisabled("L=local  V=vascular  T=total  +/- = this-tick produced/consumed");
                 ImGui::Separator();
 
                 // --- Sugar budget (last tick) ---
