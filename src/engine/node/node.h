@@ -83,6 +83,12 @@ public:
     std::unordered_map<Node*, float> auxin_flow_bias;       // transient — fast, decays toward PIN saturation
     std::unordered_map<Node*, float> last_auxin_flux;       // transient per-tick: auxin moved per child
 
+    // Per-chemical per-edge flux and cap for the "Transport Capacity Used" overlay.
+    // [chem][child_ptr] = signed flux across (this -> child) this tick.
+    // Cleared at the top of Plant::tick_tree() alongside last_auxin_flux.
+    std::array<std::unordered_map<Node*, float>, static_cast<size_t>(ChemicalID::Count)> tick_edge_flux;
+    std::array<std::unordered_map<Node*, float>, static_cast<size_t>(ChemicalID::Count)> tick_edge_cap;
+
     float get_bias_multiplier(Node* child, const Genome& g) const;
 
     // Returns the auxin_flow_bias this node's parent has recorded for it.
