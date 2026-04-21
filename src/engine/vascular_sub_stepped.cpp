@@ -457,6 +457,17 @@ void jacobi_step(Node& parent, Node& child, const Genome& g) {
 
                 pp->chemical(ChemicalID::Cytokinin) -= cyto_flow;
                 cp->chemical(ChemicalID::Cytokinin) += cyto_flow;
+
+                // --- Per-edge instrumentation (xylem water + cytokinin) ---
+                // Accumulate signed flux and theoretical cap across all N sub-steps.
+                // Water and CK each have independent pressure-driven Jacobi flows but
+                // share the same xylem pipe, so both use base_cond as the capacity.
+                const size_t WI = static_cast<size_t>(ChemicalID::Water);
+                const size_t CI = static_cast<size_t>(ChemicalID::Cytokinin);
+                parent.tick_edge_flux[WI][&child] += flow;
+                parent.tick_edge_cap[WI][&child]  += base_cond;
+                parent.tick_edge_flux[CI][&child] += cyto_flow;
+                parent.tick_edge_cap[CI][&child]  += base_cond;
             }
         }
     }

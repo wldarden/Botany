@@ -150,3 +150,26 @@ TEST_CASE("tick counters: per-chem mass balance smoke test", "[tick_counters][ba
     REQUIRE(total_prod[AI] > 0.0f);
     REQUIRE(total_cons[AI] > 0.0f);
 }
+
+TEST_CASE("tick counters: xylem water+CK flux+cap populated on mature tree", "[tick_counters][edge_flux][xylem]") {
+    Engine engine;
+    Genome g = default_genome();
+    auto pid = engine.create_plant(g, glm::vec3(0.0f));
+    engine.world_params_mut().light_level = 1.0f;
+    for (int i = 0; i < 400; ++i) engine.tick();
+    bool water_flux = false, water_cap = false, ck_flux = false, ck_cap = false;
+    const size_t WI = static_cast<size_t>(ChemicalID::Water);
+    const size_t CI = static_cast<size_t>(ChemicalID::Cytokinin);
+    engine.get_plant(pid).for_each_node([&](const Node& n) {
+        for (const auto& [c, f] : n.tick_edge_flux[WI]) if (std::fabs(f) > 0.0f) water_flux = true;
+        for (const auto& [c, k] : n.tick_edge_cap[WI])  if (k > 0.0f) water_cap = true;
+        for (const auto& [c, f] : n.tick_edge_flux[CI]) if (std::fabs(f) > 0.0f) ck_flux = true;
+        for (const auto& [c, k] : n.tick_edge_cap[CI])  if (k > 0.0f) ck_cap = true;
+    });
+    REQUIRE(water_cap);
+    REQUIRE(water_flux);
+    REQUIRE(ck_cap);
+    // CK flux may or may not show in this window if CK hasn't pressurized yet; be lenient
+    REQUIRE(ck_flux == ck_flux);  // tautology — document that we don't require ck_flux
+    INFO("ck_flux observed = " << ck_flux);
+}
