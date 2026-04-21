@@ -26,7 +26,9 @@ void RootNode::absorb_water(const Genome& g, const WorldParams& world) {
     float fill_fraction = (cap > 1e-6f) ? local().chemical(ChemicalID::Water) / cap : 1.0f;
     float gradient = std::max(0.0f, world.soil_moisture - fill_fraction);
     float absorbed = g.water_absorption_rate * surface_area * gradient;
-    local().chemical(ChemicalID::Water) = std::min(local().chemical(ChemicalID::Water) + absorbed, cap);
+    float water_before = local().chemical(ChemicalID::Water);
+    local().chemical(ChemicalID::Water) = std::min(water_before + absorbed, cap);
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Water)] += local().chemical(ChemicalID::Water) - water_before;
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {

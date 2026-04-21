@@ -42,7 +42,9 @@ void LeafNode::transpire(const Genome& g, const WorldParams& world) {
         ? std::clamp(local().chemical(ChemicalID::Water) / wcap, 0.2f, 1.0f)
         : 1.0f;
     float transpired = g.transpiration_rate * leaf_area * light_exposure * stomatal;
-    local().chemical(ChemicalID::Water) = std::max(0.0f, local().chemical(ChemicalID::Water) - transpired);
+    float water_before_t = local().chemical(ChemicalID::Water);
+    local().chemical(ChemicalID::Water) = std::max(0.0f, water_before_t - transpired);
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Water)] += water_before_t - local().chemical(ChemicalID::Water);
 }
 
 void LeafNode::check_carbon_balance(const Genome& g, const WorldParams& world, float net_sugar) {
@@ -100,7 +102,9 @@ float LeafNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams
 
     // Photosynthesis water cost: small deduction proportional to sugar produced
     float water_cost = sugar_produced * g.photosynthesis_water_ratio;
-    local().chemical(ChemicalID::Water) = std::max(0.0f, local().chemical(ChemicalID::Water) - water_cost);
+    float water_before_p = local().chemical(ChemicalID::Water);
+    local().chemical(ChemicalID::Water) = std::max(0.0f, water_before_p - water_cost);
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Water)] += water_before_p - local().chemical(ChemicalID::Water);
 
     if (delta > 0.0f) plant.add_sugar_produced(delta);
     return delta;
