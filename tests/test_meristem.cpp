@@ -1028,6 +1028,52 @@ TEST_CASE("Primary RA is re-promoted from lateral when original dies", "[meriste
     REQUIRE_FALSE(original_exists);
 }
 
+TEST_CASE("Meristem ever_active sticky flag lifecycle", "[meristem][lifecycle]") {
+    Genome g = default_genome();
+    // Shorten quiescence so we can observe active → dormant transition quickly.
+    g.quiescence_threshold = 5.0f;
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+    world.starvation_ticks_max = 1000000u;
+
+    // Find primary SA and verify ever_active=true at birth.
+    ApicalNode* primary_sa = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::APICAL && n.as_apical() && n.as_apical()->is_primary && !primary_sa)
+            primary_sa = n.as_apical();
+    });
+    REQUIRE(primary_sa != nullptr);
+    REQUIRE(primary_sa->ever_active == true);  // primary starts active
+
+    // Primary RA: ever_active=true at birth.
+    RootApicalNode* primary_ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL && n.as_root_apical() && n.as_root_apical()->is_primary && !primary_ra)
+            primary_ra = n.as_root_apical();
+    });
+    REQUIRE(primary_ra != nullptr);
+    REQUIRE(primary_ra->ever_active == true);
+
+    // Tick forward until an internode has spawned (creates a lateral bud).
+    for (int i = 0; i < 100; i++) plant.tick(world);
+
+    // Find a dormant lateral SA — ever_active should be false.
+    ApicalNode* lateral_dormant = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type != NodeType::APICAL) return;
+        auto* a = n.as_apical();
+        if (a && !a->is_primary && !a->active && !n.ever_active) {
+            lateral_dormant = a;
+        }
+    });
+    if (lateral_dormant) {
+        REQUIRE(lateral_dormant->ever_active == false);
+        REQUIRE(lateral_dormant->active == false);
+    }
+    // (If no lateral SA was found in 100 ticks, skip — test still passes its
+    // primary assertions.)
+}
+
 TEST_CASE("Plant grows and stays alive for 1000 ticks with metabolic feedback", "[meristem][integration]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));

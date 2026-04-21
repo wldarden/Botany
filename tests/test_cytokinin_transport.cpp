@@ -8,6 +8,7 @@
 #include "engine/world_params.h"
 #include "engine/chemical/chemical.h"
 #include "engine/node/tissues/root_apical.h"
+#include <glm/geometric.hpp>
 
 using namespace botany;
 
@@ -76,47 +77,51 @@ TEST_CASE("cytokinin: RA accumulates > 0.04 with low default diffusion rate", "[
 }
 
 // -----------------------------------------------------------------------
-// Test 2: Lower diffusion rate produces higher RA cytokinin than higher rate.
+// Test 2: Root-produced cytokinin reaches the shoot apical meristem.
 //
-// This is a direct comparison: with identical plants run for 100 ticks, the
-// plant whose genome has diffusion_rate=0.02 must have a higher RA cytokinin
-// level than the identical plant with diffusion_rate=0.1.
+// The biological function of CK is to travel from roots up to the shoot and
+// promote shoot growth.  Two transport mechanisms move it there: (1) local
+// diffusion across non-conduit edges (dominant in short early plants where
+// the RA is a direct child of the seed) and (2) vascular xylem transport
+// via inject → Jacobi (dominant once the plant has extended stems).
+//
+// Regardless of mechanism, after 100 ticks of production the SA's local
+// pool should hold a meaningful amount of cytokinin.  That's the signal
+// that enables SA growth (SA elongation is gated by local CK via
+// cytokinin_growth_threshold).
 // -----------------------------------------------------------------------
-TEST_CASE("cytokinin: lower diffusion rate → higher RA accumulation", "[cytokinin]") {
-    // High-diffusion plant
-    Genome g_high = cytokinin_test_genome();
-    g_high.cytokinin_diffusion_rate = 0.1f;
-    Plant plant_high(g_high, glm::vec3(0.0f));
+TEST_CASE("cytokinin: root-produced CK reaches the shoot apical", "[cytokinin]") {
+    Genome g = cytokinin_test_genome();
+    Plant plant(g, glm::vec3(0.0f));
 
-    Node* seed_high = plant_high.seed_mut();
-    Node* ra_high = nullptr;
-    for (Node* c : seed_high->children) {
-        if (c->type == NodeType::ROOT_APICAL) { ra_high = c; break; }
+    Node* seed = plant.seed_mut();
+    Node* ra = nullptr;
+    Node* sa = nullptr;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::ROOT_APICAL) ra = c;
+        if (c->type == NodeType::APICAL)      sa = c;
     }
-    seed_high->local().chemical(ChemicalID::Sugar) = 100.0f;
-    ra_high->local().chemical(ChemicalID::Sugar)   = 50.0f;
-
-    // Low-diffusion plant
-    Genome g_low = cytokinin_test_genome();
-    g_low.cytokinin_diffusion_rate = 0.02f;
-    Plant plant_low(g_low, glm::vec3(0.0f));
-
-    Node* seed_low = plant_low.seed_mut();
-    Node* ra_low = nullptr;
-    for (Node* c : seed_low->children) {
-        if (c->type == NodeType::ROOT_APICAL) { ra_low = c; break; }
-    }
-    seed_low->local().chemical(ChemicalID::Sugar) = 100.0f;
-    ra_low->local().chemical(ChemicalID::Sugar)   = 50.0f;
+    REQUIRE(ra != nullptr);
+    REQUIRE(sa != nullptr);
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
+    ra->local().chemical(ChemicalID::Sugar)   = 50.0f;
 
     WorldParams world = cytokinin_test_world();
     for (int i = 0; i < 100; i++) {
-        plant_high.tick(world);
-        plant_low.tick(world);
+        plant.tick(world);
     }
 
-    REQUIRE(ra_low->local().chemical(ChemicalID::Cytokinin) >
-            ra_high->local().chemical(ChemicalID::Cytokinin));
+    // SA should see a non-trivial pool of CK — this is what lets it grow.
+    const float sa_cyto = sa->local().chemical(ChemicalID::Cytokinin);
+    REQUIRE(sa_cyto > 0.001f);
+
+    // Plant-wide total cytokinin should be non-trivial (not all decayed).
+    float total_cyto = 0.0f;
+    plant.for_each_node([&](const Node& n) {
+        total_cyto += n.local().chemical(ChemicalID::Cytokinin);
+        if (auto* x = n.xylem()) total_cyto += x->chemical(ChemicalID::Cytokinin);
+    });
+    REQUIRE(total_cyto > 0.001f);
 }
 
 // -----------------------------------------------------------------------
@@ -170,4 +175,50 @@ TEST_CASE("cytokinin: active RA produces cytokinin, dormant does not", "[cytokin
     });
     REQUIRE(cyto_from_active  > 0.0f);
     REQUIRE(ra_dormant->local().chemical(ChemicalID::Cytokinin) == 0.0f);
+}
+
+// -----------------------------------------------------------------------
+// Test 4: RA elongation halts when local cytokinin drops to zero.
+//
+// The new gate ties elongation rate to local CK (not auxin). With sugar
+// and water plentiful but CK zeroed each tick, the RA should not advance.
+// -----------------------------------------------------------------------
+TEST_CASE("cytokinin: RA elongation stops with zero local cytokinin", "[cytokinin]") {
+    Genome g = cytokinin_test_genome();
+    // Re-enable root growth (the test-genome zeroes it).
+    g.root_growth_rate = 0.004f;
+    // Disable self-production of CK so we can keep local CK at 0 artificially.
+    g.root_cytokinin_production_rate = 0.0f;
+
+    Plant plant(g, glm::vec3(0.0f));
+    Node* seed = plant.seed_mut();
+    RootApicalNode* ra = nullptr;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::ROOT_APICAL) { ra = c->as_root_apical(); break; }
+    }
+    REQUIRE(ra != nullptr);
+
+    // Prime sugar/water so sugar/water gates are satisfied.
+    seed->local().chemical(ChemicalID::Sugar) = 100.0f;
+    ra->local().chemical(ChemicalID::Sugar)   = 50.0f;
+    ra->local().chemical(ChemicalID::Water)   = 1.0f;
+
+    // Zero CK before the loop starts so the gate is inactive from tick 1.
+    ra->local().chemical(ChemicalID::Cytokinin) = 0.0f;
+
+    // Capture starting offset length.
+    float start_offset_len = glm::length(ra->offset);
+
+    WorldParams world = cytokinin_test_world();
+    // Tick N times, zeroing CK at every tick after update_tissue runs.
+    for (int i = 0; i < 20; ++i) {
+        plant.tick(world);
+        ra->local().chemical(ChemicalID::Cytokinin) = 0.0f;
+        ra->local().chemical(ChemicalID::Sugar)   = 50.0f;  // keep primed
+        ra->local().chemical(ChemicalID::Water)   = 1.0f;
+    }
+
+    // With CK pinned to 0, offset should not have grown meaningfully.
+    float end_offset_len = glm::length(ra->offset);
+    REQUIRE(end_offset_len - start_offset_len < 1e-4f);
 }

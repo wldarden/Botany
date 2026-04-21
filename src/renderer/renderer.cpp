@@ -120,6 +120,9 @@ void Renderer::draw_plant(const Plant& plant) {
     float max_leaf = 0.0f, max_root = 0.0f, max_shoot = 0.0f;
     if (chemical_accessor_) {
         plant.for_each_node([&](const Node& node) {
+            // Skip meristems that have never been active — they're invisible dormant
+            // buds that still exist in the data but don't contribute to the visible plant.
+            if (node.is_meristem() && !node.ever_active) return;
             float v = chemical_accessor_(node);
             if (node.type == NodeType::LEAF) {
                 if (v > max_leaf) max_leaf = v;
@@ -141,6 +144,10 @@ void Renderer::draw_plant(const Plant& plant) {
 
     plant.for_each_node([&](const Node& node) {
         if (!node.parent) return;
+
+        // Skip meristems that have never been active — they're invisible dormant
+        // buds that still exist in the data but don't contribute to the visible plant.
+        if (node.is_meristem() && !node.ever_active) return;
 
         // Skip drawing dormant meristems — there are many and they're invisible
         if (auto* ap = node.as_apical()) { if (!ap->active) return; }

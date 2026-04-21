@@ -84,6 +84,14 @@ public:
     // For the seed (no parent) returns the max of all its children's biases.
     float get_parent_auxin_flow_bias() const;
 
+    // Sticky "has this node ever been active" flag. True for non-meristems
+    // (they always render). For meristems, starts true for the primary,
+    // false for laterals spawned dormant; flips to true on activate() and
+    // never flips back.  Used by the renderer to skip drawing meristems
+    // that have never been active — saves draw calls for the many dormant
+    // lateral buds a mature tree accumulates.
+    bool ever_active = true;
+
     // --- Lifecycle ---
     Node(uint32_t id, NodeType type, glm::vec3 position, float radius);
     virtual ~Node() = default;

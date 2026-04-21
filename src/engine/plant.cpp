@@ -163,6 +163,12 @@ void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
     primary_sa_id_this_tick = -1;
     primary_ra_id_this_tick = -1;
 
+    // Order matters: the junction bridge runs BEFORE pin_transport so that
+    // pin_transport's Phase A (which drains shoot-child .local into its own
+    // accumulator) can't leave us with zero source auxin.  The junction
+    // transfer takes a diffusion-rate fraction first; pin_transport then
+    // pumps the remainder.  Both paths deposit into root children's .local.
+    diffuse_auxin_across_seed_junction(*this, genome_); // explicit shoot↔root auxin bridge (bypasses seed.local)
     pin_transport(*this, genome_);              // PIN-mediated polar auxin transport (before metabolism)
     tick_recursive(*nodes_[0], *this, world);   // Phase 1: per-node metabolism
     vascular_sub_stepped(*this, genome_, world); // Phase 2: vascular transport (after metabolism)

@@ -81,6 +81,7 @@ struct Genome {
     float root_cytokinin_production_rate; // baseline cytokinin produced per tick (mirrors apical_auxin_baseline)
     float root_tip_auxin_production_rate; // auxin produced by root tips (PIN recycling local maximum)
     float root_auxin_growth_threshold;    // Km for auxin-gated root growth fraction
+    float root_ck_growth_floor;            // Km for CK-gated root elongation — low so trace CK permits growth; zero CK stops it
     float root_auxin_activation_threshold; // min auxin to activate dormant root meristem
     float root_cytokinin_inhibition_threshold; // cytokinin above this inhibits root activation
 
@@ -268,7 +269,7 @@ inline Genome default_genome() {
         .growth_rate = 0.002f,              // ~5 mm/day = 0.2 mm/hr
         .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
         .branch_angle = 0.785f,             // ~45 degrees
-        .cambium_responsiveness = 0.00002f, // dm/hr·bias — calibrated so main trunk (bias ~2.0) thickens at
+        .cambium_responsiveness = 0.0002f, // dm/hr·bias — calibrated so main trunk (bias ~2.0) thickens at
                                             // ~0.00004 dm/hr, matching old thickening_rate. Lateral branches
                                             // with weaker canalization thicken proportionally less.
         .internode_elongation_rate = 0.004f, // dm/hr — intercalary stretch after creation
@@ -282,10 +283,11 @@ inline Genome default_genome() {
         .root_internode_maturation_ticks = 48,    // 2 days until elongation lockout
         .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
-        .root_cytokinin_production_rate = 0.15f,   // cytokinin per unit auxin — moderate signal
-        .root_tip_auxin_production_rate = 0.03f,   // ~1/5th of shoot apical baseline — minor local source for lateral root initiation
-        .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation
-        .root_auxin_activation_threshold = 0.05f,   // low bar — a little auxin activates roots
+        .root_cytokinin_production_rate = 0.5f,    // raw rate (CK no longer gated on local auxin post-Task 1); set so ~20 active RAs feed xylem enough CK to drive SA growth
+        .root_tip_auxin_production_rate = 0.002f,  // small PIN-recycling floor — self-equilibrium ~0.017 supports lateral root initiation without needing distant shoot auxin
+        .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation (mirrors SAM's cytokinin_growth_threshold pattern)
+        .root_ck_growth_floor = 0.001f,             // low Km — trace CK permits growth, zero stops it
+        .root_auxin_activation_threshold = 0.01f,  // below RA self-eq (~0.017) so deep lateral RAs can activate without shoot-delivered auxin
         .root_cytokinin_inhibition_threshold = 0.15f, // mirrors auxin_threshold for symmetric branching control
 
         .max_leaf_size = 1.5f,              // 15 cm side-length at maturity (realistic broad leaf)

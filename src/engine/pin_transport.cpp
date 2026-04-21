@@ -162,4 +162,56 @@ void pin_transport(Plant& plant, const Genome& g) {
     }
 }
 
+// Explicit direct auxin transfer across the seed's shoot↔root junction.
+// See header for rationale — this is a safety-net path that guarantees
+// shoot-produced auxin reaches the root system every tick, independent of
+// the rest of pin_transport's phase ordering.
+//
+// Algorithm: for each (shoot-child, root-child) pair of the seed, compute
+// a gradient-driven transfer and apply it directly to the two .local
+// pools.  Only positive gradients (shoot > root) transfer — auxin's polar
+// flow is shoot-to-root, not bidirectional.  Transfer per root child is
+// weighted by its cross-section (r²) to match PIN throughput scaling.
+void diffuse_auxin_across_seed_junction(Plant& plant, const Genome& g) {
+    Node* seed = plant.seed_mut();
+    if (!seed) return;
+
+    std::vector<Node*> shoot_kids, root_kids;
+    for (Node* c : seed->children) {
+        if (c->type == NodeType::ROOT || c->type == NodeType::ROOT_APICAL)
+            root_kids.push_back(c);
+        else
+            shoot_kids.push_back(c);
+    }
+    if (shoot_kids.empty() || root_kids.empty()) return;
+
+    // Radius-weighted shares for splitting the transfer across multiple root children.
+    float total_root_r2 = 0.0f;
+    for (Node* rc : root_kids) total_root_r2 += rc->radius * rc->radius;
+    if (total_root_r2 < 1e-10f) return;
+
+    for (Node* sc : shoot_kids) {
+        float shoot_aux = sc->local().chemical(ChemicalID::Auxin);
+        if (shoot_aux < 1e-6f) continue;
+
+        for (Node* rc : root_kids) {
+            float root_aux = rc->local().chemical(ChemicalID::Auxin);
+            float gradient = shoot_aux - root_aux;
+            if (gradient <= 0.0f) continue;  // auxin flows shoot→root only
+
+            float share = (rc->radius * rc->radius) / total_root_r2;
+            // diffusion_rate × gradient × share, but don't overshoot
+            // equilibrium (half the gradient) — classic Fickian clamp.
+            float desired = g.auxin_diffusion_rate * gradient * share;
+            float equalize = gradient * 0.5f * share;
+            float transfer = std::min({desired, equalize, shoot_aux});
+            if (transfer < 1e-8f) continue;
+
+            sc->local().chemical(ChemicalID::Auxin) -= transfer;
+            rc->local().chemical(ChemicalID::Auxin) += transfer;
+            shoot_aux -= transfer;
+        }
+    }
+}
+
 } // namespace botany

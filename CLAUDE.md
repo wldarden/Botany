@@ -32,7 +32,7 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
   - `root_node.h/cpp` — `RootNode` (same with root params, gradient-based water absorption; owns `phloem` and `xylem` TransportPools)
   - `tissues/leaf.h/cpp` — `LeafNode` (owns `leaf_size`, `light_exposure`, `senescence_ticks`; photosynthesis gated by stomatal conductance, phototropism, expansion)
   - `tissues/apical.h/cpp` — `ApicalNode` (chain growth via self-reparenting, phyllotaxis, auxin production)
-  - `tissues/root_apical.h/cpp` — `RootApicalNode` (gravitropism, root chain growth, auxin-gated cytokinin production)
+  - `tissues/root_apical.h/cpp` — `RootApicalNode` (gravitropism, root chain growth, cytokinin production from local metabolic state)
   - `meristems/helpers.h` — shared growth helpers (`turgor_fraction`, `auxin_growth_factor`, `sugar_growth_fraction`, etc.)
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
@@ -50,7 +50,7 @@ Node (base — position, local_env compartment, non-virtual tick, virtual update
 ├── RootNode   (same with root params, gradient water absorption; owns phloem + xylem TransportPools)
 ├── LeafNode   (leaf_size, light_exposure, photosynthesize, expand, phototropism; local_env only)
 ├── ApicalNode (chain growth, phyllotaxis, auxin production; local_env only)
-└── RootApicalNode (gravitropism, chain growth, auxin-gated cytokinin production; local_env only)
+└── RootApicalNode (gravitropism, chain growth, cytokinin production from local metabolic state; local_env only)
 ```
 
 All 5 node types extend `Node` directly — flat hierarchy, no intermediate classes. Meristems are real nodes in the tree graph, participating in chemical transport naturally. No axillary node types.
@@ -138,12 +138,13 @@ All chemical access goes through explicit compartment accessors:
 - Shoot axillary buds sense **parent's** auxin level; activate when low
 - Decays by `auxin_decay_rate` per tick
 
-**Cytokinin** (local diffusion, bias +0.1, acropetal; also carried in xylem):
+**Cytokinin** (long-distance via xylem; produced at RAs from local metabolic state):
 - Persistent across ticks (not reset)
-- Produced by `RootApicalNode` gated by auxin (`root_cytokinin_production_rate × local_auxin`)
-- Feedback loop: shoot auxin → flows to root tips → cytokinin produced → flows back to shoot
-- Decays by `cytokinin_decay_rate` per tick
-- Root axillary activation gated by `root_cytokinin_inhibition_threshold`
+- Produced by `RootApicalNode` from local sugar+water metabolic state — **NOT** gated on local auxin.  See `docs/superpowers/specs/2026-04-20-hormone-biology-tree-scale-design.md` for rationale; the prior auxin coupling broke scaling beyond small seedlings.
+- Travels up in xylem via sub-stepped Jacobi pressure flow; scale-free with plant height
+- Drives SA elongation (gate Km = `cytokinin_growth_threshold`) and RA elongation (gate Km = `root_ck_growth_floor`)
+- Lateral root axillary activation is suppressed by high local CK (`root_cytokinin_inhibition_threshold`) — prevents runaway root branching when the root system is already well-established
+- Decays by `cytokinin_decay_rate` per tick (5%) in `local()` compartments only; xylem conduits have no decay
 
 **Sugar** (vascular phloem; local diffusion handles last-hop within non-conduit nodes):
 - Persistent across ticks
@@ -264,6 +265,16 @@ Ordering is **metabolism first, vascular after**. This gives a 1-tick lag betwee
 - **Root elongation is sugar-gated only** — root apical `elongate()` uses `sugar_growth_fraction()` with no auxin gate. Shoot-derived auxin affects root *activation*, not elongation.
 - **Dormant meristems cost zero maintenance** — only active meristems pay `sugar_maintenance_meristem`
 - **Sugar economy: physics in WorldParams, strategy in Genome** — production rate, maintenance costs, and construction costs are physical constants in WorldParams (not evolvable). Evolution optimizes plant shape/structure, not metabolism.
+- **Hormone scale separation** — auxin is a short-range signal (decay 12%/tick, one hop per tick via PIN transport, effective range ~5–20 internodes), used for apical dominance, canalization, and local tropism.  Cytokinin is the long-distance root→shoot signal, produced at root tips from local metabolic state (sugar + water, independent of shoot auxin) and carried by xylem bulk flow.  Sugar is the long-distance shoot→root channel via phloem bulk flow.  **No mechanism depends on auxin reaching a distant node** — this is the fundamental scaling invariant that lets the model support plants from 1 dm seedlings to 10 m trees.  See spec/plan docs for the 2026-04-20 hormone-biology-tree-scale refactor.
+
+## Hormone Architecture Validation (2026-04-20)
+
+The hormone-biology-tree-scale plan was validated at two scales:
+
+- **Seedling (1000 ticks):** 688 nodes, primary SA cytokinin = 0.126 (125× the `cytokinin_growth_threshold`), primary RA depth 42 internodes, root xylem CK sum = 54. Visible auxin gradient along shoot chain, visible CK gradient in root xylem.
+- **Adolescent/mature (10000 ticks):** 3748 nodes, primary SA at 5.77 m height, cytokinin = 0.105, auxin = 0.016 (active producer), deepest RA at 3.02 m with active CK production (0.002), seed.xylem CK = 7.62 (760× the > 0.01 spec threshold), seed radius 7.97 cm (mature trunk). Lateral break pattern correct: 256 STEM + 1 SA on primary shoot chain (tight apical dominance). Growth self-regulates via sugar/CK feedback — equilibrium plateaus at ~3200 nodes with periodic growth bursts.
+
+Checkpoints are reproducible with: `./build/botany_headless <ticks> /tmp/out.bin --recording-interval 500 --chain-profile /tmp/profile.csv`.
 
 ## Tuning Parameters (genome.h)
 - `auxin_threshold` (0.15) - lower = fewer shoot branches, higher = more
@@ -280,9 +291,11 @@ Ordering is **metabolism first, vascular after**. This gives a 1-tick lag betwee
 - `root_apical_auxin_max_boost` (-0.2) - max root tip extension inhibition from auxin
 - `root_apical_auxin_half_saturation` (0.1) - auxin level for half-max root apical effect
 - `cytokinin_bias` (0.1) - shifted equilibrium for acropetal flow (positive = toward tips); negated for root-type children (see transport model)
-- `root_cytokinin_production_rate` (0.15) - baseline cytokinin produced per tick by root apicals, scaled by local auxin
-- `root_auxin_activation_threshold` (0.05) - minimum auxin to activate a dormant root meristem
+- `root_cytokinin_production_rate` (0.5) - baseline cytokinin produced per tick at active RAs, multiplied by a sugar+water metabolic factor (NOT by local auxin, post 2026-04-20 decoupling); drives whole-plant CK supply via xylem bulk flow
+- `root_auxin_activation_threshold` (0.01) - minimum local auxin to activate a dormant root meristem; below RA self-eq (~0.017) so deep lateral RAs can activate on their own auxin floor without needing distant shoot auxin
 - `root_cytokinin_inhibition_threshold` (0.15) - cytokinin above this inhibits new root meristem activation
+- `root_tip_auxin_production_rate` (0.002) - auxin produced per tick at active root tips (PIN recycling, lateral root initiation); self-equilibrium ~0.017 with default decay; below activation threshold so it doesn't spuriously activate laterals, but sufficient for canalization
+- `root_ck_growth_floor` (0.001) - Km for cytokinin-gated RA elongation; RA grows at sugar-rate-limited pace when local CK ≥ this floor, stops when CK drops to zero
 - `auxin_diffusion_rate` (0.05) - slow polar transport (cell-to-cell only)
 - `cytokinin_diffusion_rate` (0.1) - moderate; bulk xylem flow handles the rest
 - `hormone_base_transport` (0.5) - throughput floor for hormones (even thin tips can signal)

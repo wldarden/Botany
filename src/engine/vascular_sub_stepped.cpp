@@ -353,24 +353,25 @@ void radial_flow_step(Node& n, uint32_t N, const Genome& g) {
             xyl->chemical(ChemicalID::Water)      -= flow;
             n.local().chemical(ChemicalID::Water) += flow;
 
-            // Cytokinin rides with water proportionally.
-            const float water_source_before = (flow > 0.0f)
-                ? xyl->chemical(ChemicalID::Water) + flow
-                : n.local().chemical(ChemicalID::Water) - flow;
-            if (water_source_before > 1e-8f && std::abs(flow) > 1e-8f) {
-                const float cyto_ratio = std::abs(flow) / water_source_before;
-                if (flow > 0.0f) {
-                    // Water moved xylem -> local, cytokinin follows.
-                    const float cyto_move = xyl->chemical(ChemicalID::Cytokinin) * cyto_ratio;
-                    xyl->chemical(ChemicalID::Cytokinin)      -= cyto_move;
-                    n.local().chemical(ChemicalID::Cytokinin) += cyto_move;
-                } else {
-                    // Water moved local -> xylem, cytokinin follows.
-                    const float cyto_move = n.local().chemical(ChemicalID::Cytokinin) * cyto_ratio;
-                    n.local().chemical(ChemicalID::Cytokinin) -= cyto_move;
-                    xyl->chemical(ChemicalID::Cytokinin)      += cyto_move;
-                }
-            }
+            // Cytokinin is NOT subject to radial flow between xylem and
+            // local_env.  It stays in xylem until something extracts it
+            // (sinks via extract_step) or propagates it longitudinally
+            // (Jacobi).
+            //
+            // Attempted an own-gradient radial flow first; it still
+            // drained cytokinin into root local pools because
+            // local_cap (≈ water_cap of the root volume) is 3+ orders
+            // of magnitude larger than xylem_cap (just the vessel
+            // cross-section × length), so the equilibrium concentration
+            // the radial flow chases lands almost all the chemical in
+            // the local side regardless of transport physics.
+            //
+            // Real xylem sap does exchange with surrounding parenchyma
+            // (pit membrane permeability), but at a tiny rate that our
+            // per-sub-step radial formula can't capture faithfully.
+            // Keeping cytokinin confined to xylem + explicit extract is
+            // a reasonable simplification that gets the transport signal
+            // through to the shoot.
         }
     }
 }
@@ -423,21 +424,29 @@ void jacobi_step(Node& parent, Node& child, const Genome& g) {
                 pp->chemical(ChemicalID::Water) -= flow;
                 cp->chemical(ChemicalID::Water) += flow;
 
-                // Cytokinin rides with water.
-                if (std::abs(flow) > 1e-8f) {
-                    TransportPool* src = (flow > 0.0f) ? pp : cp;
-                    TransportPool* dst = (flow > 0.0f) ? cp : pp;
-                    // Water in source BEFORE the transfer.
-                    const float water_source_before = (flow > 0.0f)
-                        ? pp->chemical(ChemicalID::Water) + flow
-                        : cp->chemical(ChemicalID::Water) - flow;
-                    if (water_source_before > 1e-8f) {
-                        const float cyto_ratio = std::abs(flow) / water_source_before;
-                        const float cyto_move  = src->chemical(ChemicalID::Cytokinin) * cyto_ratio;
-                        src->chemical(ChemicalID::Cytokinin) -= cyto_move;
-                        dst->chemical(ChemicalID::Cytokinin) += cyto_move;
-                    }
-                }
+                // Cytokinin in xylem has its OWN concentration gradient —
+                // not tied to water flow.  Previously it "rode water"
+                // proportionally, which created a pathological trap:
+                // root pressure pumped water into root xylem, radial flow
+                // then dragged water (and cytokinin) back into root local,
+                // and since radial flow is also water-coupled, the cytokinin
+                // never escaped the root zone.  ~90% of plant cytokinin
+                // ended up stranded in root.local_env, 0.09% reaching SAMs.
+                //
+                // Giving cytokinin its own pressure-driven Jacobi (same
+                // formula shape as phloem sugar) lets it propagate upward
+                // from its source (root apicals) to its sinks (SAMs) along
+                // its own concentration gradient.  Biologically sensible —
+                // cytokinin in xylem sap diffuses along its own potential
+                // independent of bulk water flow.
+                const float cyto_pressure_p = pp->chemical(ChemicalID::Cytokinin) / cap_p;
+                const float cyto_pressure_c = cp->chemical(ChemicalID::Cytokinin) / cap_c;
+                float cyto_flow = conductance * (cyto_pressure_p - cyto_pressure_c);
+                if (cyto_flow > 0.0f) cyto_flow = std::min(cyto_flow, pp->chemical(ChemicalID::Cytokinin));
+                else                  cyto_flow = -std::min(-cyto_flow, cp->chemical(ChemicalID::Cytokinin));
+
+                pp->chemical(ChemicalID::Cytokinin) -= cyto_flow;
+                cp->chemical(ChemicalID::Cytokinin) += cyto_flow;
             }
         }
     }

@@ -52,8 +52,8 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     }
 
     // Active root tips: auxin self-maintenance (local PIN-recycling maximum) and
-    // cytokinin production gated by local auxin ("more auxin → stronger cyto
-    // signal").  Both productions match the shoot apical pattern.
+    // cytokinin production from local metabolic state (sugar + water).  Both
+    // productions use Michaelis-Menten metabolic gating.
     // Metabolic gating: sugar + water each contribute an MM factor; floor 0.1
     // matches SA convention (auxin conjugate pools buffer short-term stress).
     float mf_auxin = metabolic_factor(
@@ -65,12 +65,15 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
 
     // Cytokinin: floor 0.05 (smaller than auxin's 0.1) — CK has less
     // conjugate-pool buffering than auxin, so its response to sugar is sharper.
-    // This is the primary root-to-shoot feedback brake: low root sugar → low
-    // CK → less CK delivered to shoot via xylem → fewer SA activations.
+    // CK production is driven purely by local metabolic state (sugar + water).
+    // It is NOT gated on local auxin — in real root tips, CK synthesis reflects
+    // "this tip is metabolically healthy," independent of the distant shoot.
+    // (Prior versions gated on local_auxin, which broke for tall plants where
+    // shoot-derived auxin never reaches the RA; see hormone-biology spec.)
     float mf_cyto = metabolic_factor(
         local().chemical(ChemicalID::Sugar), g.cytokinin_sugar_half_saturation, 0.05f,
         local().chemical(ChemicalID::Water), g.cytokinin_water_half_saturation, 0.05f);
-    float cyto_produced = g.root_cytokinin_production_rate * local().chemical(ChemicalID::Auxin) * mf_cyto;
+    float cyto_produced = g.root_cytokinin_production_rate * mf_cyto;
     local().chemical(ChemicalID::Cytokinin) += cyto_produced;
     tick_cytokinin_produced += cyto_produced;
 
@@ -128,9 +131,15 @@ glm::vec3 RootApicalNode::apply_gravitropism(const glm::vec3& dir, const Genome&
 
 void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
-    // Root elongation is sugar-gated only — real root tips maintain their own
-    // auxin maximum via PIN recycling, so we don't gate on exogenous auxin.
-    float gf = sugar_growth_fraction(local().chemical(ChemicalID::Sugar), max_cost);
+    // Root elongation is gated by local cytokinin (not auxin).  CK at the RA
+    // represents "this tip is metabolically healthy" — it's produced from the
+    // RA's own sugar+water (see update_tissue).  Using CK as the modulator
+    // keeps the gate scale-free: a 10m tree's deep RAs still produce their
+    // own CK and gate their own growth, with no dependency on distant-shoot
+    // signals that don't scale (see hormone-biology spec).  Sugar remains the
+    // actual rate limiter — CK only permits growth if sugar is also available.
+    float gf = growth_fraction(local().chemical(ChemicalID::Sugar), max_cost,
+                               local().chemical(ChemicalID::Cytokinin), g.root_ck_growth_floor);
     if (gf < 1e-6f) return;
     float water_gf = turgor_fraction(local().chemical(ChemicalID::Water), water_cap(*this, g));
     if (water_gf < 1e-6f) return;
@@ -172,6 +181,7 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
 void RootApicalNode::spawn_axillary(Plant& plant, Node* internode, const Genome& g, const glm::vec3& lateral_offset) {
     Node* bud = plant.create_node(NodeType::ROOT_APICAL, lateral_offset, g.root_initial_radius * 0.5f);
     bud->as_root_apical()->active = false;
+    bud->ever_active = false;  // dormant lateral — renderer skips until activated
     internode->add_child(bud);
     bud->position = internode->position + bud->offset;
 }
@@ -194,6 +204,7 @@ bool RootApicalNode::can_activate(const Genome& g, const WorldParams& world) con
 }
 
 void RootApicalNode::activate(const Genome& g, const WorldParams& world) {
+    ever_active = true;
     active = true;
     local().chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
     radius = g.root_initial_radius;

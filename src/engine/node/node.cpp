@@ -391,6 +391,22 @@ void Node::transport_with_children(const Genome& g) {
                 if (child_is_conduit) continue;
             }
 
+            // Cytokinin is owned end-to-end by the vascular system.  RAs inject
+            // it into the nearest xylem via vascular_sub_stepped; Jacobi moves
+            // it through xylem; SAs / leaves extract it passively when drawing
+            // water.  If local diffusion also ran on RA→conduit edges, it would
+            // drain the RA's CK into the parent's local pool (where nothing
+            // routes it anywhere), pre-empting inject.  Skip CK on ANY edge
+            // that touches a vascular conduit — local diffusion should only
+            // move CK between pure specialty nodes (leaf↔meristem via short
+            // hops), which almost never happens in practice.
+            if (dp.id == ChemicalID::Cytokinin) {
+                const bool child_is_conduit =
+                    (child->type == NodeType::STEM || child->type == NodeType::ROOT) &&
+                    child->radius >= g.vascular_radius_threshold;
+                if (parent_is_conduit || child_is_conduit) continue;
+            }
+
             float child_radius = child->radius;
             if (child->type == NodeType::LEAF) {
                 auto* leaf = child->as_leaf();

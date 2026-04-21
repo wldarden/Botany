@@ -3,6 +3,7 @@
 #include "engine/sugar.h"
 #include "engine/world_params.h"
 #include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/root_apical.h"
 
 using namespace botany;
 
@@ -109,7 +110,11 @@ TEST_CASE("Cytokinin: root apical produces cytokinin", "[hormone]") {
         if (c->type == NodeType::ROOT_APICAL) { root = c; break; }
     }
     REQUIRE(root != nullptr);
-    REQUIRE(root->local().chemical(ChemicalID::Cytokinin) > 0.0f);
+    // Production is tracked per-tick in tick_cytokinin_produced — diagnostic counter
+    // that is NOT affected by transport, diffusion, or decay.  The RA's local pool
+    // is drained each tick by vascular inject + local diffusion to the rest of the
+    // plant (seed, shoot), so checking the local pool alone understates production.
+    REQUIRE(root->tick_cytokinin_produced > 0.0f);
 }
 
 TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {
@@ -424,4 +429,32 @@ TEST_CASE("Transport: cytokinin crosses seed node from root to shoot", "[hormone
     // Cytokinin accumulates at its source (root tip), so root level stays higher
     // than shoot level — we only require shoot > 0, i.e. transport DID cross the seed.
     REQUIRE(shoot->local().chemical(ChemicalID::Cytokinin) > 0.0f);
+}
+
+TEST_CASE("Cytokinin: RA produces CK without any local auxin", "[hormone]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world = default_world();
+
+    RootApicalNode* ra = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type == NodeType::ROOT_APICAL && !ra) ra = n.as_root_apical();
+    });
+    REQUIRE(ra != nullptr);
+    REQUIRE(ra->active);
+
+    // Prime sugar + water, zero local auxin.
+    ra->local().chemical(ChemicalID::Sugar) = 1.0f;
+    ra->local().chemical(ChemicalID::Water) = 1.0f;
+    ra->local().chemical(ChemicalID::Auxin) = 0.0f;
+    ra->tick_cytokinin_produced = 0.0f;
+
+    // Tick the RA directly (bypasses vascular so we observe update_tissue only).
+    ra->tick(plant, world);
+
+    // With decoupled production, CK should be produced regardless of auxin.
+    // Expect substantial production (rate × mf_cyto ≈ 0.15 × ~1.0 ≈ 0.14);
+    // a floor/clamp accident that silently near-zeroed production would still
+    // satisfy `> 0.0f`, so guard with a meaningful threshold.
+    REQUIRE(ra->tick_cytokinin_produced > 0.01f);
 }
