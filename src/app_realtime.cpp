@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <limits>
 #include "engine/engine.h"
 #include "engine/node/node.h"
 #include "engine/node/tissues/leaf.h"
@@ -249,6 +250,54 @@ static void scroll_callback(GLFWwindow*, double, double yoffset) {
     }
 }
 
+// ---- Overlay two-tier selector state ----
+enum class OverlayCategory { Default, Type, Light, Level, Capacity, Growth, Activation, Starvation };
+enum class OverlayScope    { Local, Vasc };
+static OverlayCategory g_overlay_category = OverlayCategory::Default;
+static ChemicalID      g_overlay_chem     = ChemicalID::Sugar;
+static OverlayScope    g_overlay_scope    = OverlayScope::Local;
+
+// Stubs for Tasks 24-26 — return NaN so every node renders gray until implemented.
+static ChemicalAccessor build_growth_accessor(const Engine&)     { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
+static ChemicalAccessor build_activation_accessor(const Engine&) { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
+static ChemicalAccessor build_starvation_accessor(const Engine&) { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
+
+static ChemicalAccessor build_color_accessor(OverlayCategory cat, ChemicalID chem, OverlayScope scope, const Engine& engine) {
+    switch (cat) {
+        case OverlayCategory::Default: return ChemicalAccessor{};  // renderer uses genome colors
+        case OverlayCategory::Type:    return ChemicalAccessor{};  // renderer uses categorical codepath
+        case OverlayCategory::Light:
+            return [](const Node& n) -> float {
+                if (auto* l = n.as_leaf()) return l->light_exposure;
+                return std::numeric_limits<float>::quiet_NaN();
+            };
+        case OverlayCategory::Level:
+            if (scope == OverlayScope::Local) {
+                return [chem](const Node& n) { return n.local().chemical(chem); };
+            } else {
+                return [chem](const Node& n) -> float {
+                    const TransportPool* vp = vascular_scope(n, chem);
+                    if (!vp) return std::numeric_limits<float>::quiet_NaN();
+                    return vp->chemical(chem);
+                };
+            }
+        case OverlayCategory::Capacity: {
+            const size_t idx = static_cast<size_t>(chem);
+            return [idx](const Node& n) -> float {
+                float flux = 0.0f, cap = 0.0f;
+                for (const auto& [c, f] : n.tick_edge_flux[idx]) flux += std::fabs(f);
+                for (const auto& [c, k] : n.tick_edge_cap[idx])  cap  += k;
+                if (cap < 1e-9f) return std::numeric_limits<float>::quiet_NaN();
+                return flux / cap;
+            };
+        }
+        case OverlayCategory::Growth:     return build_growth_accessor(engine);
+        case OverlayCategory::Activation: return build_activation_accessor(engine);
+        case OverlayCategory::Starvation: return build_starvation_accessor(engine);
+    }
+    return ChemicalAccessor{};
+}
+
 int main(int argc, char* argv[]) {
     std::string color_chemical;
     std::string world_path;
@@ -331,8 +380,6 @@ int main(int argc, char* argv[]) {
     ImGui_ImplOpenGL3_Init("#version 410");
     ImGui::StyleColorsDark();
 
-    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE, STRESS, WATER, GROWTH, VASCULAR };
-    Overlay active_overlay = Overlay::NONE;
     bool playing = false;
     int steps_remaining = 0;
     bool space_was_pressed = false;
@@ -562,98 +609,40 @@ int main(int argc, char* argv[]) {
             ImGui::EndCombo();
         }
 
-        if (ImGui::CollapsingHeader("Overlays")) {
-            if (ImGui::Button("None")) {
-                renderer.set_color_mode(ChemicalAccessor{});
-                renderer.set_color_by_type(false);
-                active_overlay = Overlay::NONE;
+        if (ImGui::CollapsingHeader("Overlays", ImGuiTreeNodeFlags_DefaultOpen)) {
+            auto radio = [&](const char* label, OverlayCategory cat) {
+                if (ImGui::RadioButton(label, g_overlay_category == cat)) g_overlay_category = cat;
+            };
+            radio("Default",    OverlayCategory::Default);    ImGui::SameLine();
+            radio("Type",       OverlayCategory::Type);       ImGui::SameLine();
+            radio("Light",      OverlayCategory::Light);
+            radio("Level",      OverlayCategory::Level);      ImGui::SameLine();
+            radio("Capacity",   OverlayCategory::Capacity);   ImGui::SameLine();
+            radio("Growth",     OverlayCategory::Growth);
+            radio("Activation", OverlayCategory::Activation); ImGui::SameLine();
+            radio("Starvation", OverlayCategory::Starvation);
+
+            // Chemical sub-picker for Level/Capacity
+            if (g_overlay_category == OverlayCategory::Level || g_overlay_category == OverlayCategory::Capacity) {
+                const char* chem_names[] = {"Auxin", "Cytokinin", "Gibberellin", "Sugar", "Ethylene", "Stress", "Water"};
+                int idx = static_cast<int>(g_overlay_chem);
+                if (ImGui::Combo("Chemical", &idx, chem_names, IM_ARRAYSIZE(chem_names))) {
+                    g_overlay_chem = static_cast<ChemicalID>(idx);
+                }
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Node Type")) {
-                renderer.set_color_mode(ChemicalAccessor{});
-                renderer.set_color_by_type(true);
-                active_overlay = Overlay::NODE_TYPE;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Auxin")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Auxin); });
-                active_overlay = Overlay::AUXIN;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cytokinin")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Cytokinin); });
-                active_overlay = Overlay::CYTOKININ;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Sugar")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Sugar); });
-                active_overlay = Overlay::SUGAR;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Light")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { auto* l = n.as_leaf(); return l ? l->light_exposure : 0.0f; });
-                active_overlay = Overlay::LIGHT;
-            }
-            if (ImGui::Button("GA")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Gibberellin); });
-                active_overlay = Overlay::GIBBERELLIN;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Ethylene")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Ethylene); });
-                active_overlay = Overlay::ETHYLENE;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Stress")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.stress; });
-                active_overlay = Overlay::STRESS;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Water")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Water); });
-                active_overlay = Overlay::WATER;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Growth")) {
-                renderer.set_color_by_type(false);
-                const Genome& og = engine.get_plant(plant_id).genome();
-                const WorldParams& ow = engine.world_params();
-                renderer.set_color_mode([og, ow](const Node& n) -> float {
-                    using namespace meristem_helpers;
-                    if (auto* ap = n.as_apical()) {
-                        if (!ap->active) return 0.0f;
-                        float max_cost = og.growth_rate * ow.sugar_cost_meristem_growth;
-                        float gf = growth_fraction(n.local().chemical(ChemicalID::Sugar), max_cost,
-                                                   n.local().chemical(ChemicalID::Cytokinin), og.cytokinin_growth_threshold);
-                        float wgf = turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, og));
-                        return gf * wgf;
-                    } else if (auto* ra = n.as_root_apical()) {
-                        if (!ra->active) return 0.0f;
-                        float max_cost = og.root_growth_rate * ow.sugar_cost_root_growth;
-                        float gf = sugar_growth_fraction(n.local().chemical(ChemicalID::Sugar), max_cost);
-                        float wgf = turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, og));
-                        return gf * wgf;
-                    }
-                    return 0.0f;  // non-meristems: dark
-                });
-                active_overlay = Overlay::GROWTH;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Vascular")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.get_parent_auxin_flow_bias(); });
-                active_overlay = Overlay::VASCULAR;
+            // Scope sub-picker only for Level
+            if (g_overlay_category == OverlayCategory::Level) {
+                int sc = static_cast<int>(g_overlay_scope);
+                if (ImGui::Combo("Scope", &sc, "Local\0Vasculature\0")) {
+                    g_overlay_scope = static_cast<OverlayScope>(sc);
+                }
             }
 
-            if (active_overlay == Overlay::NODE_TYPE) {
+            // Type mode uses categorical color codepath; all others use a ChemicalAccessor.
+            if (g_overlay_category == OverlayCategory::Type) {
+                renderer.set_color_by_type(true);
+                renderer.set_color_mode(ChemicalAccessor{});
+                // Legend
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Shoot Apical");
                 ImGui::SameLine();
@@ -665,17 +654,21 @@ int main(int argc, char* argv[]) {
                 ImGui::TextColored(ImVec4(0.6f, 0.2f, 0.8f, 1.0f), "Root Axillary");
                 ImGui::SameLine();
                 ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "Root");
-            } else if (active_overlay != Overlay::NONE) {
-                ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "Low");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "-");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "-");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "-");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
+            } else {
+                renderer.set_color_by_type(false);
+                renderer.set_color_mode(build_color_accessor(g_overlay_category, g_overlay_chem, g_overlay_scope, engine));
+                if (g_overlay_category != OverlayCategory::Default) {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "Low");
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "-");
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "-");
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "-");
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
+                }
             }
         }
 
