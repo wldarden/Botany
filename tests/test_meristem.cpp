@@ -1074,6 +1074,116 @@ TEST_CASE("Meristem ever_active sticky flag lifecycle", "[meristem][lifecycle]")
     // primary assertions.)
 }
 
+// -------------------------------------------------------------------------
+// Dormant meristems sense cytokinin in the parent stem's xylem.
+//
+// A dormant bud never runs the vascular extract pass (no water demand, so
+// no CK rides along), which means its own local() CK pool stays ~0 forever.
+// If can_activate() reads only local() CK, a lateral SA can never wake up
+// regardless of how much CK is flowing past it, and a lateral RA is never
+// inhibited by surrounding CK.  The fix: meristems read the xylem pool of
+// their nearest upstream conduit (the stem/root they're attached to), just
+// like leaves already do via nearest_xylem_upstream().  This models real
+// dormant buds sensing adjacent xylem sap without needing active uptake.
+// -------------------------------------------------------------------------
+
+TEST_CASE("Dormant SA does NOT activate when parent-stem xylem CK is empty", "[meristem][lifecycle]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+    world.starvation_ticks_max = 1000000u;
+
+    // Tick enough to spawn an internode and a lateral bud.
+    for (int i = 0; i < 50; i++) plant.tick(world);
+
+    // Find the first dormant lateral SA and its parent STEM.
+    ApicalNode* lat_sa = nullptr;
+    Node* parent_stem = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type != NodeType::APICAL) return;
+        auto* a = n.as_apical();
+        if (a && !a->is_primary && !a->active && !lat_sa) {
+            lat_sa = a;
+            parent_stem = n.parent;
+        }
+    });
+    if (!lat_sa || !parent_stem || !parent_stem->xylem()) return;  // no lateral spawned — vacuous
+
+    // Set up the exact conditions where the CK check matters:
+    // - plenty of sugar for the activation cost
+    // - low parent-stem auxin (so apical-dominance check passes)
+    // - empty parent-stem xylem CK (the test signal)
+    lat_sa->local().chemical(ChemicalID::Sugar) = world.sugar_cost_activation * 2.0f;
+    lat_sa->local().chemical(ChemicalID::Cytokinin) = 0.0f;
+    parent_stem->local().chemical(ChemicalID::Auxin) = 0.0f;
+    parent_stem->xylem()->chemical(ChemicalID::Cytokinin) = 0.0f;
+
+    lat_sa->tick(plant, world);
+    REQUIRE_FALSE(lat_sa->active);
+}
+
+TEST_CASE("Dormant SA DOES activate when parent-stem xylem CK is above threshold", "[meristem][lifecycle]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+    world.starvation_ticks_max = 1000000u;
+
+    for (int i = 0; i < 50; i++) plant.tick(world);
+
+    ApicalNode* lat_sa = nullptr;
+    Node* parent_stem = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type != NodeType::APICAL) return;
+        auto* a = n.as_apical();
+        if (a && !a->is_primary && !a->active && !lat_sa) {
+            lat_sa = a;
+            parent_stem = n.parent;
+        }
+    });
+    if (!lat_sa || !parent_stem || !parent_stem->xylem()) return;
+
+    lat_sa->local().chemical(ChemicalID::Sugar) = world.sugar_cost_activation * 2.0f;
+    lat_sa->local().chemical(ChemicalID::Cytokinin) = 0.0f;  // own local stays empty
+    parent_stem->local().chemical(ChemicalID::Auxin) = 0.0f;
+    // Parent-stem xylem has plenty of CK — the dormant bud must sense it.
+    parent_stem->xylem()->chemical(ChemicalID::Cytokinin) = g.cytokinin_threshold * 5.0f;
+
+    lat_sa->tick(plant, world);
+    REQUIRE(lat_sa->active);
+}
+
+TEST_CASE("Dormant RA does NOT activate when parent-root xylem CK inhibits", "[meristem][lifecycle]") {
+    Genome g = default_genome();
+    Plant plant(g, glm::vec3(0.0f));
+    WorldParams world;
+    world.starvation_ticks_max = 1000000u;
+
+    for (int i = 0; i < 50; i++) plant.tick(world);
+
+    RootApicalNode* lat_ra = nullptr;
+    Node* parent_root = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (n.type != NodeType::ROOT_APICAL) return;
+        auto* r = n.as_root_apical();
+        if (r && !r->is_primary && !r->active && !lat_ra) {
+            lat_ra = r;
+            parent_root = n.parent;
+        }
+    });
+    if (!lat_ra || !parent_root || !parent_root->xylem()) return;
+
+    // Set up conditions where auxin + sugar would otherwise satisfy activation.
+    lat_ra->local().chemical(ChemicalID::Auxin)     = g.root_auxin_activation_threshold * 2.0f;
+    lat_ra->local().chemical(ChemicalID::Sugar)     = world.sugar_cost_activation * 2.0f;
+    lat_ra->local().chemical(ChemicalID::Cytokinin) = 0.0f;  // own local stays empty
+    // Parent-root xylem CK is above the inhibition threshold — the dormant
+    // bud must sense it and refuse to activate.
+    parent_root->xylem()->chemical(ChemicalID::Cytokinin) = g.root_cytokinin_inhibition_threshold * 5.0f;
+
+    lat_ra->tick(plant, world);
+    REQUIRE_FALSE(lat_ra->active);
+}
+
 TEST_CASE("Plant grows and stays alive for 1000 ticks with metabolic feedback", "[meristem][integration]") {
     Genome g = default_genome();
     Plant plant(g, glm::vec3(0.0f));

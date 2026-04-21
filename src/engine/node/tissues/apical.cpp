@@ -274,9 +274,19 @@ bool ApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
     if (stem_auxin >= g.auxin_threshold) return false;
 
     // Cytokinin from roots (xylem-delivered) signals "the root system is healthy".
-    // Read own cytokinin — the xylem deposits CK directly in the SA sink, not in
-    // the STEM conduit above. Parent STEM CK is always ~0 (pass-through only).
-    if (local().chemical(ChemicalID::Cytokinin) < g.cytokinin_threshold) return false;
+    // Sense both the own local pool AND the parent stem's xylem pool — take
+    // the max.  A dormant bud doesn't run vascular extract (no water demand),
+    // so its own local() CK is never populated by the xylem stream; reading
+    // the upstream xylem directly lets the bud perceive sap flowing past it,
+    // analogous to how real dormant buds sense adjacent xylem without active
+    // uptake.  We still honor local CK because any mechanism that deposits
+    // CK directly at the bud (test fixtures, future radial flow) should also
+    // be able to activate it.
+    const auto* xyl = nearest_xylem_upstream();
+    float ambient_ck = std::max(
+        local().chemical(ChemicalID::Cytokinin),
+        xyl ? xyl->chemical(ChemicalID::Cytokinin) : 0.0f);
+    if (ambient_ck < g.cytokinin_threshold) return false;
 
     if (local().chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 

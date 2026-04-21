@@ -192,11 +192,25 @@ float RootApicalNode::maintenance_cost(const WorldParams& world) const {
 
 bool RootApicalNode::can_activate(const Genome& g, const WorldParams& world) const {
     // Auxin from the shoot promotes root activation — "the shoot wants more roots".
-    // Existing cytokinin (produced by already-active roots) inhibits activation
-    // of additional roots, preventing runaway branching.
+    // Auxin reaches dormant RAs via local diffusion (short-range) and via PIN
+    // cascade through root_forwarded, both of which populate local() for a
+    // dormant bud.  So local auxin is the right sensor here.
     if (local().chemical(ChemicalID::Auxin) < g.root_auxin_activation_threshold) return false;
 
-    if (local().chemical(ChemicalID::Cytokinin) > g.root_cytokinin_inhibition_threshold) return false;
+    // Cytokinin (produced by already-active root tips) inhibits activation of
+    // additional roots, preventing runaway branching.  Sense both the own
+    // local pool AND the parent root's xylem pool — take the max.  A dormant
+    // bud never runs vascular extract, so its own local() CK is never
+    // populated by the xylem stream; reading upstream xylem lets the bud
+    // perceive passing sap.  Without this, the inhibition check was
+    // effectively dead code and lateral RAs over-proliferated in CK-rich
+    // regions of the root system.  Honoring own local too keeps fixture
+    // tests that deposit CK directly at the bud behaving correctly.
+    const auto* xyl = nearest_xylem_upstream();
+    float ambient_ck = std::max(
+        local().chemical(ChemicalID::Cytokinin),
+        xyl ? xyl->chemical(ChemicalID::Cytokinin) : 0.0f);
+    if (ambient_ck > g.root_cytokinin_inhibition_threshold) return false;
 
     if (local().chemical(ChemicalID::Sugar) < world.sugar_cost_activation) return false;
 
