@@ -173,3 +173,19 @@ TEST_CASE("tick counters: xylem water+CK flux+cap populated on mature tree", "[t
     REQUIRE(ck_flux == ck_flux);  // tautology — document that we don't require ck_flux
     INFO("ck_flux observed = " << ck_flux);
 }
+
+TEST_CASE("tick counters: PIN auxin flux+cap populated on mature tree", "[tick_counters][edge_flux][pin]") {
+    Engine engine;
+    Genome g = default_genome();
+    auto pid = engine.create_plant(g, glm::vec3(0.0f));
+    engine.world_params_mut().light_level = 1.0f;
+    for (int i = 0; i < 400; ++i) engine.tick();
+    bool any_flux = false, any_cap = false;
+    const size_t AI = static_cast<size_t>(ChemicalID::Auxin);
+    engine.get_plant(pid).for_each_node([&](const Node& n) {
+        for (const auto& [c, f] : n.tick_edge_flux[AI]) if (std::fabs(f) > 0.0f) any_flux = true;
+        for (const auto& [c, k] : n.tick_edge_cap[AI])  if (k > 0.0f) any_cap = true;
+    });
+    REQUIRE(any_cap);
+    REQUIRE(any_flux);
+}
