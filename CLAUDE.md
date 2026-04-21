@@ -18,6 +18,14 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 # Run tests
 ./build/botany_tests
 
+# Run a headless sim with sparse recording + chain-profile dump
+# (see Diagnostics section for what these produce)
+./build/botany_headless 10000 /tmp/rec.bin \
+    --recording-interval 500 \
+    --chain-profile /tmp/profile.csv \
+    [--debug-log /tmp/debug.csv] \
+    [--economy-log /tmp/economy.csv]
+
 # External dependency: evolve library at /Users/wldarden/repos/evolve
 # (linked via add_subdirectory in CMakeLists.txt)
 ```
@@ -36,7 +44,8 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
   - `meristems/helpers.h` — shared growth helpers (`turgor_fraction`, `auxin_growth_factor`, `sugar_growth_fraction`, etc.)
 - **gibberellin.h/cpp** - `compute_gibberellin()` — local GA production by young leaves (reset each tick)
 - **ethylene.h/cpp** - `compute_ethylene()` + `process_abscission()` — spatial gas diffusion, leaf abscission (reset each tick)
-- **vascular_sub_stepped.h/cpp** - `vascular_sub_stepped()` — N-sub-stepped vascular loop that runs after `tick_tree()`. Each sub-step: inject (sources push into conduits) → radial flow (local_env ⇄ phloem/xylem in stems/roots) → extract (sinks pull from conduits) → longitudinal Jacobi (pressure equalization). Leaves and meristems access conduits via `nearest_phloem_upstream()` / `nearest_xylem_upstream()` walk-up helpers.
+- **vascular_sub_stepped.h/cpp** - `vascular_sub_stepped()` — N-sub-stepped vascular loop that runs after `tick_tree()`. Each sub-step: inject (sources push into conduits) → longitudinal Jacobi (pressure equalization) → radial flow (local_env ⇄ phloem/xylem in stems/roots) → extract (sinks pull from conduits). Leaves and meristems access conduits via `nearest_phloem_upstream()` / `nearest_xylem_upstream()` walk-up helpers.
+- **pin_transport.h/cpp** - `pin_transport()` for polar auxin transport (shoot post-order → seed_collected → root pre-order), plus `diffuse_auxin_across_seed_junction()` — an explicit shoot↔root auxin bridge that runs BEFORE `pin_transport()`. The bridge does a Fickian diffusion between every (shoot-child, root-child) pair of the seed, bypassing `seed.local`. It's a safety net so auxin from the shoot always reaches the root system even if PIN phase ordering misbehaves.
 - **sugar.h/cpp** - `sugar_cap()`, `transport_sugar()` helpers. Diffusion itself lives in `Node::transport_chemicals()`.
 - **hormone.h/cpp** - Empty placeholder (auxin/cytokinin transport moved to `Node::transport_chemicals()`)
 - **world_params.h** - `WorldParams` struct (light level, construction costs, sugar_production_rate, maintenance rates, soil_moisture 0-1) — non-genetic physical constants
@@ -60,6 +69,8 @@ All 5 node types extend `Node` directly — flat hierarchy, no intermediate clas
 - Draws cylinders between parent-child nodes, leaves as quads
 - Color modes: default (brown stem/root), chemical heatmap (auxin/cytokinin/sugar/gibberellin/ethylene), type (green=shoot, orange=root, red/blue=meristems)
 - **GPU shadow system** — deep shadow maps (opacity shadow maps) with power-curve slice distribution, 5 samples per leaf for soft penumbras, arbitrary sun angle via ImGui sliders, ground shadow plane rendering
+- **Dormant-bud render skip** — `Node::ever_active` is a sticky flag (default `true` on non-meristems; `false` on freshly spawned lateral SA/RA buds; flips to `true` on first `activate()` and stays). Renderer `for_each_node` loops early-return for meristems where `is_meristem() && !ever_active`. Mature trees have thousands of permanently-dormant lateral buds — skipping them removes that many draw calls. Sim semantics are unchanged; only the render pass skips.
+- **Selected-node info panel** — chemicals table has columns `Self | Transporting | Max Trans.` per chemical. `Transporting` shows last-tick flux where tracked (auxin via `last_auxin_flux`, sugar via `tick_sugar_transport`); CK/water/GA show `-` (no per-tick flux counters yet). `Max Trans.` is `base_transport + radius_factor × transport_scale` summed across edges — **note:** this is the diffusion formula, which is wrong for vascular chems on conduit edges (real Jacobi throughput is `xylem_conductance × cross-section`). Known issue, see Known Issues section.
 
 ### Evolution (`src/evolution/`)
 - **genome_bridge.h/cpp** — `build_genome_template()`, `to_structured()`, `from_structured()` convert between `botany::Genome` and `evolve::StructuredGenome`. Each genome field is a named gene with per-gene mutation config (strength = % of valid range). 8 linkage groups for crossover (auxin, cytokinin, shoot_growth, root_growth, geometry, sugar_economy, gibberellin, ethylene).
@@ -74,8 +85,17 @@ All 5 node types extend `Node` directly — flat hierarchy, no intermediate clas
 - **app_sugar_test.cpp** - Headless sugar economy tester. Builds 3 hardcoded static trees (seedling/medium/large), freezes growth, runs N ticks of production/maintenance/transport. Reports production/maintenance ratios. Usage: `./build/botany_sugar_test [--ticks N] [--csv] [--tree seedling|medium|large]`
 
 ### Tests (`tests/`)
-212 tests / 622 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, and vascularization.  
-Key file: `tests/test_vascularization.cpp` — 6 integration tests: no-bias no-thicken, bias-proportional growth rate, canalization ratchet, conductance-weighted phloem distribution.
+218 tests / 583 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, vascularization, and cytokinin transport.
+Key files:
+- `tests/test_vascularization.cpp` — 6 integration tests: no-bias no-thicken, bias-proportional growth rate, canalization ratchet, conductance-weighted phloem distribution.
+- `tests/test_cytokinin_transport.cpp` — production, transport through xylem, elongation gate, dormant-meristem lifecycle.
+- `tests/test_meristem.cpp` — dormant activation paths (apical dominance, xylem CK sensing, `ever_active` flag lifecycle).
+
+### Diagnostics / validation tooling (`app_headless.cpp`)
+- `--chain-profile <path.csv>` — at end of sim, walks from seed along the longest shoot and root chain and dumps a CSV with columns: `chain_side, depth, node_id, type, y, radius, auxin, cytokinin, sugar, water, xyl_cytokinin, xyl_water, phloem_sugar`. Consumer for validation scripts that want trajectory and final-state hormone gradients.
+- `--recording-interval N` — save the full tick state every Nth tick instead of every tick. Default 1 (backward-compatible, every tick). `N=0` disables recording entirely. For long validation sims a value like 500 keeps the `.bin` under a few MB and gives ~20 snapshots viewable via `botany_dump` / `botany_playback`.
+- `--debug-log <path.csv>` — per-tick per-node full state CSV (large; ~1 GB for 10k ticks on mature plants).
+- `--economy-log <path.csv>` — per-tick plant-wide chemical mass balance (production, consumption, storage).
 
 ### Planning docs (`docs/long-term-plan/`)
 Milestone folders with design + review documents. Current vascularization plan and code-review docs live at `docs/long-term-plan/milestone-2/vascularization/`.
@@ -106,6 +126,9 @@ All chemical access goes through explicit compartment accessors:
    Jacobi is a pure neighbor equalizer — no global awareness of sources or sinks. Pressure fields created by local injection and extraction drive routing automatically.
 
 2. **Local diffusion** (`Node::transport_with_children()`) — per-node during DFS walk, handles only signaling chemicals: auxin, gibberellin, stress. Short-range cell-to-cell transport. Uses `transport_received` buffer for anti-teleportation (chemicals move at most one hop per tick).
+   - **Cytokinin is owned end-to-end by the vascular system.** Local diffusion explicitly skips CK on any edge touching a vascular conduit (stem/root at or above `vascular_radius_threshold`). Without this skip, local diffusion on specialty-to-conduit edges (e.g., RA → parent ROOT) would drain the RA's freshly produced CK into the parent's `local` pool before vascular inject could move it into the xylem — where it would be stranded with no routing.
+   - **Auxin is PIN-transported, not diffused.** `pin_transport()` (phase-A/B/C custom algorithm) runs separately for auxin. Local diffusion still runs on auxin for the short-range "last mile" within non-conduit neighborhoods, but the main flow is PIN.
+   - **`diffuse_auxin_across_seed_junction()` runs before `pin_transport()`** as an explicit shoot↔root auxin bridge. Directly transfers a Fickian diffusion fraction from every shoot-child to every root-child of the seed, bypassing `seed.local`. Belts-and-suspenders path guaranteeing the seed junction always carries auxin across.
 
 | Chemical | Pathway | Notes |
 |----------|---------|-------|
@@ -262,8 +285,9 @@ Ordering is **metabolism first, vascular after**. This gives a 1-tick lag betwee
 - **Thickening is bias-driven** — `cambium_responsiveness × auxin_flow_bias` replaces old fixed `thickening_rate`. Zero-flux branches never thicken.
 - **Canalization redistributes, does not amplify** — `canalization_weight × auxin_flow_bias` shifts proportional weight among sibling edges. Does not increase total flow budget.
 - **Flat node hierarchy** — `Node` base class with 5 direct subclasses. Each owns type-specific fields and behavior via `virtual update_tissue()`. Downcasting via `as_stem()`/`as_root()`/`as_leaf()`/`as_apical()`/`as_root_apical()` — fast `static_cast` gated on `NodeType` enum, no RTTI.
-- **Root elongation is sugar-gated only** — root apical `elongate()` uses `sugar_growth_fraction()` with no auxin gate. Shoot-derived auxin affects root *activation*, not elongation.
+- **Root elongation is gated by local cytokinin (not auxin)** — RA `elongate()` uses `growth_fraction(sugar, max_cost, local_cytokinin, root_ck_growth_floor)`. CK at the RA is produced locally from sugar+water metabolic state, so the gate is scale-free: deep RAs in a 10m tree self-gate on their own CK, no dependency on distant-shoot signals.
 - **Dormant meristems cost zero maintenance** — only active meristems pay `sugar_maintenance_meristem`
+- **Dormant meristems sense parent xylem directly** — SA and RA `can_activate()` read `max(own_local_CK, nearest_xylem_upstream_CK)` for the cytokinin threshold. Dormant buds never run vascular extract (no water demand), so their `local()` CK stays ~0; without reading upstream xylem the SA CK-permissive check was unreachable (dormant SAs never woke) and the RA CK-inhibition check was dead code (lateral RAs over-proliferated in CK-rich regions). Flow is unchanged — this is read-only sensing, analogous to how leaves access parent-stem vasculature.
 - **Sugar economy: physics in WorldParams, strategy in Genome** — production rate, maintenance costs, and construction costs are physical constants in WorldParams (not evolvable). Evolution optimizes plant shape/structure, not metabolism.
 - **Hormone scale separation** — auxin is a short-range signal (decay 12%/tick, one hop per tick via PIN transport, effective range ~5–20 internodes), used for apical dominance, canalization, and local tropism.  Cytokinin is the long-distance root→shoot signal, produced at root tips from local metabolic state (sugar + water, independent of shoot auxin) and carried by xylem bulk flow.  Sugar is the long-distance shoot→root channel via phloem bulk flow.  **No mechanism depends on auxin reaching a distant node** — this is the fundamental scaling invariant that lets the model support plants from 1 dm seedlings to 10 m trees.  See spec/plan docs for the 2026-04-20 hormone-biology-tree-scale refactor.
 
@@ -347,3 +371,13 @@ Checkpoints are reproducible with: `./build/botany_headless <ticks> /tmp/out.bin
 - `meristem_sink_target_fraction` (0.05) - meristem refills from phloem up to this fraction of its sugar_cap per vascular pass
 - `leaf_turgor_target_fraction` (0.7) - leaf refills from xylem up to this fraction of water_cap per vascular pass
 - *(WorldParam)* `vascular_substeps` (25) - N sub-steps in vascular loop; each step propagates pressure ~1 hop; plants with chains longer than N show distance-dependent apical supply (intentional hydraulic limit)
+
+## Known Issues / TODO
+
+These are known gaps flagged during the 2026-04-20 hormone-biology refactor. None block current functionality but each will mislead or be incomplete until addressed.
+
+- **UI heatmap shows `local()` only for vascular chemicals.** After the compartmented-vascular refactor, sugar/water/cytokinin live primarily in the `xylem` and `phloem` pools, not in stems'/roots' `local`. The realtime heatmap colors by `local().chemical(id)`, so stems carrying CK in their xylem show as "empty" blue when they should show the color of their actual CK throughput. Fix would be either a `local + xylem/phloem` sum for conduit nodes or dedicated `xyl_cytokinin` / `phloem_sugar` heatmap modes.
+- **Selected-node panel doesn't show xylem/phloem pools.** The chemicals table shows only `local` values. Stems can have empty local CK but meaningful xylem CK, and the user has no way to see the xylem value. Needs extra rows (or columns) for `xylem` and `phloem` chemicals on conduit nodes.
+- **`Transporting` / `Max Trans.` columns use diffusion formula.** Wrong for vascular chemicals on conduit edges where real throughput is Jacobi `xylem_conductance × cross-section` (water/CK) or `phloem_conductance × cross-section` (sugar). Currently overstates transport capacity for thick stems and understates for thin ones on the vascular pathway.
+- **`cytokinin_production_rate` genome parameter is dead code.** Declared with the comment "cytokinin per g sugar produced by leaves", serialized, evolved — but nothing in the engine uses it (only `root_cytokinin_production_rate` is wired). The realtime selected-node panel at `app_realtime.cpp:748` displays a "predicted leaf CK production" number computed from this dead param — visually misleading. Either wire up leaf CK production (biologically real: young leaves are a secondary CK source) or remove the dead parameter.
+- **No per-tick flux counters for cytokinin, water, gibberellin, ethylene.** `tick_auxin_produced`, `tick_cytokinin_produced`, and `tick_sugar_transport` exist but analogous counters for the other chemicals don't. The `Transporting` column shows `-` for these. Low priority; add per chemical as needed.
