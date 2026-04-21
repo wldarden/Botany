@@ -284,7 +284,7 @@ inline Genome default_genome() {
         .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
         .root_cytokinin_production_rate = 0.15f,   // cytokinin per unit auxin — moderate signal
-        .root_tip_auxin_production_rate = 0.0f,    // TEMP DISABLED — testing pure external-auxin gating on RA elongation.  Real root tips do produce local auxin via PIN recycling, but with self-production off we can verify the shoot→root auxin delivery loop is actually plumbed end-to-end.
+        .root_tip_auxin_production_rate = 0.002f,  // small PIN-recycling floor — self-equilibrium ~0.017 supports lateral root initiation without needing distant shoot auxin
         .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation (mirrors SAM's cytokinin_growth_threshold pattern)
         .root_ck_growth_floor = 0.001f,             // low Km — trace CK permits growth, zero stops it
         .root_auxin_activation_threshold = 0.05f,   // low bar — a little auxin activates roots
