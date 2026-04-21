@@ -1,0 +1,2 @@
+/usr/bin/ar qc libevolve.a CMakeFiles/evolve.dir/src/genome.cpp.o CMakeFiles/evolve.dir/src/population.cpp.o CMakeFiles/evolve.dir/src/innovation.cpp.o CMakeFiles/evolve.dir/src/structured_genome.cpp.o
+/usr/bin/ranlib libevolve.a

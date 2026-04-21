@@ -1,0 +1,16 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/wldarden/learning/botany/build_debug/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/_deps/glm-build/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/_deps/glm-build/glm/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/_deps/catch2-build/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/_deps/catch2-build/src/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/_deps/glfw-build/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/_deps/glfw-build/src/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/_deps/glfw-build/docs/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/glad_cmake/cmake_install.cmake",
+		"/Users/wldarden/learning/botany/build_debug/evolve/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -1,0 +1,1 @@
+/usr/bin/c++ -g -arch x86_64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/botany_dump.dir/src/app_dump.cpp.o -o botany_dump  libbotany_engine.a libbotany_serialization.a libbotany_engine.a _deps/glm-build/glm/libglm.a

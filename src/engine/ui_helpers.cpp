@@ -1,7 +1,5 @@
 #include "engine/ui_helpers.h"
 #include "engine/node/node.h"
-#include "engine/node/stem_node.h"
-#include "engine/node/root_node.h"
 #include "engine/genome.h"
 #include "engine/world_params.h"
 #include "engine/vascular_sub_stepped.h"

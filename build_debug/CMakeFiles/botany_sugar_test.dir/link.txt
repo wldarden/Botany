@@ -1,0 +1,1 @@
+/usr/bin/c++ -g -arch x86_64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/botany_sugar_test.dir/src/app_sugar_test.cpp.o -o botany_sugar_test  libbotany_engine.a _deps/glm-build/glm/libglm.a

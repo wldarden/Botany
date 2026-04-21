@@ -1,0 +1,2 @@
+/usr/bin/ar qc libbotany_renderer.a CMakeFiles/botany_renderer.dir/src/renderer/shader.cpp.o CMakeFiles/botany_renderer.dir/src/renderer/camera.cpp.o CMakeFiles/botany_renderer.dir/src/renderer/renderer.cpp.o CMakeFiles/botany_renderer.dir/src/renderer/light_system.cpp.o
+/usr/bin/ranlib libbotany_renderer.a
