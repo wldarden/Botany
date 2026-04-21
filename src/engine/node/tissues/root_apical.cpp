@@ -128,9 +128,15 @@ glm::vec3 RootApicalNode::apply_gravitropism(const glm::vec3& dir, const Genome&
 
 void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
     float max_cost = g.root_growth_rate * world.sugar_cost_root_growth;
-    // Root elongation is sugar-gated only — real root tips maintain their own
-    // auxin maximum via PIN recycling, so we don't gate on exogenous auxin.
-    float gf = sugar_growth_fraction(local().chemical(ChemicalID::Sugar), max_cost);
+    // Root elongation is gated by auxin just as SAM elongation is gated by
+    // cytokinin — Michaelis-Menten rate modulation with Km = root_auxin_growth_threshold.
+    // Local PIN-recycling production (root_tip_auxin_production_rate) gives a
+    // tiny floor (self-equilibrium ≪ threshold), so shoot-delivered auxin is
+    // what actually drives elongation.  Until the stem vasculature thickens
+    // enough to transport meaningful auxin downward, root growth is naturally
+    // capped — preventing the runaway root/starved-SAM regime.
+    float gf = growth_fraction(local().chemical(ChemicalID::Sugar), max_cost,
+                               local().chemical(ChemicalID::Auxin), g.root_auxin_growth_threshold);
     if (gf < 1e-6f) return;
     float water_gf = turgor_fraction(local().chemical(ChemicalID::Water), water_cap(*this, g));
     if (water_gf < 1e-6f) return;

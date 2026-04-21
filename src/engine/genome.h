@@ -268,7 +268,7 @@ inline Genome default_genome() {
         .growth_rate = 0.002f,              // ~5 mm/day = 0.2 mm/hr
         .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
         .branch_angle = 0.785f,             // ~45 degrees
-        .cambium_responsiveness = 0.00002f, // dm/hr·bias — calibrated so main trunk (bias ~2.0) thickens at
+        .cambium_responsiveness = 0.0002f, // dm/hr·bias — calibrated so main trunk (bias ~2.0) thickens at
                                             // ~0.00004 dm/hr, matching old thickening_rate. Lateral branches
                                             // with weaker canalization thicken proportionally less.
         .internode_elongation_rate = 0.004f, // dm/hr — intercalary stretch after creation
@@ -283,8 +283,8 @@ inline Genome default_genome() {
         .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
         .root_cytokinin_production_rate = 0.15f,   // cytokinin per unit auxin — moderate signal
-        .root_tip_auxin_production_rate = 0.03f,   // ~1/5th of shoot apical baseline — minor local source for lateral root initiation
-        .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation
+        .root_tip_auxin_production_rate = 0.0f,    // TEMP DISABLED — testing pure external-auxin gating on RA elongation.  Real root tips do produce local auxin via PIN recycling, but with self-production off we can verify the shoot→root auxin delivery loop is actually plumbed end-to-end.
+        .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation (mirrors SAM's cytokinin_growth_threshold pattern)
         .root_auxin_activation_threshold = 0.05f,   // low bar — a little auxin activates roots
         .root_cytokinin_inhibition_threshold = 0.15f, // mirrors auxin_threshold for symmetric branching control
 

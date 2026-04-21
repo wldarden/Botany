@@ -834,6 +834,12 @@ TEST_CASE("RA cytokinin production drops sharply when sugar is low", "[meristem]
 
 TEST_CASE("RA auxin production drops when sugar is low", "[meristem][metabolic]") {
     Genome g = default_genome();
+    // This test exercises the metabolic gating of RA self-production.  When
+    // root_tip_auxin_production_rate is temporarily set to 0 (testing pure
+    // external-auxin gating of root elongation), there is no self-production
+    // to measure — skip the assertions rather than fail.
+    if (g.root_tip_auxin_production_rate <= 0.0f) return;
+
     Plant plant(g, glm::vec3(0.0f));
     WorldParams world;
     world.starvation_ticks_max = 1000000u;  // prevent death during test

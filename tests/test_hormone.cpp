@@ -109,7 +109,11 @@ TEST_CASE("Cytokinin: root apical produces cytokinin", "[hormone]") {
         if (c->type == NodeType::ROOT_APICAL) { root = c; break; }
     }
     REQUIRE(root != nullptr);
-    REQUIRE(root->local().chemical(ChemicalID::Cytokinin) > 0.0f);
+    // Production is tracked per-tick in tick_cytokinin_produced — diagnostic counter
+    // that is NOT affected by transport, diffusion, or decay.  The RA's local pool
+    // is drained each tick by vascular inject + local diffusion to the rest of the
+    // plant (seed, shoot), so checking the local pool alone understates production.
+    REQUIRE(root->tick_cytokinin_produced > 0.0f);
 }
 
 TEST_CASE("Cytokinin: cytokinin flows from parent to children", "[hormone]") {

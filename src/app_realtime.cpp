@@ -1190,98 +1190,91 @@ int main(int argc, char* argv[]) {
 
                 ImGui::Separator();
 
-                // Chemical levels table
-                float parent_sugar = sel.parent ? sel.parent->local().chemical(ChemicalID::Sugar) : 0.0f;
-                float parent_auxin = sel.parent ? sel.parent->local().chemical(ChemicalID::Auxin) : 0.0f;
-                float parent_cytokinin = sel.parent ? sel.parent->local().chemical(ChemicalID::Cytokinin) : 0.0f;
-                float parent_water = sel.parent ? sel.parent->local().chemical(ChemicalID::Water) : 0.0f;
+                // --- Per-edge transport capacity / actual-flow helpers ---
+                // Max Trans.: sum the diffusion-formula cap across all edges touching this
+                // node (sel->children and parent->sel).  Uses the same radius_factor and
+                // base/scale the engine uses inside compute_transport_flow.
+                // Transporting: sum of last-tick magnitudes where we track them
+                // (auxin via last_auxin_flux, sugar via tick_sugar_transport).
+                // Other chemicals currently have no per-tick flux tracking → "-".
+                const Genome& gnm = engine.get_plant(plant_id).genome();
+                const float ref_r = gnm.initial_radius;
+                const float min_conn_r = ref_r * 0.2f;
+                auto edge_max = [&](float child_radius, float base, float scale) -> float {
+                    float conn_r = std::max(std::min(child_radius, sel.radius), min_conn_r);
+                    float radius_factor = conn_r / std::max(ref_r, 1e-6f);
+                    return base + radius_factor * scale;
+                };
+                auto chem_max_trans = [&](float base, float scale) -> float {
+                    float total = 0.0f;
+                    for (const Node* c : sel.children) total += edge_max(c->radius, base, scale);
+                    if (sel.parent) total += edge_max(sel.radius, base, scale);
+                    return total;
+                };
 
-                float child_sugar = 0.0f, child_auxin = 0.0f, child_cytokinin = 0.0f, child_water = 0.0f;
-                if (!sel.children.empty()) {
-                    for (const Node* c : sel.children) {
-                        child_sugar += c->local().chemical(ChemicalID::Sugar);
-                        child_auxin += c->local().chemical(ChemicalID::Auxin);
-                        child_cytokinin += c->local().chemical(ChemicalID::Cytokinin);
-                        child_water += c->local().chemical(ChemicalID::Water);
-                    }
-                    float n = static_cast<float>(sel.children.size());
-                    child_sugar /= n;
-                    child_auxin /= n;
-                    child_cytokinin /= n;
-                    child_water /= n;
+                float auxin_flux_sum = 0.0f;
+                for (const auto& [cptr, flux] : sel.last_auxin_flux) auxin_flux_sum += std::fabs(flux);
+                if (sel.parent) {
+                    auto it = sel.parent->last_auxin_flux.find(const_cast<Node*>(&sel));
+                    if (it != sel.parent->last_auxin_flux.end()) auxin_flux_sum += std::fabs(it->second);
                 }
 
-                // Compute ratios (upstream/self and downstream/self)
-                auto ratio_str = [](float other, float self) -> std::string {
-                    if (self < 1e-6f) {
-                        return other < 1e-6f ? "-" : "inf";
-                    }
-                    char buf[16];
-                    std::snprintf(buf, sizeof(buf), "%.2fx", other / self);
-                    return buf;
-                };
+                float auxin_max   = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float cyt_max     = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float ga_max      = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float eth_max     = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float sugar_max   = chem_max_trans(gnm.sugar_base_transport,   gnm.sugar_transport_scale);
+                float water_max   = chem_max_trans(gnm.water_base_transport,   gnm.water_transport_scale);
 
                 ImGui::Text("Chemical Levels:");
                 if (ImGui::BeginTable("chemicals", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("Chemical", ImGuiTableColumnFlags_WidthFixed, 80);
-                    ImGui::TableSetupColumn("Seed Side", ImGuiTableColumnFlags_WidthFixed, 65);
-                    ImGui::TableSetupColumn("Self", ImGuiTableColumnFlags_WidthFixed, 75);
-                    ImGui::TableSetupColumn("Tip Side", ImGuiTableColumnFlags_WidthFixed, 65);
+                    ImGui::TableSetupColumn("Chemical",     ImGuiTableColumnFlags_WidthFixed, 70);
+                    ImGui::TableSetupColumn("Self",         ImGuiTableColumnFlags_WidthFixed, 70);
+                    ImGui::TableSetupColumn("Transporting", ImGuiTableColumnFlags_WidthFixed, 80);
+                    ImGui::TableSetupColumn("Max Trans.",   ImGuiTableColumnFlags_WidthFixed, 80);
                     ImGui::TableHeadersRow();
 
                     // Sugar
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Sugar");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_sugar, sel.local().chemical(ChemicalID::Sugar)).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_mass(sel.local().chemical(ChemicalID::Sugar)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_sugar, sel.local().chemical(ChemicalID::Sugar)).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_mass(sel.local().chemical(ChemicalID::Sugar)));
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_mass(std::fabs(sel.tick_sugar_transport)));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_mass(sugar_max));
 
                     // Auxin (dimensionless signaling units)
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Auxin");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_auxin, sel.local().chemical(ChemicalID::Auxin)).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Auxin)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_auxin, sel.local().chemical(ChemicalID::Auxin)).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Auxin)));
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(auxin_flux_sum));
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(auxin_max));
 
                     // Cytokinin (dimensionless signaling units)
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Cyt");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_cytokinin, sel.local().chemical(ChemicalID::Cytokinin)).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Cytokinin)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_cytokinin, sel.local().chemical(ChemicalID::Cytokinin)).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Cytokinin)));
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(cyt_max));
 
                     // Gibberellin
-                    float parent_ga = sel.parent ? sel.parent->local().chemical(ChemicalID::Gibberellin) : 0.0f;
-                    float child_ga = 0.0f;
-                    if (!sel.children.empty()) {
-                        for (const Node* c : sel.children) child_ga += c->local().chemical(ChemicalID::Gibberellin);
-                        child_ga /= static_cast<float>(sel.children.size());
-                    }
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("GA");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_ga, sel.local().chemical(ChemicalID::Gibberellin)).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Gibberellin)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_ga, sel.local().chemical(ChemicalID::Gibberellin)).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Gibberellin)));
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(ga_max));
 
                     // Ethylene
-                    float parent_eth = sel.parent ? sel.parent->local().chemical(ChemicalID::Ethylene) : 0.0f;
-                    float child_eth = 0.0f;
-                    if (!sel.children.empty()) {
-                        for (const Node* c : sel.children) child_eth += c->local().chemical(ChemicalID::Ethylene);
-                        child_eth /= static_cast<float>(sel.children.size());
-                    }
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Eth");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_eth, sel.local().chemical(ChemicalID::Ethylene)).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Ethylene)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_eth, sel.local().chemical(ChemicalID::Ethylene)).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Ethylene)));
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(eth_max));
 
                     // Water (capacity-based resource, ml)
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0); ImGui::Text("Water");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", ratio_str(parent_water, sel.local().chemical(ChemicalID::Water)).c_str());
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_vol(sel.local().chemical(ChemicalID::Water)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", ratio_str(child_water, sel.local().chemical(ChemicalID::Water)).c_str());
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_vol(sel.local().chemical(ChemicalID::Water)));
+                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
+                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_vol(water_max));
 
                     ImGui::EndTable();
                 }
