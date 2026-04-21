@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -59,6 +60,11 @@ public:
     // comparing these to the node's auxin/cyto delta isolates each contribution.
     float tick_auxin_produced    = 0.0f;
     float tick_cytokinin_produced = 0.0f;
+
+    // Per-chemical production/consumption, reset at the top of Plant::tick_tree().
+    // Indexed by static_cast<size_t>(ChemicalID::*).
+    std::array<float, static_cast<size_t>(ChemicalID::Count)> tick_chem_produced{};
+    std::array<float, static_cast<size_t>(ChemicalID::Count)> tick_chem_consumed{};
 
     // Local compartment — this node's parenchyma chemicals (sugar, water,
     // auxin, cytokinin, gibberellin, stress — anything NOT in the phloem or
