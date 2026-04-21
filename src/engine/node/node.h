@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
@@ -60,6 +61,11 @@ public:
     float tick_auxin_produced    = 0.0f;
     float tick_cytokinin_produced = 0.0f;
 
+    // Per-chemical production/consumption, reset at the top of Plant::tick_tree().
+    // Indexed by static_cast<size_t>(ChemicalID::*).
+    std::array<float, static_cast<size_t>(ChemicalID::Count)> tick_chem_produced{};
+    std::array<float, static_cast<size_t>(ChemicalID::Count)> tick_chem_consumed{};
+
     // Local compartment — this node's parenchyma chemicals (sugar, water,
     // auxin, cytokinin, gibberellin, stress — anything NOT in the phloem or
     // xylem transport stream).  All chemical access goes through local().
@@ -76,6 +82,12 @@ public:
     // Canalization — per-child transport bias (stored on parent, keyed by child pointer)
     std::unordered_map<Node*, float> auxin_flow_bias;       // transient — fast, decays toward PIN saturation
     std::unordered_map<Node*, float> last_auxin_flux;       // transient per-tick: auxin moved per child
+
+    // Per-chemical per-edge flux and cap for the "Transport Capacity Used" overlay.
+    // [chem][child_ptr] = signed flux across (this -> child) this tick.
+    // Cleared at the top of Plant::tick_tree() alongside last_auxin_flux.
+    std::array<std::unordered_map<Node*, float>, static_cast<size_t>(ChemicalID::Count)> tick_edge_flux;
+    std::array<std::unordered_map<Node*, float>, static_cast<size_t>(ChemicalID::Count)> tick_edge_cap;
 
     float get_bias_multiplier(Node* child, const Genome& g) const;
 

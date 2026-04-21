@@ -62,6 +62,7 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     float produced_auxin = g.root_tip_auxin_production_rate * mf_auxin;
     local().chemical(ChemicalID::Auxin) += produced_auxin;
     tick_auxin_produced += produced_auxin;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Auxin)] += produced_auxin;
 
     // Cytokinin: floor 0.05 (smaller than auxin's 0.1) — CK has less
     // conjugate-pool buffering than auxin, so its response to sugar is sharper.
@@ -76,6 +77,7 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
     float cyto_produced = g.root_cytokinin_production_rate * mf_cyto;
     local().chemical(ChemicalID::Cytokinin) += cyto_produced;
     tick_cytokinin_produced += cyto_produced;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Cytokinin)] += cyto_produced;
 
     ticks_since_last_node++;
     elongate(g, world);
@@ -92,7 +94,9 @@ void RootApicalNode::absorb_water(const Genome& g, const WorldParams& world) {
     float fill_fraction = (cap > 1e-6f) ? local().chemical(ChemicalID::Water) / cap : 1.0f;
     float gradient = std::max(0.0f, world.soil_moisture - fill_fraction);
     float absorbed = g.water_absorption_rate * surface_area * gradient;
-    local().chemical(ChemicalID::Water) = std::min(local().chemical(ChemicalID::Water) + absorbed, cap);
+    float water_before = local().chemical(ChemicalID::Water);
+    local().chemical(ChemicalID::Water) = std::min(water_before + absorbed, cap);
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Water)] += local().chemical(ChemicalID::Water) - water_before;
 }
 
 void RootApicalNode::check_spawn(Plant& plant, const Genome& g) {
@@ -149,6 +153,7 @@ void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
 
     float actual_rate = g.root_growth_rate * gf;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_root_growth;
     offset += growth_dir * actual_rate;
 }
 
@@ -221,6 +226,7 @@ void RootApicalNode::activate(const Genome& g, const WorldParams& world) {
     ever_active = true;
     active = true;
     local().chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += world.sugar_cost_activation;
     radius = g.root_initial_radius;
 }
 

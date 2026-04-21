@@ -31,6 +31,7 @@ public:
     void set_color_mode(ChemicalAccessor accessor);
     void set_color_by_type(bool enabled) { color_by_type_ = enabled; }
     void set_color_tint(float tint) { color_tint_ = tint; }  // 0-1 multiplier on all draw colors
+    void set_color_mode_starvation(bool on);
 
     LightSystem& light_system() { return light_system_; }
 
@@ -56,6 +57,7 @@ private:
     ChemicalAccessor chemical_accessor_;
     bool color_by_type_ = false;
     float color_tint_ = 1.0f;
+    bool starvation_mode_ = false;
 
     uint32_t ground_vao_ = 0;
     uint32_t ground_vbo_ = 0;
@@ -63,6 +65,7 @@ private:
     void setup_ground();
     void draw_grid();
     glm::vec3 heatmap(float t) const;
+    glm::vec3 starvation_color(float v) const;
     void draw_cylinder(glm::vec3 start, glm::vec3 end,
                        float r_start, float r_end,
                        glm::vec3 color, int segments = 8);

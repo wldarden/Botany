@@ -84,6 +84,7 @@ add_library(botany_engine STATIC
     src/engine/vascular_sub_stepped.cpp
     src/engine/engine.cpp
     src/engine/world_params.cpp
+    src/engine/ui_helpers.cpp
 )
 target_include_directories(botany_engine PUBLIC src)
 target_link_libraries(botany_engine PUBLIC glm::glm)
@@ -160,6 +161,7 @@ add_executable(botany_tests
     tests/test_stem_photosynthesis.cpp
     tests/test_cytokinin_transport.cpp
     tests/test_vascular_sub_stepped.cpp
+    tests/test_tick_counters.cpp
 )
 target_link_libraries(botany_tests PRIVATE botany_engine botany_serialization botany_evolution Catch2::Catch2WithMain)
 include(CTest)

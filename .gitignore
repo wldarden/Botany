@@ -1,12 +1,17 @@
 build/
+build_debug/
 .DS_Store
 compile_commands.json
 .superpowers/
 .cache/
 .claude/
+.claire/
 .idea/
 imgui.ini
 recording.bin
 test.bin
 best_genome.txt
 debug/
+perf_log*.csv
+.~lock.*
+/=

@@ -83,6 +83,12 @@ void pin_transport(Plant& plant, const Genome& g) {
 
         n->local().chemical(ChemicalID::Auxin) -= moved;
         par->last_auxin_flux[n] += moved;  // record for update_canalization
+        {
+            const size_t AI = static_cast<size_t>(ChemicalID::Auxin);
+            par->tick_edge_flux[AI][n] += moved;
+            float cap_edge = n->radius * n->radius * g.pin_capacity_per_area;
+            par->tick_edge_cap[AI][n] += cap_edge;
+        }
 
         if (par == seed) {
             seed_collected += moved;
@@ -112,6 +118,12 @@ void pin_transport(Plant& plant, const Genome& g) {
             float to_send = std::min(seed_collected * share, max_cap);
             root_forwarded[rc] = to_send;
             seed->last_auxin_flux[rc] += to_send;
+            {
+                const size_t AI = static_cast<size_t>(ChemicalID::Auxin);
+                seed->tick_edge_flux[AI][rc] += to_send;
+                float cap_edge = rc->radius * rc->radius * g.pin_capacity_per_area;
+                seed->tick_edge_cap[AI][rc] += cap_edge;
+            }
             total_sent += to_send;
         }
         seed_collected -= total_sent;
@@ -154,6 +166,12 @@ void pin_transport(Plant& plant, const Genome& g) {
             float to_send = std::min(incoming * share, max_cap);
             root_forwarded[rc] += to_send;
             n->last_auxin_flux[rc] += to_send;
+            {
+                const size_t AI = static_cast<size_t>(ChemicalID::Auxin);
+                n->tick_edge_flux[AI][rc] += to_send;
+                float cap_edge = rc->radius * rc->radius * g.pin_capacity_per_area;
+                n->tick_edge_cap[AI][rc] += cap_edge;
+            }
             distributed += to_send;
         }
 

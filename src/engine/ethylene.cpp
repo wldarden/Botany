@@ -22,20 +22,27 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
         nodes.push_back({&node, node.position});
     });
 
-    // Phase 1: Reset and compute local production
+    // Phase 1: Reset (record prior tick's ethylene as consumed) and compute local production
     for (auto& info : nodes) {
         Node& node = *info.node;
+        // Record last tick's value as consumed before zeroing (reset-each-tick signal model).
+        float eth_prev = node.local().chemical(ChemicalID::Ethylene);
+        if (eth_prev > 0.0f) {
+            node.tick_chem_consumed[static_cast<size_t>(ChemicalID::Ethylene)] += eth_prev;
+        }
         node.local().chemical(ChemicalID::Ethylene) = 0.0f;
+
+        float eth_produced = 0.0f;
 
         // Trigger 1: Sugar starvation
         if (node.local().chemical(ChemicalID::Sugar) <= 0.0f) {
-            node.local().chemical(ChemicalID::Ethylene) += g.ethylene_starvation_rate;
+            eth_produced += g.ethylene_starvation_rate;
         }
 
         // Trigger 2: Low light (LEAF only)
         if (auto* leaf = node.as_leaf()) {
             if (leaf->light_exposure < g.ethylene_shade_threshold) {
-                node.local().chemical(ChemicalID::Ethylene) += g.ethylene_shade_rate * (1.0f - leaf->light_exposure);
+                eth_produced += g.ethylene_shade_rate * (1.0f - leaf->light_exposure);
             }
         }
 
@@ -43,7 +50,7 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
         if (node.type == NodeType::LEAF &&
             node.age > g.ethylene_age_onset) {
             float age_past = static_cast<float>(node.age - g.ethylene_age_onset);
-            node.local().chemical(ChemicalID::Ethylene) += g.ethylene_age_rate * age_past
+            eth_produced += g.ethylene_age_rate * age_past
                            / static_cast<float>(g.ethylene_age_onset);
         }
 
@@ -57,7 +64,12 @@ void compute_ethylene(Plant& plant, const WorldParams& /*world*/) {
                 nearby_count++;
             }
         }
-        node.local().chemical(ChemicalID::Ethylene) += g.ethylene_crowding_rate * static_cast<float>(nearby_count);
+        eth_produced += g.ethylene_crowding_rate * static_cast<float>(nearby_count);
+
+        node.local().chemical(ChemicalID::Ethylene) += eth_produced;
+        if (eth_produced > 0.0f) {
+            node.tick_chem_produced[static_cast<size_t>(ChemicalID::Ethylene)] += eth_produced;
+        }
     }
 
     // Phase 2: Spatial gas diffusion (compute-then-apply)

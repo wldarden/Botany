@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <limits>
 #include "engine/engine.h"
 #include "engine/node/node.h"
 #include "engine/node/tissues/leaf.h"
@@ -19,11 +20,13 @@
 #include "engine/sugar.h"
 #include "engine/node/meristems/helpers.h"
 #include "engine/chemical/chemical_registry.h"
+#include "engine/ui_helpers.h"
 #include "renderer/renderer.h"
 #include "format.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 #include <map>
 
 using namespace botany;
@@ -150,6 +153,7 @@ static const char* chemical_name(ChemicalID id) {
         case ChemicalID::Ethylene:    return "Ethylene";
         case ChemicalID::Stress:      return "Stress";
         case ChemicalID::Water:       return "Water";
+        case ChemicalID::Count:       break;
     }
     return "?";
 }
@@ -247,6 +251,195 @@ static void scroll_callback(GLFWwindow*, double, double yoffset) {
     }
 }
 
+// ---- Overlay two-tier selector state ----
+enum class OverlayCategory { Default, Type, Light, Level, Capacity, Growth, Activation, Starvation };
+enum class OverlayScope    { Local, Vasc };
+static OverlayCategory g_overlay_category = OverlayCategory::Default;
+static ChemicalID      g_overlay_chem     = ChemicalID::Sugar;
+static OverlayScope    g_overlay_scope    = OverlayScope::Local;
+
+// Task 24: Growth overlay — fraction of this-tick achievable growth (0=no growth, 1=genome-max).
+// Formulas mirror the Activity section in the Node Inspector panel exactly.
+static ChemicalAccessor build_growth_accessor(const Engine& engine) {
+    return [&engine](const Node& n) -> float {
+        const Genome&     g = engine.get_plant(0).genome();
+        const WorldParams& w = engine.world_params();
+
+        // STEM
+        if (auto* s = n.as_stem()) {
+            // Seed = no parent → NaN (seed doesn't grow via normal stem rules)
+            if (!n.parent) return std::numeric_limits<float>::quiet_NaN();
+
+            if (n.age < g.internode_maturation_ticks) {
+                // Elongating internode: mirror panel's Elongate block (lines ~1162-1181)
+                float density_scale = g.wood_density / w.reference_wood_density;
+                float ga_elong      = 1.0f + n.local().chemical(ChemicalID::Gibberellin) * g.ga_elongation_sensitivity;
+                float eth_elong     = std::max(0.0f, 1.0f - n.local().chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
+                float stress_elong  = std::max(0.0f, 1.0f - n.local().chemical(ChemicalID::Stress) * g.stress_elongation_inhibition);
+                float auxin_elong   = meristem_helpers::auxin_growth_factor(
+                    n.local().chemical(ChemicalID::Auxin), g.stem_auxin_max_boost, g.stem_auxin_half_saturation);
+                float eff_rate  = g.internode_elongation_rate * ga_elong * eth_elong * stress_elong * auxin_elong;
+                float elong_cost = eff_rate * w.sugar_cost_stem_growth * density_scale;
+                float sugar_gf  = (elong_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
+                float water_gf  = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+                return std::min(sugar_gf * water_gf, 1.0f);
+            } else {
+                // Mature: thickening — mirror panel's Thicken block (lines ~1152-1158)
+                float density_scale   = g.wood_density / w.reference_wood_density;
+                float bias            = n.get_parent_auxin_flow_bias();
+                if (bias < 1e-6f) return 0.0f;
+                float thicken_cost  = g.cambium_responsiveness * bias * w.sugar_cost_stem_growth * density_scale;
+                float sugar_gf      = (thicken_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
+                return std::min(bias * sugar_gf, 1.0f);
+            }
+        }
+
+        // ROOT
+        if (auto* r = n.as_root()) {
+            // Root seed (no parent) → NaN
+            if (!n.parent) return std::numeric_limits<float>::quiet_NaN();
+
+            if (n.age < g.root_internode_maturation_ticks) {
+                // Elongating root internode: mirror panel's root Elongate block (lines ~1208-1226)
+                float ga_elong   = 1.0f + n.local().chemical(ChemicalID::Gibberellin) * g.ga_elongation_sensitivity;
+                float eth_elong  = std::max(0.0f, 1.0f - n.local().chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
+                float auxin_elong = meristem_helpers::auxin_growth_factor(
+                    n.local().chemical(ChemicalID::Auxin), g.root_auxin_max_boost, g.root_auxin_half_saturation);
+                float eff_rate   = g.root_internode_elongation_rate * ga_elong * eth_elong * auxin_elong;
+                float elong_cost = eff_rate * w.sugar_cost_stem_growth;  // roots use sugar_cost_stem_growth (no density_scale)
+                float sugar_gf   = (elong_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
+                float water_gf   = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+                return std::min(sugar_gf * water_gf, 1.0f);
+            } else {
+                // Mature root: thickening — mirror panel's root Thicken block (lines ~1199-1204, no density_scale)
+                float bias       = n.get_parent_auxin_flow_bias();
+                if (bias < 1e-6f) return 0.0f;
+                float thicken_cost = g.cambium_responsiveness * bias * w.sugar_cost_stem_growth;
+                float sugar_gf     = (thicken_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
+                return std::min(bias * sugar_gf, 1.0f);
+            }
+        }
+
+        // LEAF — mirror panel's Expand block (lines ~1131-1142)
+        if (auto* lf = n.as_leaf()) {
+            if (lf->leaf_size >= g.max_leaf_size) return 0.0f;
+            float lwcap      = water_cap(n, g);
+            float auxin_boost = meristem_helpers::auxin_growth_factor(
+                n.local().chemical(ChemicalID::Auxin), g.leaf_auxin_max_boost, g.leaf_auxin_half_saturation);
+            float water_gf   = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), lwcap);
+            float max_growth = g.leaf_growth_rate * auxin_boost;
+            float expand_cost = max_growth * w.sugar_cost_leaf_growth;
+            float sugar_gf   = (expand_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / expand_cost, 1.0f) : 1.0f;
+            return std::min(sugar_gf * water_gf, 1.0f);
+        }
+
+        // SHOOT APICAL MERISTEM — mirror panel's apical active block (lines ~1031-1039)
+        if (auto* ap = n.as_apical()) {
+            if (!ap->active) return std::numeric_limits<float>::quiet_NaN();
+            float max_cost = g.growth_rate * w.sugar_cost_meristem_growth;
+            float sugar_gf = (max_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+            float cyt      = n.local().chemical(ChemicalID::Cytokinin);
+            float cyt_gf   = cyt / (cyt + std::max(g.cytokinin_growth_threshold, 1e-6f));
+            float water_gf = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+            return std::min(sugar_gf * cyt_gf * water_gf, 1.0f);
+        }
+
+        // ROOT APICAL MERISTEM — mirror panel's root apical active block (lines ~1069-1075, no cyt gate)
+        if (auto* ra = n.as_root_apical()) {
+            if (!ra->active) return std::numeric_limits<float>::quiet_NaN();
+            float max_cost = g.root_growth_rate * w.sugar_cost_root_growth;
+            float sugar_gf = (max_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+            float water_gf = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+            return std::min(sugar_gf * water_gf, 1.0f);
+        }
+
+        return std::numeric_limits<float>::quiet_NaN();
+    };
+}
+static ChemicalAccessor build_activation_accessor(const Engine& engine) {
+    return [&engine](const Node& n) -> float {
+        if (!n.as_stem() && !n.as_root()) return std::numeric_limits<float>::quiet_NaN();
+        const Genome& g      = engine.get_plant(0).genome();
+        const WorldParams& w = engine.world_params();
+
+        float best = -1.0f;  // track the max readiness among dormant children
+        for (const Node* child : n.children) {
+            if (auto* ap = child->as_apical(); ap && !ap->active) {
+                float stem_auxin = n.local().chemical(ChemicalID::Auxin);
+                float local_cyt  = n.local().chemical(ChemicalID::Cytokinin);
+                float sugar      = child->local().chemical(ChemicalID::Sugar);
+                float auxin_pct = std::max(0.0f, (g.auxin_threshold - stem_auxin) / std::max(g.auxin_threshold, 1e-6f));
+                float cyt_pct   = std::min(local_cyt / std::max(g.cytokinin_threshold, 1e-6f), 1.0f);
+                float sugar_pct = std::min(sugar / std::max(w.sugar_cost_activation, 1e-6f), 1.0f);
+                float ready = std::min({auxin_pct, cyt_pct, sugar_pct});
+                best = std::max(best, ready);
+            }
+            if (auto* ra = child->as_root_apical(); ra && !ra->active) {
+                float auxin = child->local().chemical(ChemicalID::Auxin);
+                float cyt   = child->local().chemical(ChemicalID::Cytokinin);
+                float sugar = child->local().chemical(ChemicalID::Sugar);
+                float auxin_pct = std::min(auxin / std::max(g.root_auxin_activation_threshold, 1e-6f), 1.0f);
+                float cyt_pct   = std::max(0.0f, (g.root_cytokinin_inhibition_threshold - cyt) / std::max(g.root_cytokinin_inhibition_threshold, 1e-6f));
+                float sugar_pct = std::min(sugar / std::max(w.sugar_cost_activation, 1e-6f), 1.0f);
+                float ready = std::min({auxin_pct, cyt_pct, sugar_pct});
+                best = std::max(best, ready);
+            }
+        }
+        if (best < 0.0f) return std::numeric_limits<float>::quiet_NaN();  // no dormant child — gray
+        return best;
+    };
+}
+static ChemicalAccessor build_starvation_accessor(const Engine& engine) {
+    return [&engine](const Node& n) -> float {
+        const Genome& g      = engine.get_plant(0).genome();
+        const WorldParams& w = engine.world_params();
+        if (n.starvation_ticks > 0) {
+            float t = static_cast<float>(n.starvation_ticks) / std::max(static_cast<float>(w.starvation_ticks_max), 1.0f);
+            return 1.0f + std::min(t, 1.0f);   // [1, 2]
+        }
+        float cost = compute_maintenance_cost(n, g, w);
+        if (cost < 1e-9f) return 1.0f - 1e-4f;  // essentially green (no maintenance demand)
+        float coverage = std::min(n.local().chemical(ChemicalID::Sugar) / cost, 1.0f);
+        return coverage;   // [0, 1]
+    };
+}
+
+static ChemicalAccessor build_color_accessor(OverlayCategory cat, ChemicalID chem, OverlayScope scope, const Engine& engine) {
+    switch (cat) {
+        case OverlayCategory::Default: return ChemicalAccessor{};  // renderer uses genome colors
+        case OverlayCategory::Type:    return ChemicalAccessor{};  // renderer uses categorical codepath
+        case OverlayCategory::Light:
+            return [](const Node& n) -> float {
+                if (auto* l = n.as_leaf()) return l->light_exposure;
+                return std::numeric_limits<float>::quiet_NaN();
+            };
+        case OverlayCategory::Level:
+            if (scope == OverlayScope::Local) {
+                return [chem](const Node& n) { return n.local().chemical(chem); };
+            } else {
+                return [chem](const Node& n) -> float {
+                    const TransportPool* vp = vascular_scope(n, chem);
+                    if (!vp) return std::numeric_limits<float>::quiet_NaN();
+                    return vp->chemical(chem);
+                };
+            }
+        case OverlayCategory::Capacity: {
+            const size_t idx = static_cast<size_t>(chem);
+            return [idx](const Node& n) -> float {
+                float flux = 0.0f, cap = 0.0f;
+                for (const auto& [c, f] : n.tick_edge_flux[idx]) flux += std::fabs(f);
+                for (const auto& [c, k] : n.tick_edge_cap[idx])  cap  += k;
+                if (cap < 1e-9f) return std::numeric_limits<float>::quiet_NaN();
+                return flux / cap;
+            };
+        }
+        case OverlayCategory::Growth:     return build_growth_accessor(engine);
+        case OverlayCategory::Activation: return build_activation_accessor(engine);
+        case OverlayCategory::Starvation: return build_starvation_accessor(engine);
+    }
+    return ChemicalAccessor{};
+}
+
 int main(int argc, char* argv[]) {
     std::string color_chemical;
     std::string world_path;
@@ -329,8 +522,6 @@ int main(int argc, char* argv[]) {
     ImGui_ImplOpenGL3_Init("#version 410");
     ImGui::StyleColorsDark();
 
-    enum class Overlay { NONE, NODE_TYPE, AUXIN, CYTOKININ, SUGAR, LIGHT, GIBBERELLIN, ETHYLENE, STRESS, WATER, GROWTH, VASCULAR };
-    Overlay active_overlay = Overlay::NONE;
     bool playing = false;
     int steps_remaining = 0;
     bool space_was_pressed = false;
@@ -560,98 +751,40 @@ int main(int argc, char* argv[]) {
             ImGui::EndCombo();
         }
 
-        if (ImGui::CollapsingHeader("Overlays")) {
-            if (ImGui::Button("None")) {
-                renderer.set_color_mode(ChemicalAccessor{});
-                renderer.set_color_by_type(false);
-                active_overlay = Overlay::NONE;
+        if (ImGui::CollapsingHeader("Overlays", ImGuiTreeNodeFlags_DefaultOpen)) {
+            auto radio = [&](const char* label, OverlayCategory cat) {
+                if (ImGui::RadioButton(label, g_overlay_category == cat)) g_overlay_category = cat;
+            };
+            radio("Default",    OverlayCategory::Default);    ImGui::SameLine();
+            radio("Type",       OverlayCategory::Type);       ImGui::SameLine();
+            radio("Light",      OverlayCategory::Light);
+            radio("Level",      OverlayCategory::Level);      ImGui::SameLine();
+            radio("Capacity",   OverlayCategory::Capacity);   ImGui::SameLine();
+            radio("Growth",     OverlayCategory::Growth);
+            radio("Activation", OverlayCategory::Activation); ImGui::SameLine();
+            radio("Starvation", OverlayCategory::Starvation);
+
+            // Chemical sub-picker for Level/Capacity
+            if (g_overlay_category == OverlayCategory::Level || g_overlay_category == OverlayCategory::Capacity) {
+                const char* chem_names[] = {"Auxin", "Cytokinin", "Gibberellin", "Sugar", "Ethylene", "Stress", "Water"};
+                int idx = static_cast<int>(g_overlay_chem);
+                if (ImGui::Combo("Chemical", &idx, chem_names, IM_ARRAYSIZE(chem_names))) {
+                    g_overlay_chem = static_cast<ChemicalID>(idx);
+                }
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Node Type")) {
-                renderer.set_color_mode(ChemicalAccessor{});
-                renderer.set_color_by_type(true);
-                active_overlay = Overlay::NODE_TYPE;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Auxin")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Auxin); });
-                active_overlay = Overlay::AUXIN;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Cytokinin")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Cytokinin); });
-                active_overlay = Overlay::CYTOKININ;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Sugar")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Sugar); });
-                active_overlay = Overlay::SUGAR;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Light")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { auto* l = n.as_leaf(); return l ? l->light_exposure : 0.0f; });
-                active_overlay = Overlay::LIGHT;
-            }
-            if (ImGui::Button("GA")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Gibberellin); });
-                active_overlay = Overlay::GIBBERELLIN;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Ethylene")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Ethylene); });
-                active_overlay = Overlay::ETHYLENE;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Stress")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.stress; });
-                active_overlay = Overlay::STRESS;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Water")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.local().chemical(ChemicalID::Water); });
-                active_overlay = Overlay::WATER;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Growth")) {
-                renderer.set_color_by_type(false);
-                const Genome& og = engine.get_plant(plant_id).genome();
-                const WorldParams& ow = engine.world_params();
-                renderer.set_color_mode([og, ow](const Node& n) -> float {
-                    using namespace meristem_helpers;
-                    if (auto* ap = n.as_apical()) {
-                        if (!ap->active) return 0.0f;
-                        float max_cost = og.growth_rate * ow.sugar_cost_meristem_growth;
-                        float gf = growth_fraction(n.local().chemical(ChemicalID::Sugar), max_cost,
-                                                   n.local().chemical(ChemicalID::Cytokinin), og.cytokinin_growth_threshold);
-                        float wgf = turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, og));
-                        return gf * wgf;
-                    } else if (auto* ra = n.as_root_apical()) {
-                        if (!ra->active) return 0.0f;
-                        float max_cost = og.root_growth_rate * ow.sugar_cost_root_growth;
-                        float gf = sugar_growth_fraction(n.local().chemical(ChemicalID::Sugar), max_cost);
-                        float wgf = turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, og));
-                        return gf * wgf;
-                    }
-                    return 0.0f;  // non-meristems: dark
-                });
-                active_overlay = Overlay::GROWTH;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Vascular")) {
-                renderer.set_color_by_type(false);
-                renderer.set_color_mode([](const Node& n) { return n.get_parent_auxin_flow_bias(); });
-                active_overlay = Overlay::VASCULAR;
+            // Scope sub-picker only for Level
+            if (g_overlay_category == OverlayCategory::Level) {
+                int sc = static_cast<int>(g_overlay_scope);
+                if (ImGui::Combo("Scope", &sc, "Local\0Vasculature\0")) {
+                    g_overlay_scope = static_cast<OverlayScope>(sc);
+                }
             }
 
-            if (active_overlay == Overlay::NODE_TYPE) {
+            // Type mode uses categorical color codepath; all others use a ChemicalAccessor.
+            if (g_overlay_category == OverlayCategory::Type) {
+                renderer.set_color_by_type(true);
+                renderer.set_color_mode(ChemicalAccessor{});
+                // Legend
                 ImGui::Spacing();
                 ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "Shoot Apical");
                 ImGui::SameLine();
@@ -663,17 +796,33 @@ int main(int argc, char* argv[]) {
                 ImGui::TextColored(ImVec4(0.6f, 0.2f, 0.8f, 1.0f), "Root Axillary");
                 ImGui::SameLine();
                 ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "Root");
-            } else if (active_overlay != Overlay::NONE) {
-                ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "Low");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "-");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "-");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "-");
-                ImGui::SameLine();
-                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
+            } else {
+                renderer.set_color_by_type(false);
+                bool is_starv = (g_overlay_category == OverlayCategory::Starvation);
+                renderer.set_color_mode_starvation(is_starv);
+                renderer.set_color_mode(build_color_accessor(g_overlay_category, g_overlay_chem, g_overlay_scope, engine));
+                if (g_overlay_category != OverlayCategory::Default) {
+                    ImGui::Spacing();
+                    if (is_starv) {
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "full coverage");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "no coverage");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "starving");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "dying");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "Low");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "-");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "-");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "-");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
+                    }
+                }
             }
         }
 
@@ -870,24 +1019,164 @@ int main(int argc, char* argv[]) {
             int w, h;
             glfwGetWindowSize(window, &w, &h);
             ImGui::SetNextWindowPos(ImVec2(static_cast<float>(w) - 320, 10), ImGuiCond_Once);
-            ImGui::SetNextWindowSize(ImVec2(310, 0), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(ImVec2(480, 0), ImGuiCond_Once);
             if (g_show_economy_modal) ImGui::SetNextWindowFocus();
 
             if (ImGui::Begin("Node Inspector", &g_show_node_panel, ImGuiWindowFlags_AlwaysAutoResize)) {
                 const Node& sel = *g_selected_node;
 
-                // Node type
-                const char* type_str = "?";
-                switch (sel.type) {
-                    case NodeType::STEM:           type_str = "STEM"; break;
-                    case NodeType::ROOT:           type_str = "ROOT"; break;
-                    case NodeType::LEAF:           type_str = "LEAF"; break;
-                    case NodeType::APICAL:         type_str = "APICAL"; break;
-                    case NodeType::ROOT_APICAL:    type_str = "ROOT_APICAL"; break;
-                }
-                ImGui::Text("Type: %s", type_str);
+                // --- IDENTITY ---
+                {
+                    const char* type_str = "?";
+                    switch (sel.type) {
+                        case NodeType::STEM:        type_str = "STEM"; break;
+                        case NodeType::ROOT:        type_str = "ROOT"; break;
+                        case NodeType::LEAF:        type_str = "LEAF"; break;
+                        case NodeType::APICAL:      type_str = "APICAL"; break;
+                        case NodeType::ROOT_APICAL: type_str = "ROOT_APICAL"; break;
+                    }
+                    ImGui::Text("ID: #%u  Type: %s", sel.id, type_str);
+                    ImGui::Text("Age: %u ticks (%.1f days)", sel.age, sel.age / 24.0f);
+                    ImGui::Text("Length: %s  Radius: %s", fmt_dist(glm::length(sel.offset)), fmt_dist(sel.radius));
+                    float cross_section = 3.14159f * sel.radius * sel.radius;
+                    ImGui::Text("Cross-section: %.4f dm\xC2\xB2", cross_section);
+                    ImGui::Text("Height (y): %.2f m", sel.position.y / 10.0f);  // dm -> m
+                    ImGui::Text("Nodes to seed: %d", nodes_to_seed(sel));
 
-                // Meristem info with growth factor breakdown
+                    const Genome& mg = engine.get_plant(plant_id).genome();
+                    if (sel.as_stem() || sel.as_root()) {
+                        uint32_t mat_ticks = sel.as_stem()
+                            ? mg.internode_maturation_ticks
+                            : mg.root_internode_maturation_ticks;
+                        bool mature = (sel.parent == nullptr) || (sel.age >= mat_ticks);
+                        ImGui::Text("Elongation: %s (age %u/%u)", mature ? "mature" : "growing", sel.age, mat_ticks);
+                        float hm = hydraulic_maturity(sel, mg) * 100.0f;
+                        ImGui::Text("Hydraulic maturity: %.0f%% closed", hm);
+                        ImGui::Text("PIN saturation: %.2f", sel.get_parent_auxin_flow_bias());
+                    }
+                    ImGui::Text("Starvation: %u ticks", sel.starvation_ticks);
+                    if (auto* leaf = sel.as_leaf()) {
+                        if (leaf->senescence_ticks > 0)
+                            ImGui::Text("Senescence: %u / %u ticks", leaf->senescence_ticks, mg.senescence_duration);
+                        else
+                            ImGui::Text("Senescence: healthy");
+                    }
+                }
+                ImGui::Separator();
+
+                // --- Per-edge transport capacity / actual-flow helpers ---
+                // Max Trans.: sum the diffusion-formula cap across all edges touching this
+                // node (sel->children and parent->sel).  Uses the same radius_factor and
+                // base/scale the engine uses inside compute_transport_flow.
+                // Transporting: sum of last-tick magnitudes where we track them
+                // (auxin via last_auxin_flux, sugar via tick_sugar_transport).
+                // Other chemicals currently have no per-tick flux tracking → "-".
+                const Genome& gnm = engine.get_plant(plant_id).genome();
+                const float ref_r = gnm.initial_radius;
+                const float min_conn_r = ref_r * 0.2f;
+                auto edge_max = [&](float child_radius, float base, float scale) -> float {
+                    float conn_r = std::max(std::min(child_radius, sel.radius), min_conn_r);
+                    float radius_factor = conn_r / std::max(ref_r, 1e-6f);
+                    return base + radius_factor * scale;
+                };
+                auto chem_max_trans = [&](float base, float scale) -> float {
+                    float total = 0.0f;
+                    for (const Node* c : sel.children) total += edge_max(c->radius, base, scale);
+                    if (sel.parent) total += edge_max(sel.radius, base, scale);
+                    return total;
+                };
+
+                float auxin_flux_sum = 0.0f;
+                for (const auto& [cptr, flux] : sel.last_auxin_flux) auxin_flux_sum += std::fabs(flux);
+                if (sel.parent) {
+                    auto it = sel.parent->last_auxin_flux.find(const_cast<Node*>(&sel));
+                    if (it != sel.parent->last_auxin_flux.end()) auxin_flux_sum += std::fabs(it->second);
+                }
+
+                float auxin_max   = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float cyt_max     = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float ga_max      = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float eth_max     = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
+                float sugar_max   = chem_max_trans(gnm.sugar_base_transport,   gnm.sugar_transport_scale);
+                float water_max   = chem_max_trans(gnm.water_base_transport,   gnm.water_transport_scale);
+
+                ImGui::Text("Chemicals:");
+                if (ImGui::BeginTable("chemicals", 10, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+                    ImGui::TableSetupColumn("Chem");
+                    ImGui::TableSetupColumn("L lvl"); ImGui::TableSetupColumn("L +"); ImGui::TableSetupColumn("L -");
+                    ImGui::TableSetupColumn("V lvl"); ImGui::TableSetupColumn("V +"); ImGui::TableSetupColumn("V -");
+                    ImGui::TableSetupColumn("T lvl"); ImGui::TableSetupColumn("T +"); ImGui::TableSetupColumn("T -");
+                    ImGui::TableHeadersRow();
+
+                    struct Row { const char* name; ChemicalID id; const char* (*fmt)(float); };
+                    Row rows[] = {
+                        {"Sugar",  ChemicalID::Sugar,       fmt_mass},
+                        {"Water",  ChemicalID::Water,       fmt_vol },
+                        {"Auxin",  ChemicalID::Auxin,       fmt_au  },
+                        {"Cyt",    ChemicalID::Cytokinin,   fmt_au  },
+                        {"GA",     ChemicalID::Gibberellin, fmt_au  },
+                        {"Eth",    ChemicalID::Ethylene,    fmt_au  },
+                        {"Stress", ChemicalID::Stress,      fmt_au  },
+                    };
+                    for (const Row& r : rows) {
+                        const size_t idx = static_cast<size_t>(r.id);
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0); ImGui::Text("%s", r.name);
+
+                        // Local
+                        float l_lvl = sel.local().chemical(r.id);
+                        float l_p = sel.tick_chem_produced[idx];
+                        float l_c = sel.tick_chem_consumed[idx];
+                        ImGui::TableSetColumnIndex(1); ImGui::Text("%s", r.fmt(l_lvl));
+                        ImGui::TableSetColumnIndex(2); ImGui::Text("%s", r.fmt(l_p));
+                        ImGui::TableSetColumnIndex(3); ImGui::Text("%s", r.fmt(l_c));
+
+                        // Vasculature
+                        const TransportPool* vp = vascular_scope(sel, r.id);
+                        if (vp) {
+                            float v_lvl = vp->chemical(r.id);
+                            ImGui::TableSetColumnIndex(4); ImGui::Text("%s", r.fmt(v_lvl));
+                            ImGui::TableSetColumnIndex(5); ImGui::Text("\xE2\x80\x94");  // em dash — vasc-scope produced/consumed deferred
+                            ImGui::TableSetColumnIndex(6); ImGui::Text("\xE2\x80\x94");
+                            // Total
+                            ImGui::TableSetColumnIndex(7); ImGui::Text("%s", r.fmt(l_lvl + v_lvl));
+                            ImGui::TableSetColumnIndex(8); ImGui::Text("%s", r.fmt(l_p));
+                            ImGui::TableSetColumnIndex(9); ImGui::Text("%s", r.fmt(l_c));
+                        } else {
+                            ImGui::TableSetColumnIndex(4); ImGui::Text("\xE2\x80\x94");
+                            ImGui::TableSetColumnIndex(5); ImGui::Text("\xE2\x80\x94");
+                            ImGui::TableSetColumnIndex(6); ImGui::Text("\xE2\x80\x94");
+                            ImGui::TableSetColumnIndex(7); ImGui::Text("%s", r.fmt(l_lvl));
+                            ImGui::TableSetColumnIndex(8); ImGui::Text("%s", r.fmt(l_p));
+                            ImGui::TableSetColumnIndex(9); ImGui::Text("%s", r.fmt(l_c));
+                        }
+                    }
+                    ImGui::EndTable();
+                }
+                ImGui::TextDisabled("L=local  V=vascular  T=total  +/- = this-tick produced/consumed");
+                ImGui::Separator();
+
+                // --- Sugar budget (last tick) ---
+                ImGui::Text("Sugar last tick:");
+                ImGui::Text("  Maintenance:  %s", fmt_mass(sel.tick_sugar_maintenance));
+                if (sel.tick_sugar_activity >= 0.0f) {
+                    ImGui::Text("  Produced:    +%s", fmt_mass(sel.tick_sugar_activity));
+                } else {
+                    ImGui::Text("  Growth:       %s", fmt_mass(sel.tick_sugar_activity));
+                }
+                if (sel.tick_sugar_transport < 0.0f) {
+                    ImGui::Text("  Exported:     %s", fmt_mass(sel.tick_sugar_transport));
+                } else if (sel.tick_sugar_transport > 0.0f) {
+                    ImGui::Text("  Imported:    +%s", fmt_mass(sel.tick_sugar_transport));
+                } else {
+                    ImGui::Text("  Transport:    0");
+                }
+
+                ImGui::Separator();
+
+                // --- ACTIVITY ---
+                ImGui::Text("Activity:");
+                ImGui::Separator();
                 if (auto* ap = sel.as_apical()) {
                     const Genome& mg = engine.get_plant(plant_id).genome();
                     const WorldParams& mw = engine.world_params();
@@ -963,89 +1252,51 @@ int main(int argc, char* argv[]) {
                                     auxin_pct, cyt_pct, sugar_pct);
                     }
                 } else if (auto* leaf = sel.as_leaf()) {
-                    // Leaf expansion growth fraction
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-                    if (leaf->leaf_size >= mg.max_leaf_size) {
-                        ImGui::Text("Growth: 0%% (full size)");
-                    } else {
-                        float auxin = sel.local().chemical(ChemicalID::Auxin);
-                        float auxin_sat = auxin / (auxin + std::max(mg.leaf_auxin_half_saturation, 1e-6f));
-                        float auxin_boost = 1.0f + mg.leaf_auxin_max_boost * auxin_sat;
-                        float remaining = mg.max_leaf_size - leaf->leaf_size;
-                        float max_growth = mg.leaf_growth_rate * auxin_boost;
-                        float water_gf = meristem_helpers::turgor_fraction(
-                            sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        float growth_cap = std::min(max_growth, remaining) * water_gf;
-                        float sugar_gf = (growth_cap > 1e-6f)
-                            ? std::min(sel.local().chemical(ChemicalID::Sugar) / (growth_cap * mw.sugar_cost_leaf_growth), 1.0f)
-                            : 1.0f;
-                        ImGui::Text("Growth: %.1f%%", water_gf * sugar_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%  Auxin: %3.0f%%",
-                                    sugar_gf * 100.0f, water_gf * 100.0f, auxin_sat * 100.0f);
-                    }
-                } else if (sel.as_stem()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
-                    float density_scale = mg.wood_density / mw.reference_wood_density;
+                    const Genome& lg = engine.get_plant(plant_id).genome();
+                    const WorldParams& lw = engine.world_params();
+                    float leaf_area = leaf->leaf_size * leaf->leaf_size;
+                    float angle_eff = 1.0f;
+                    float flen = glm::length(leaf->facing);
+                    if (flen > 1e-4f) angle_eff = std::max(0.0f, (leaf->facing / flen).y);
 
-                    // Elongation (rate-limited by sugar + water; modulated by GA/eth/auxin/stress)
-                    if (!sel.parent || sel.age >= mg.internode_maturation_ticks) {
-                        ImGui::Text("Elongate: 0%% (mature)");
-                    } else {
-                        float ga_mult = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
-                        float eth_fac = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
-                        float str_fac = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Stress) * mg.stress_elongation_inhibition);
-                        float axn_boost = meristem_helpers::auxin_growth_factor(
-                            sel.local().chemical(ChemicalID::Auxin), mg.stem_auxin_max_boost, mg.stem_auxin_half_saturation);
-                        float eff_rate = mg.internode_elongation_rate * ga_mult * eth_fac * str_fac * axn_boost;
-                        float eff_cost = eff_rate * mw.sugar_cost_stem_growth * density_scale;
-                        float sugar_gf = (eff_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / eff_cost, 1.0f) : 1.0f;
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        ImGui::Text("Elongate: %.1f%%", sugar_gf * water_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%", sugar_gf * 100.0f, water_gf * 100.0f);
-                    }
+                    // Leaf size + progress
+                    ImGui::Text("Leaf Size: %s / %s (%.0f%%)",
+                                fmt_dist(leaf->leaf_size), fmt_dist(lg.max_leaf_size),
+                                100.0f * leaf->leaf_size / std::max(lg.max_leaf_size, 1e-6f));
+                    ImGui::Text("Light: %.1f%%  Angle eff: %.0f%%",
+                                leaf->light_exposure * 100.0f, angle_eff * 100.0f);
 
-                    // Thickening (bias-driven, sugar-limited)
-                    float bias = sel.get_parent_auxin_flow_bias();
-                    if (bias < 1e-6f) {
-                        ImGui::Text("Thicken:  0%% (no flux)");
-                    } else {
-                        float thicken_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth * density_scale;
-                        float sugar_gf = (thicken_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
-                        ImGui::Text("Thicken:  %.1f%%", sugar_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Bias: %.4f", sugar_gf * 100.0f, bias);
-                    }
-                } else if (sel.as_root()) {
-                    const Genome& mg = engine.get_plant(plant_id).genome();
-                    const WorldParams& mw = engine.world_params();
+                    // Photosynthesis with stomatal conductance
+                    float lwcap = water_cap(sel, lg);
+                    float stomatal = (lwcap > 1e-6f)
+                        ? std::min(std::max(sel.local().chemical(ChemicalID::Water) / lwcap, 0.2f), 1.0f)
+                        : 1.0f;
+                    float production = leaf->light_exposure * angle_eff
+                        * lw.light_level * leaf_area
+                        * lw.sugar_production_rate * stomatal;
+                    ImGui::Text("Photo: %s/tick  Stomatal: %.0f%%",
+                                fmt_mass_rate(production), stomatal * 100.0f);
 
-                    // Elongation (rate-limited by sugar + water; modulated by GA/eth/auxin)
-                    if (!sel.parent || sel.age >= mg.root_internode_maturation_ticks) {
-                        ImGui::Text("Elongate: 0%% (mature)");
+                    // Transpiration
+                    float transpiration = lg.transpiration_rate * leaf_area * leaf->light_exposure;
+                    ImGui::Text("Transpire: -%s/tick", fmt_vol(transpiration));
+
+                    // Expansion grow choice
+                    if (leaf->leaf_size < lg.max_leaf_size) {
+                        float auxin_boost = meristem_helpers::auxin_growth_factor(
+                            sel.local().chemical(ChemicalID::Auxin), lg.leaf_auxin_max_boost, lg.leaf_auxin_half_saturation);
+                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), lwcap);
+                        float max_growth = lg.leaf_growth_rate * auxin_boost;
+                        float expand_cost = max_growth * lw.sugar_cost_leaf_growth;
+                        float expand_sug = (expand_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / expand_cost, 1.0f) : 1.0f;
+                        ImGui::Text("Expand:  Auxin: %.2fx  Water: %.0f%%  Sugar: %.0f%%",
+                                    auxin_boost, water_gf * 100.0f, expand_sug * 100.0f);
                     } else {
-                        float ga_mult = 1.0f + sel.local().chemical(ChemicalID::Gibberellin) * mg.ga_elongation_sensitivity;
-                        float eth_fac = std::max(0.0f, 1.0f - sel.local().chemical(ChemicalID::Ethylene) * mg.ethylene_elongation_inhibition);
-                        float axn_boost = meristem_helpers::auxin_growth_factor(
-                            sel.local().chemical(ChemicalID::Auxin), mg.root_auxin_max_boost, mg.root_auxin_half_saturation);
-                        float eff_rate = mg.root_internode_elongation_rate * ga_mult * eth_fac * axn_boost;
-                        float eff_cost = eff_rate * mw.sugar_cost_stem_growth;
-                        float sugar_gf = (eff_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / eff_cost, 1.0f) : 1.0f;
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), water_cap(sel, mg));
-                        ImGui::Text("Elongate: %.1f%%", sugar_gf * water_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Water: %3.0f%%", sugar_gf * 100.0f, water_gf * 100.0f);
+                        ImGui::Text("Expand: full size");
                     }
 
-                    // Thickening (bias-driven, sugar-limited; no density scale for roots)
-                    float bias = sel.get_parent_auxin_flow_bias();
-                    if (bias < 1e-6f) {
-                        ImGui::Text("Thicken:  0%% (no flux)");
-                    } else {
-                        float thicken_cost = mg.cambium_responsiveness * bias * mw.sugar_cost_stem_growth;
-                        float sugar_gf = (thicken_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
-                        ImGui::Text("Thicken:  %.1f%%", sugar_gf * 100.0f);
-                        ImGui::Text("  Sugar: %3.0f%%  Bias: %.4f", sugar_gf * 100.0f, bias);
-                    }
+                    // Carbon balance
+                    ImGui::Text("Carbon deficit: %u ticks", leaf->deficit_ticks);
                 } else if (sel.as_stem()) {
                     const Genome& mg = engine.get_plant(plant_id).genome();
                     const WorldParams& mw = engine.world_params();
@@ -1129,174 +1380,10 @@ int main(int argc, char* argv[]) {
                                     elong_sug * 100.0f, elong_wat * 100.0f);
                     }
                 }
-
-                ImGui::Text("ID: %u  Age: %u", sel.id, sel.age);
-                ImGui::Text("Radius: %s", fmt_dist(sel.radius));
-                ImGui::Text("Length: %s", fmt_dist(glm::length(sel.offset)));
-                if (auto* leaf = sel.as_leaf()) {
-                    const Genome& lg = engine.get_plant(plant_id).genome();
-                    const WorldParams& lw = engine.world_params();
-                    float leaf_area = leaf->leaf_size * leaf->leaf_size;
-                    float angle_eff = 1.0f;
-                    float flen = glm::length(leaf->facing);
-                    if (flen > 1e-4f) angle_eff = std::max(0.0f, (leaf->facing / flen).y);
-
-                    // Leaf size + progress
-                    ImGui::Text("Leaf Size: %s / %s (%.0f%%)",
-                                fmt_dist(leaf->leaf_size), fmt_dist(lg.max_leaf_size),
-                                100.0f * leaf->leaf_size / std::max(lg.max_leaf_size, 1e-6f));
-                    ImGui::Text("Light: %.1f%%  Angle eff: %.0f%%",
-                                leaf->light_exposure * 100.0f, angle_eff * 100.0f);
-
-                    // Photosynthesis with stomatal conductance
-                    float lwcap = water_cap(sel, lg);
-                    float stomatal = (lwcap > 1e-6f)
-                        ? std::min(std::max(sel.local().chemical(ChemicalID::Water) / lwcap, 0.2f), 1.0f)
-                        : 1.0f;
-                    float production = leaf->light_exposure * angle_eff
-                        * lw.light_level * leaf_area
-                        * lw.sugar_production_rate * stomatal;
-                    ImGui::Text("Photo: %s/tick  Stomatal: %.0f%%",
-                                fmt_mass_rate(production), stomatal * 100.0f);
-
-                    // Transpiration
-                    float transpiration = lg.transpiration_rate * leaf_area * leaf->light_exposure;
-                    ImGui::Text("Transpire: -%s/tick", fmt_vol(transpiration));
-
-                    // Expansion grow choice
-                    if (leaf->leaf_size < lg.max_leaf_size) {
-                        float auxin_boost = meristem_helpers::auxin_growth_factor(
-                            sel.local().chemical(ChemicalID::Auxin), lg.leaf_auxin_max_boost, lg.leaf_auxin_half_saturation);
-                        float water_gf = meristem_helpers::turgor_fraction(sel.local().chemical(ChemicalID::Water), lwcap);
-                        float max_growth = lg.leaf_growth_rate * auxin_boost;
-                        float expand_cost = max_growth * lw.sugar_cost_leaf_growth;
-                        float expand_sug = (expand_cost > 1e-6f) ? std::min(sel.local().chemical(ChemicalID::Sugar) / expand_cost, 1.0f) : 1.0f;
-                        ImGui::Text("Expand:  Auxin: %.2fx  Water: %.0f%%  Sugar: %.0f%%",
-                                    auxin_boost, water_gf * 100.0f, expand_sug * 100.0f);
-                    } else {
-                        ImGui::Text("Expand: full size");
-                    }
-
-                    // Carbon balance and senescence
-                    ImGui::Text("Carbon deficit: %u ticks", leaf->deficit_ticks);
-                    if (leaf->senescence_ticks > 0) {
-                        ImGui::Text("Senescence: %u / %u ticks", leaf->senescence_ticks, lg.senescence_duration);
-                    } else {
-                        ImGui::Text("Senescence: healthy");
-                    }
-                }
-                ImGui::Text("Starvation: %u ticks", sel.starvation_ticks);
-                ImGui::Text("Children: %d", static_cast<int>(sel.children.size()));
-
                 ImGui::Separator();
 
-                // --- Per-edge transport capacity / actual-flow helpers ---
-                // Max Trans.: sum the diffusion-formula cap across all edges touching this
-                // node (sel->children and parent->sel).  Uses the same radius_factor and
-                // base/scale the engine uses inside compute_transport_flow.
-                // Transporting: sum of last-tick magnitudes where we track them
-                // (auxin via last_auxin_flux, sugar via tick_sugar_transport).
-                // Other chemicals currently have no per-tick flux tracking → "-".
-                const Genome& gnm = engine.get_plant(plant_id).genome();
-                const float ref_r = gnm.initial_radius;
-                const float min_conn_r = ref_r * 0.2f;
-                auto edge_max = [&](float child_radius, float base, float scale) -> float {
-                    float conn_r = std::max(std::min(child_radius, sel.radius), min_conn_r);
-                    float radius_factor = conn_r / std::max(ref_r, 1e-6f);
-                    return base + radius_factor * scale;
-                };
-                auto chem_max_trans = [&](float base, float scale) -> float {
-                    float total = 0.0f;
-                    for (const Node* c : sel.children) total += edge_max(c->radius, base, scale);
-                    if (sel.parent) total += edge_max(sel.radius, base, scale);
-                    return total;
-                };
-
-                float auxin_flux_sum = 0.0f;
-                for (const auto& [cptr, flux] : sel.last_auxin_flux) auxin_flux_sum += std::fabs(flux);
-                if (sel.parent) {
-                    auto it = sel.parent->last_auxin_flux.find(const_cast<Node*>(&sel));
-                    if (it != sel.parent->last_auxin_flux.end()) auxin_flux_sum += std::fabs(it->second);
-                }
-
-                float auxin_max   = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
-                float cyt_max     = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
-                float ga_max      = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
-                float eth_max     = chem_max_trans(gnm.hormone_base_transport, gnm.hormone_transport_scale);
-                float sugar_max   = chem_max_trans(gnm.sugar_base_transport,   gnm.sugar_transport_scale);
-                float water_max   = chem_max_trans(gnm.water_base_transport,   gnm.water_transport_scale);
-
-                ImGui::Text("Chemical Levels:");
-                if (ImGui::BeginTable("chemicals", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-                    ImGui::TableSetupColumn("Chemical",     ImGuiTableColumnFlags_WidthFixed, 70);
-                    ImGui::TableSetupColumn("Self",         ImGuiTableColumnFlags_WidthFixed, 70);
-                    ImGui::TableSetupColumn("Transporting", ImGuiTableColumnFlags_WidthFixed, 80);
-                    ImGui::TableSetupColumn("Max Trans.",   ImGuiTableColumnFlags_WidthFixed, 80);
-                    ImGui::TableHeadersRow();
-
-                    // Sugar
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Sugar");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_mass(sel.local().chemical(ChemicalID::Sugar)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_mass(std::fabs(sel.tick_sugar_transport)));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_mass(sugar_max));
-
-                    // Auxin (dimensionless signaling units)
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Auxin");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Auxin)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("%s", fmt_au(auxin_flux_sum));
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(auxin_max));
-
-                    // Cytokinin (dimensionless signaling units)
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Cyt");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Cytokinin)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(cyt_max));
-
-                    // Gibberellin
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("GA");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Gibberellin)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(ga_max));
-
-                    // Ethylene
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Eth");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_au(sel.local().chemical(ChemicalID::Ethylene)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_au(eth_max));
-
-                    // Water (capacity-based resource, ml)
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0); ImGui::Text("Water");
-                    ImGui::TableSetColumnIndex(1); ImGui::Text("%s", fmt_vol(sel.local().chemical(ChemicalID::Water)));
-                    ImGui::TableSetColumnIndex(2); ImGui::Text("-");
-                    ImGui::TableSetColumnIndex(3); ImGui::Text("%s", fmt_vol(water_max));
-
-                    ImGui::EndTable();
-                }
-
-                ImGui::Separator();
-
-                // --- Sugar budget (last tick) ---
-                ImGui::Text("Sugar last tick:");
-                ImGui::Text("  Maintenance:  %s", fmt_mass(sel.tick_sugar_maintenance));
-                if (sel.tick_sugar_activity >= 0.0f) {
-                    ImGui::Text("  Produced:    +%s", fmt_mass(sel.tick_sugar_activity));
-                } else {
-                    ImGui::Text("  Growth:       %s", fmt_mass(sel.tick_sugar_activity));
-                }
-                if (sel.tick_sugar_transport < 0.0f) {
-                    ImGui::Text("  Exported:     %s", fmt_mass(sel.tick_sugar_transport));
-                } else if (sel.tick_sugar_transport > 0.0f) {
-                    ImGui::Text("  Imported:    +%s", fmt_mass(sel.tick_sugar_transport));
-                } else {
-                    ImGui::Text("  Transport:    0");
-                }
-
+                // --- NAVIGATION ---
+                ImGui::Text("Navigation:");
                 ImGui::Separator();
 
                 // Helper: node type as string

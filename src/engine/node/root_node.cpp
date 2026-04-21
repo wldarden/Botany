@@ -26,7 +26,9 @@ void RootNode::absorb_water(const Genome& g, const WorldParams& world) {
     float fill_fraction = (cap > 1e-6f) ? local().chemical(ChemicalID::Water) / cap : 1.0f;
     float gradient = std::max(0.0f, world.soil_moisture - fill_fraction);
     float absorbed = g.water_absorption_rate * surface_area * gradient;
-    local().chemical(ChemicalID::Water) = std::min(local().chemical(ChemicalID::Water) + absorbed, cap);
+    float water_before = local().chemical(ChemicalID::Water);
+    local().chemical(ChemicalID::Water) = std::min(water_before + absorbed, cap);
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Water)] += local().chemical(ChemicalID::Water) - water_before;
 }
 
 void RootNode::thicken(const Genome& g, const WorldParams& world) {
@@ -48,6 +50,7 @@ void RootNode::thicken(const Genome& g, const WorldParams& world) {
 
     float actual_rate = g.cambium_responsiveness * bias * sugar_gf;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_stem_growth;
     radius += actual_rate;
 }
 
@@ -75,6 +78,7 @@ void RootNode::elongate(const Genome& g, const WorldParams& world) {
 
     float actual_rate = effective_rate * sugar_gf * water_gf;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_stem_growth;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;
     }

@@ -47,6 +47,7 @@ void StemNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams&
     if (production < 1e-10f) return;
 
     local().chemical(ChemicalID::Sugar) += production;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Sugar)] += production;
     plant.add_sugar_produced(production);
 }
 
@@ -84,6 +85,7 @@ void StemNode::thicken(const Genome& g, const WorldParams& world) {
     float stress_boost = 1.0f + local().chemical(ChemicalID::Stress) * g.stress_thickening_boost;
     float actual_rate = g.cambium_responsiveness * bias * sugar_gf * stress_boost;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth * density_scale;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_stem_growth * density_scale;
     radius += actual_rate;
 }
 
@@ -113,6 +115,7 @@ void StemNode::elongate(const Genome& g, const WorldParams& world) {
 
     float actual_rate = effective_rate * sugar_gf * water_gf;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_stem_growth * density_scale;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_stem_growth * density_scale;
     if (current_len > 1e-4f) {
         offset += (offset / current_len) * actual_rate;
     }

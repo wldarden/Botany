@@ -69,6 +69,7 @@ void ApicalNode::produce_auxin(Plant& /*plant*/, const Genome& g, const WorldPar
     float produced = modulated_baseline * (1.0f + g.apical_growth_auxin_multiplier * growth_gf);
     local().chemical(ChemicalID::Auxin) += produced;
     tick_auxin_produced += produced;
+    tick_chem_produced[static_cast<size_t>(ChemicalID::Auxin)] += produced;
 }
 
 void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParams& world) {
@@ -78,6 +79,7 @@ void ApicalNode::photosynthesize(Plant& plant, const Genome& g, const WorldParam
     float production = light * world.sugar_maintenance_meristem * world.sugar_meristem_photosynthesis;
     if (production > 0.0f) {
         local().chemical(ChemicalID::Sugar) += production;
+        tick_chem_produced[static_cast<size_t>(ChemicalID::Sugar)] += production;
         plant.add_sugar_produced(production);
 
     }
@@ -201,6 +203,7 @@ void ApicalNode::elongate(Plant& plant, const Genome& g, const WorldParams& worl
         local().chemical(ChemicalID::Auxin), g.apical_auxin_max_boost, g.apical_auxin_half_saturation);
     float actual_rate = g.growth_rate * gf * auxin_boost;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_meristem_growth;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_meristem_growth;
     offset += growth_dir * actual_rate;
 }
 
@@ -259,6 +262,7 @@ void ApicalNode::spawn_leaf(Plant& plant, Node* internode, const Genome& g, cons
     // Meristem gives the new leaf some sugar to bootstrap it
     float gift = std::min(local().chemical(ChemicalID::Sugar) * 0.1f, 0.5f);
     local().chemical(ChemicalID::Sugar) -= gift;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += gift;
     leaf->local().chemical(ChemicalID::Sugar) = gift;
     internode->add_child(leaf);
     leaf->position = internode->position + leaf->offset;
@@ -297,6 +301,7 @@ void ApicalNode::activate(const Genome& g, const WorldParams& world) {
     ever_active = true;
     active = true;
     local().chemical(ChemicalID::Sugar) -= world.sugar_cost_activation;
+    tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += world.sugar_cost_activation;
     radius = g.initial_radius;
 
     // Set growth direction from branch offset
