@@ -474,6 +474,20 @@ void Node::transport_with_children(const Genome& g) {
             if (dp.id == ChemicalID::Auxin) {
                 last_auxin_flux[ci.child] += give;
             }
+            // Diffusion flux+cap for GA, Ethylene, Stress (skip Auxin — PIN handles it).
+            if (dp.id == ChemicalID::Gibberellin ||
+                dp.id == ChemicalID::Ethylene    ||
+                dp.id == ChemicalID::Stress) {
+                const size_t idx = static_cast<size_t>(dp.id);
+                // Phase 1: child→parent; negative from parent-edge perspective.
+                tick_edge_flux[idx][ci.child] -= give;
+                // Cap: theoretical max throughput of this edge (matches compute_transport_flow).
+                float min_r = ref_radius * 0.2f;
+                float conn_r = std::max(std::min(ci.child_radius, radius), min_r);
+                float radius_factor = conn_r / std::max(ref_radius, 1e-6f);
+                float cap = dp.base_transport + radius_factor * dp.transport_scale;
+                tick_edge_cap[idx][ci.child] += cap;
+            }
         }
         local().chemical(dp.id) = parent_val;
 
@@ -512,6 +526,23 @@ void Node::transport_with_children(const Genome& g) {
                 receivers.push_back({ci.child, ci.desired, ci.desired * ci.bias_mult, headroom});
                 sum_receiver_caps += ci.child_cap;
                 sum_receiver_vals += ci.child->local().chemical(dp.id);
+            }
+        }
+
+        // Record diffusion cap once per receiver edge for GA, Ethylene, Stress.
+        // Done here (after receivers list is built, before the while loop) so
+        // cap is counted exactly once per tick regardless of while iterations.
+        if (dp.id == ChemicalID::Gibberellin ||
+            dp.id == ChemicalID::Ethylene    ||
+            dp.id == ChemicalID::Stress) {
+            const size_t idx = static_cast<size_t>(dp.id);
+            for (const auto& ci : infos) {
+                if (ci.desired <= 0.0f) continue; // only Phase-2 receivers
+                float min_r = ref_radius * 0.2f;
+                float conn_r = std::max(std::min(ci.child_radius, radius), min_r);
+                float radius_factor = conn_r / std::max(ref_radius, 1e-6f);
+                float cap = dp.base_transport + radius_factor * dp.transport_scale;
+                tick_edge_cap[idx][ci.child] += cap;
             }
         }
 
@@ -570,6 +601,16 @@ void Node::transport_with_children(const Genome& g) {
                 if (r.headroom < 1e-8f) any_filled = true;
                 if (dp.id == ChemicalID::Auxin) {
                     last_auxin_flux[r.child] += actual;
+                }
+                // Diffusion flux+cap for GA, Ethylene, Stress (skip Auxin — PIN handles it).
+                // Phase 2: parent→child; positive from parent-edge perspective.
+                // Cap is recorded separately after the receivers list is built so it
+                // is accumulated only once per edge per tick (not once per while iteration).
+                if (dp.id == ChemicalID::Gibberellin ||
+                    dp.id == ChemicalID::Ethylene    ||
+                    dp.id == ChemicalID::Stress) {
+                    const size_t idx = static_cast<size_t>(dp.id);
+                    tick_edge_flux[idx][r.child] += actual;
                 }
             }
 

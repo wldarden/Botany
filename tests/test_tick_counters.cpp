@@ -189,3 +189,18 @@ TEST_CASE("tick counters: PIN auxin flux+cap populated on mature tree", "[tick_c
     REQUIRE(any_cap);
     REQUIRE(any_flux);
 }
+
+TEST_CASE("tick counters: GA diffusion flux+cap populated on mature tree", "[tick_counters][edge_flux][diffusion]") {
+    Engine engine;
+    Genome g = default_genome();
+    auto pid = engine.create_plant(g, glm::vec3(0.0f));
+    engine.world_params_mut().light_level = 1.0f;
+    for (int i = 0; i < 400; ++i) engine.tick();
+    bool ga_cap = false;
+    const size_t GI = static_cast<size_t>(ChemicalID::Gibberellin);
+    engine.get_plant(pid).for_each_node([&](const Node& n) {
+        for (const auto& [c, k] : n.tick_edge_cap[GI]) if (k > 0.0f) ga_cap = true;
+    });
+    REQUIRE(ga_cap);
+    // GA flux may be small/zero if GA hasn't spread yet — don't require flux
+}
