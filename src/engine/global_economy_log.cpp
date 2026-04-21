@@ -43,6 +43,7 @@ const char* chemical_name(ChemicalID id) {
         case ChemicalID::Gibberellin: return "Gibberellin";
         case ChemicalID::Stress:      return "Stress";
         case ChemicalID::Ethylene:    return "Ethylene";
+        case ChemicalID::Count:       break;
     }
     return "?";
 }

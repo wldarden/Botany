@@ -150,6 +150,7 @@ static const char* chemical_name(ChemicalID id) {
         case ChemicalID::Ethylene:    return "Ethylene";
         case ChemicalID::Stress:      return "Stress";
         case ChemicalID::Water:       return "Water";
+        case ChemicalID::Count:       break;
     }
     return "?";
 }

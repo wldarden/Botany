@@ -14,6 +14,7 @@ enum class ChemicalID : uint8_t {
     Ethylene,
     Stress,
     Water,
+    Count,   // sentinel — keep last; used for fixed-size per-chemical arrays
 };
 
 enum class ChemicalCategory : uint8_t {
