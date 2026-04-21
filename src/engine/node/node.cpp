@@ -209,7 +209,9 @@ void Node::compute_stress(const Genome& g, const WorldParams& world) {
         if (stress_ratio > g.stress_hormone_threshold) {
             float excess = (stress_ratio - g.stress_hormone_threshold)
                          / (1.0f - g.stress_hormone_threshold);
-            local().chemical(ChemicalID::Stress) += excess * g.stress_hormone_production_rate;
+            float stress_amt = excess * g.stress_hormone_production_rate;
+            local().chemical(ChemicalID::Stress) += stress_amt;
+            tick_chem_produced[static_cast<size_t>(ChemicalID::Stress)] += stress_amt;
         }
     }
 }
