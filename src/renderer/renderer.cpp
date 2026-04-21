@@ -181,6 +181,8 @@ void Renderer::draw_plant(const Plant& plant) {
                 float v = chemical_accessor_(node);
                 if (starvation_mode_) {
                     leaf_color = starvation_color(v);
+                } else if (std::isnan(v)) {
+                    leaf_color = glm::vec3(0.3f, 0.3f, 0.3f);  // neutral gray for out-of-scope nodes
                 } else {
                     leaf_color = heatmap(v / max_for(node));
                 }
@@ -232,6 +234,8 @@ void Renderer::draw_plant(const Plant& plant) {
             float v = chemical_accessor_(node);
             if (starvation_mode_) {
                 color = starvation_color(v);
+            } else if (std::isnan(v)) {
+                color = glm::vec3(0.3f, 0.3f, 0.3f);  // neutral gray for out-of-scope nodes
             } else {
                 color = heatmap(v / max_for(node));
             }
