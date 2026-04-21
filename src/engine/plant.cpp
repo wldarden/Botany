@@ -156,6 +156,10 @@ void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
         n->last_auxin_flux.clear();
         n->tick_auxin_produced = 0.0f;
         n->tick_cytokinin_produced = 0.0f;
+        n->tick_chem_produced.fill(0.0f);
+        n->tick_chem_consumed.fill(0.0f);
+        for (auto& m : n->tick_edge_flux) m.clear();
+        for (auto& m : n->tick_edge_cap)  m.clear();
     }
 
     // Reset the per-tick primary-meristem trackers.  Meristems set these
