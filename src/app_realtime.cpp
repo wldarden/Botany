@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
 #include <map>
 
 using namespace botany;
@@ -355,7 +356,39 @@ static ChemicalAccessor build_growth_accessor(const Engine& engine) {
         return std::numeric_limits<float>::quiet_NaN();
     };
 }
-static ChemicalAccessor build_activation_accessor(const Engine&) { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
+static ChemicalAccessor build_activation_accessor(const Engine& engine) {
+    return [&engine](const Node& n) -> float {
+        if (!n.as_stem() && !n.as_root()) return std::numeric_limits<float>::quiet_NaN();
+        const Genome& g      = engine.get_plant(0).genome();
+        const WorldParams& w = engine.world_params();
+
+        float best = -1.0f;  // track the max readiness among dormant children
+        for (const Node* child : n.children) {
+            if (auto* ap = child->as_apical(); ap && !ap->active) {
+                float stem_auxin = n.local().chemical(ChemicalID::Auxin);
+                float local_cyt  = n.local().chemical(ChemicalID::Cytokinin);
+                float sugar      = child->local().chemical(ChemicalID::Sugar);
+                float auxin_pct = std::max(0.0f, (g.auxin_threshold - stem_auxin) / std::max(g.auxin_threshold, 1e-6f));
+                float cyt_pct   = std::min(local_cyt / std::max(g.cytokinin_threshold, 1e-6f), 1.0f);
+                float sugar_pct = std::min(sugar / std::max(w.sugar_cost_activation, 1e-6f), 1.0f);
+                float ready = std::min({auxin_pct, cyt_pct, sugar_pct});
+                best = std::max(best, ready);
+            }
+            if (auto* ra = child->as_root_apical(); ra && !ra->active) {
+                float auxin = child->local().chemical(ChemicalID::Auxin);
+                float cyt   = child->local().chemical(ChemicalID::Cytokinin);
+                float sugar = child->local().chemical(ChemicalID::Sugar);
+                float auxin_pct = std::min(auxin / std::max(g.root_auxin_activation_threshold, 1e-6f), 1.0f);
+                float cyt_pct   = std::max(0.0f, (g.root_cytokinin_inhibition_threshold - cyt) / std::max(g.root_cytokinin_inhibition_threshold, 1e-6f));
+                float sugar_pct = std::min(sugar / std::max(w.sugar_cost_activation, 1e-6f), 1.0f);
+                float ready = std::min({auxin_pct, cyt_pct, sugar_pct});
+                best = std::max(best, ready);
+            }
+        }
+        if (best < 0.0f) return std::numeric_limits<float>::quiet_NaN();  // no dormant child — gray
+        return best;
+    };
+}
 static ChemicalAccessor build_starvation_accessor(const Engine&) { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
 
 static ChemicalAccessor build_color_accessor(OverlayCategory cat, ChemicalID chem, OverlayScope scope, const Engine& engine) {
