@@ -257,8 +257,104 @@ static OverlayCategory g_overlay_category = OverlayCategory::Default;
 static ChemicalID      g_overlay_chem     = ChemicalID::Sugar;
 static OverlayScope    g_overlay_scope    = OverlayScope::Local;
 
-// Stubs for Tasks 24-26 — return NaN so every node renders gray until implemented.
-static ChemicalAccessor build_growth_accessor(const Engine&)     { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
+// Task 24: Growth overlay — fraction of this-tick achievable growth (0=no growth, 1=genome-max).
+// Formulas mirror the Activity section in the Node Inspector panel exactly.
+static ChemicalAccessor build_growth_accessor(const Engine& engine) {
+    return [&engine](const Node& n) -> float {
+        const Genome&     g = engine.get_plant(0).genome();
+        const WorldParams& w = engine.world_params();
+
+        // STEM
+        if (auto* s = n.as_stem()) {
+            // Seed = no parent → NaN (seed doesn't grow via normal stem rules)
+            if (!n.parent) return std::numeric_limits<float>::quiet_NaN();
+
+            if (n.age < g.internode_maturation_ticks) {
+                // Elongating internode: mirror panel's Elongate block (lines ~1162-1181)
+                float density_scale = g.wood_density / w.reference_wood_density;
+                float ga_elong      = 1.0f + n.local().chemical(ChemicalID::Gibberellin) * g.ga_elongation_sensitivity;
+                float eth_elong     = std::max(0.0f, 1.0f - n.local().chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
+                float stress_elong  = std::max(0.0f, 1.0f - n.local().chemical(ChemicalID::Stress) * g.stress_elongation_inhibition);
+                float auxin_elong   = meristem_helpers::auxin_growth_factor(
+                    n.local().chemical(ChemicalID::Auxin), g.stem_auxin_max_boost, g.stem_auxin_half_saturation);
+                float eff_rate  = g.internode_elongation_rate * ga_elong * eth_elong * stress_elong * auxin_elong;
+                float elong_cost = eff_rate * w.sugar_cost_stem_growth * density_scale;
+                float sugar_gf  = (elong_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
+                float water_gf  = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+                return std::min(sugar_gf * water_gf, 1.0f);
+            } else {
+                // Mature: thickening — mirror panel's Thicken block (lines ~1152-1158)
+                float density_scale   = g.wood_density / w.reference_wood_density;
+                float bias            = n.get_parent_auxin_flow_bias();
+                if (bias < 1e-6f) return 0.0f;
+                float thicken_cost  = g.cambium_responsiveness * bias * w.sugar_cost_stem_growth * density_scale;
+                float sugar_gf      = (thicken_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
+                return std::min(bias * sugar_gf, 1.0f);
+            }
+        }
+
+        // ROOT
+        if (auto* r = n.as_root()) {
+            // Root seed (no parent) → NaN
+            if (!n.parent) return std::numeric_limits<float>::quiet_NaN();
+
+            if (n.age < g.root_internode_maturation_ticks) {
+                // Elongating root internode: mirror panel's root Elongate block (lines ~1208-1226)
+                float ga_elong   = 1.0f + n.local().chemical(ChemicalID::Gibberellin) * g.ga_elongation_sensitivity;
+                float eth_elong  = std::max(0.0f, 1.0f - n.local().chemical(ChemicalID::Ethylene) * g.ethylene_elongation_inhibition);
+                float auxin_elong = meristem_helpers::auxin_growth_factor(
+                    n.local().chemical(ChemicalID::Auxin), g.root_auxin_max_boost, g.root_auxin_half_saturation);
+                float eff_rate   = g.root_internode_elongation_rate * ga_elong * eth_elong * auxin_elong;
+                float elong_cost = eff_rate * w.sugar_cost_stem_growth;  // roots use sugar_cost_stem_growth (no density_scale)
+                float sugar_gf   = (elong_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / elong_cost, 1.0f) : 1.0f;
+                float water_gf   = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+                return std::min(sugar_gf * water_gf, 1.0f);
+            } else {
+                // Mature root: thickening — mirror panel's root Thicken block (lines ~1199-1204, no density_scale)
+                float bias       = n.get_parent_auxin_flow_bias();
+                if (bias < 1e-6f) return 0.0f;
+                float thicken_cost = g.cambium_responsiveness * bias * w.sugar_cost_stem_growth;
+                float sugar_gf     = (thicken_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / thicken_cost, 1.0f) : 1.0f;
+                return std::min(bias * sugar_gf, 1.0f);
+            }
+        }
+
+        // LEAF — mirror panel's Expand block (lines ~1131-1142)
+        if (auto* lf = n.as_leaf()) {
+            if (lf->leaf_size >= g.max_leaf_size) return 0.0f;
+            float lwcap      = water_cap(n, g);
+            float auxin_boost = meristem_helpers::auxin_growth_factor(
+                n.local().chemical(ChemicalID::Auxin), g.leaf_auxin_max_boost, g.leaf_auxin_half_saturation);
+            float water_gf   = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), lwcap);
+            float max_growth = g.leaf_growth_rate * auxin_boost;
+            float expand_cost = max_growth * w.sugar_cost_leaf_growth;
+            float sugar_gf   = (expand_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / expand_cost, 1.0f) : 1.0f;
+            return std::min(sugar_gf * water_gf, 1.0f);
+        }
+
+        // SHOOT APICAL MERISTEM — mirror panel's apical active block (lines ~1031-1039)
+        if (auto* ap = n.as_apical()) {
+            if (!ap->active) return std::numeric_limits<float>::quiet_NaN();
+            float max_cost = g.growth_rate * w.sugar_cost_meristem_growth;
+            float sugar_gf = (max_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+            float cyt      = n.local().chemical(ChemicalID::Cytokinin);
+            float cyt_gf   = cyt / (cyt + std::max(g.cytokinin_growth_threshold, 1e-6f));
+            float water_gf = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+            return std::min(sugar_gf * cyt_gf * water_gf, 1.0f);
+        }
+
+        // ROOT APICAL MERISTEM — mirror panel's root apical active block (lines ~1069-1075, no cyt gate)
+        if (auto* ra = n.as_root_apical()) {
+            if (!ra->active) return std::numeric_limits<float>::quiet_NaN();
+            float max_cost = g.root_growth_rate * w.sugar_cost_root_growth;
+            float sugar_gf = (max_cost > 1e-6f) ? std::min(n.local().chemical(ChemicalID::Sugar) / max_cost, 1.0f) : 1.0f;
+            float water_gf = meristem_helpers::turgor_fraction(n.local().chemical(ChemicalID::Water), water_cap(n, g));
+            return std::min(sugar_gf * water_gf, 1.0f);
+        }
+
+        return std::numeric_limits<float>::quiet_NaN();
+    };
+}
 static ChemicalAccessor build_activation_accessor(const Engine&) { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
 static ChemicalAccessor build_starvation_accessor(const Engine&) { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
 
