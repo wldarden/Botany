@@ -112,11 +112,11 @@ void write_chain_profile(const std::string& path, const Plant& plant) {
 
 int main(int argc, char* argv[]) {
     int num_ticks = 200;
+    int recording_interval = 1;   // save every Nth tick; 0 disables recording entirely
     std::string output_path = "recording.bin";
     std::string debug_log_path;    // optional; empty = no debug log
     std::string economy_log_path;  // optional; empty = no global economy log
     std::string chain_profile_path; // optional; empty = no chain-profile dump
-    bool no_recording = false;     // if true, skip the per-tick .bin recording entirely
     bool num_ticks_set = false;
     bool output_path_set = false;
 
@@ -128,8 +128,9 @@ int main(int argc, char* argv[]) {
             economy_log_path = argv[++a];
         } else if (arg == "--chain-profile" && a + 1 < argc) {
             chain_profile_path = argv[++a];
-        } else if (arg == "--no-recording") {
-            no_recording = true;
+        } else if (arg == "--recording-interval" && a + 1 < argc) {
+            recording_interval = std::atoi(argv[++a]);
+            if (recording_interval < 0) recording_interval = 0;
         } else if (!num_ticks_set && arg[0] != '-') {
             num_ticks = std::atoi(arg.c_str());
             num_ticks_set = true;
@@ -139,10 +140,22 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (no_recording) {
-        std::cout << "Running " << num_ticks << " ticks, recording DISABLED (--no-recording)" << std::endl;
+    // Count how many ticks will actually be saved: ticks at indices
+    // 0, interval, 2*interval, ... up to < num_ticks.  This matches the
+    // tick-loop condition `i % interval == 0` below.
+    uint32_t saved_tick_count = 0;
+    if (recording_interval > 0) {
+        saved_tick_count = (num_ticks + recording_interval - 1) / recording_interval;
+    }
+
+    if (recording_interval == 0) {
+        std::cout << "Running " << num_ticks << " ticks, recording DISABLED (--recording-interval 0)" << std::endl;
+    } else if (recording_interval == 1) {
+        std::cout << "Running " << num_ticks << " ticks, saving every tick to " << output_path << std::endl;
     } else {
-        std::cout << "Running " << num_ticks << " ticks, saving to " << output_path << std::endl;
+        std::cout << "Running " << num_ticks << " ticks, saving every "
+                  << recording_interval << " ticks (" << saved_tick_count
+                  << " snapshots total) to " << output_path << std::endl;
     }
     if (!debug_log_path.empty()) {
         std::cout << "Debug log: " << debug_log_path << std::endl;
@@ -159,23 +172,25 @@ int main(int argc, char* argv[]) {
         std::cout << "Global economy log: " << economy_log_path << std::endl;
     }
 
-    // Recording file: only opened/written when --no-recording is not set.
-    // Skipping the per-tick save dramatically reduces I/O for long sims and
-    // keeps disk usage flat; the sim is then compute-only.  Still emit the
-    // chain-profile and final node count for validation.
+    // Recording file: opened only if recording_interval > 0.  Header records
+    // the *actual* number of saved ticks so playback can consume it directly.
+    // Sparse recording (interval > 1) keeps disk usage flat for long sims
+    // while still allowing periodic inspection of trajectory.
     std::ofstream file;
-    if (!no_recording) {
+    if (recording_interval > 0) {
         file.open(output_path, std::ios::binary);
         if (!file) {
             std::cerr << "Failed to open " << output_path << std::endl;
             return 1;
         }
-        save_recording_header(file, g, static_cast<uint32_t>(num_ticks));
+        save_recording_header(file, g, saved_tick_count);
     }
 
     for (int i = 0; i < num_ticks; i++) {
         engine.tick();
-        if (!no_recording) save_tick(file, engine, 0);
+        if (recording_interval > 0 && (i % recording_interval) == 0) {
+            save_tick(file, engine, 0);
+        }
 
         if ((i + 1) % 50 == 0) {
             std::cout << "Tick " << (i + 1) << "/" << num_ticks
