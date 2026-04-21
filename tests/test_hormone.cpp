@@ -453,5 +453,8 @@ TEST_CASE("Cytokinin: RA produces CK without any local auxin", "[hormone]") {
     ra->tick(plant, world);
 
     // With decoupled production, CK should be produced regardless of auxin.
-    REQUIRE(ra->tick_cytokinin_produced > 0.0f);
+    // Expect substantial production (rate × mf_cyto ≈ 0.15 × ~1.0 ≈ 0.14);
+    // a floor/clamp accident that silently near-zeroed production would still
+    // satisfy `> 0.0f`, so guard with a meaningful threshold.
+    REQUIRE(ra->tick_cytokinin_produced > 0.01f);
 }
