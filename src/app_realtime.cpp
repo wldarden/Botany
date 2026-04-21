@@ -389,7 +389,20 @@ static ChemicalAccessor build_activation_accessor(const Engine& engine) {
         return best;
     };
 }
-static ChemicalAccessor build_starvation_accessor(const Engine&) { return [](const Node&){ return std::numeric_limits<float>::quiet_NaN(); }; }
+static ChemicalAccessor build_starvation_accessor(const Engine& engine) {
+    return [&engine](const Node& n) -> float {
+        const Genome& g      = engine.get_plant(0).genome();
+        const WorldParams& w = engine.world_params();
+        if (n.starvation_ticks > 0) {
+            float t = static_cast<float>(n.starvation_ticks) / std::max(static_cast<float>(w.starvation_ticks_max), 1.0f);
+            return 1.0f + std::min(t, 1.0f);   // [1, 2]
+        }
+        float cost = compute_maintenance_cost(n, g, w);
+        if (cost < 1e-9f) return 1.0f - 1e-4f;  // essentially green (no maintenance demand)
+        float coverage = std::min(n.local().chemical(ChemicalID::Sugar) / cost, 1.0f);
+        return coverage;   // [0, 1]
+    };
+}
 
 static ChemicalAccessor build_color_accessor(OverlayCategory cat, ChemicalID chem, OverlayScope scope, const Engine& engine) {
     switch (cat) {
@@ -785,18 +798,30 @@ int main(int argc, char* argv[]) {
                 ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "Root");
             } else {
                 renderer.set_color_by_type(false);
+                bool is_starv = (g_overlay_category == OverlayCategory::Starvation);
+                renderer.set_color_mode_starvation(is_starv);
                 renderer.set_color_mode(build_color_accessor(g_overlay_category, g_overlay_chem, g_overlay_scope, engine));
                 if (g_overlay_category != OverlayCategory::Default) {
                     ImGui::Spacing();
-                    ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "Low");
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "-");
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "-");
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "-");
-                    ImGui::SameLine();
-                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
+                    if (is_starv) {
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "full coverage");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "no coverage");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "starving");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "dying");
+                    } else {
+                        ImGui::TextColored(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), "Low");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "-");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "-");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "-");
+                        ImGui::SameLine();
+                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
+                    }
                 }
             }
         }

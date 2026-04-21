@@ -95,6 +95,8 @@ void Renderer::set_color_mode(ChemicalAccessor accessor) {
     chemical_accessor_ = std::move(accessor);
 }
 
+void Renderer::set_color_mode_starvation(bool on) { starvation_mode_ = on; }
+
 glm::vec3 Renderer::heatmap(float t) const {
     // blue (0) -> cyan (0.25) -> green (0.5) -> yellow (0.75) -> red (1)
     t = glm::clamp(t, 0.0f, 1.0f);
@@ -110,6 +112,22 @@ glm::vec3 Renderer::heatmap(float t) const {
     } else {
         float s = (t - 0.75f) / 0.25f;
         return glm::vec3(1.0f, 1.0f - s, 0.0f);
+    }
+}
+
+// Dual-LUT for starvation overlay.  v is in [0,2]:
+//   [0,1)  — not starving: yellow (0) -> green (1), coverage ratio
+//   [1,2]  — starving: orange (1) -> red (2), starvation-ticks ratio
+//   NaN    — gray (no maintenance demand or node excluded)
+glm::vec3 Renderer::starvation_color(float v) const {
+    if (std::isnan(v)) return glm::vec3(0.3f, 0.3f, 0.3f);
+    if (v < 1.0f) {
+        // yellow (1,1,0) -> green (0,1,0) as v goes 0->1
+        return glm::vec3(1.0f - v, 1.0f, 0.0f);
+    } else {
+        float t = std::min(v - 1.0f, 1.0f);
+        // orange (1,0.5,0) -> red (1,0,0) as t goes 0->1
+        return glm::vec3(1.0f, 0.5f * (1.0f - t), 0.0f);
     }
 }
 
@@ -161,7 +179,11 @@ void Renderer::draw_plant(const Plant& plant) {
 
             if (chemical_accessor_) {
                 float v = chemical_accessor_(node);
-                leaf_color = heatmap(v / max_for(node));
+                if (starvation_mode_) {
+                    leaf_color = starvation_color(v);
+                } else {
+                    leaf_color = heatmap(v / max_for(node));
+                }
                 // Chemical overlay → single color, no per-vertex shading
             } else {
                 glm::vec3 sun_color(0.2f, 0.6f, 0.15f);
@@ -208,7 +230,11 @@ void Renderer::draw_plant(const Plant& plant) {
         glm::vec3 color;
         if (chemical_accessor_) {
             float v = chemical_accessor_(node);
-            color = heatmap(v / max_for(node));
+            if (starvation_mode_) {
+                color = starvation_color(v);
+            } else {
+                color = heatmap(v / max_for(node));
+            }
         } else if (color_by_type_) {
             if (node.type == NodeType::APICAL) {
                 color = glm::vec3(1.0f, 0.2f, 0.2f);   // red
