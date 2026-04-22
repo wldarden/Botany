@@ -16,6 +16,7 @@ TEST_CASE("Starvation produces ethylene", "[ethylene]") {
     Node* stem = plant.create_node(NodeType::STEM, glm::vec3(0.0f, 1.0f, 0.0f), 0.05f);
     plant.seed_mut()->add_child(stem);
     stem->local().chemical(ChemicalID::Sugar) = 0.0f;
+    stem->starvation_ticks = g.ethylene_starvation_tick_threshold; // simulate sustained starvation
 
     // Place far from other nodes so spatial diffusion doesn't interfere
     stem->position = glm::vec3(100.0f, 100.0f, 100.0f);
@@ -126,6 +127,7 @@ TEST_CASE("Spatial diffusion spreads ethylene to nearby nodes", "[ethylene]") {
 
     Node* source = plant.create_node(NodeType::STEM, glm::vec3(0.0f), 0.05f);
     source->local().chemical(ChemicalID::Sugar) = 0.0f;
+    source->starvation_ticks = g.ethylene_starvation_tick_threshold; // satisfy sustained-starvation gate
     source->position = glm::vec3(10.0f, 10.0f, 10.0f);
     plant.seed_mut()->add_child(source);
 
@@ -170,6 +172,7 @@ TEST_CASE("Leaf above ethylene threshold begins senescence", "[ethylene][absciss
 
     Node* leaf = plant.create_node(NodeType::LEAF, glm::vec3(0.0f, 0.5f, 0.0f), 0.0f);
     leaf->as_leaf()->leaf_size = 0.2f;
+    leaf->age = g.min_leaf_age_before_abscission; // past newborn grace period
     leaf->local().chemical(ChemicalID::Ethylene) = g.ethylene_abscission_threshold + 0.1f;
     leaf->local().chemical(ChemicalID::Sugar) = 1.0f;
     plant.seed_mut()->add_child(leaf);

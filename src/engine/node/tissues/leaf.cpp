@@ -19,8 +19,15 @@ void LeafNode::update_tissue(Plant& plant, const WorldParams& world) {
     produce_gibberellin(g);
     float net_sugar = photosynthesize(plant, g, world);
     transpire(g, world);
-    // Ethylene-triggered senescence: high ethylene overrides carbon balance
-    if (senescence_ticks == 0 && local().chemical(ChemicalID::Ethylene) >= g.ethylene_abscission_threshold) {
+    // Ethylene-triggered senescence: high ethylene overrides carbon balance,
+    // but newborn leaves get a grace period (min_leaf_age_before_abscission)
+    // to expand to full size before ambient ethylene can kill them.  Without
+    // this, a newborn spawning into an already-ethylene-saturated cluster is
+    // dead on arrival — we saw this in a 1500-tick run where 244 consecutive
+    // leaves all senesced with lifespan ≈ 46 (senescence_duration = 48).
+    if (senescence_ticks == 0 &&
+        age >= g.min_leaf_age_before_abscission &&
+        local().chemical(ChemicalID::Ethylene) >= g.ethylene_abscission_threshold) {
         senescence_ticks = 1;
     }
     check_carbon_balance(g, world, net_sugar);

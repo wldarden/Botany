@@ -139,7 +139,8 @@ struct Genome {
     uint32_t min_leaf_age_before_abscission; // ticks — young leaves are immune (still growing)
 
     // Ethylene — stress/crowding gas signal, triggers leaf abscission
-    float ethylene_starvation_rate;       // production when sugar = 0
+    float ethylene_starvation_rate;       // production after sustained sugar starvation
+    uint32_t ethylene_starvation_tick_threshold; // min consecutive sugar<=0 ticks before starvation ethylene fires — prevents transient growth-driven sugar dips from flooding ethylene
     float ethylene_shade_rate;            // production from low light
     float ethylene_shade_threshold;       // light_exposure below which shade-ethylene kicks in
     float ethylene_age_rate;              // production ramp from old age
@@ -340,6 +341,7 @@ inline Genome default_genome() {
 
         // Ethylene
         .ethylene_starvation_rate = 0.3f,
+        .ethylene_starvation_tick_threshold = 12, // half a day — skip transient growth-phase sugar dips
         .ethylene_shade_rate = 0.2f,
         .ethylene_shade_threshold = 0.3f,
         .ethylene_age_rate = 0.05f,
