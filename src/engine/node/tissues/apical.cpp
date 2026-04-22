@@ -40,10 +40,27 @@ void ApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
         // keep starvation_ticks at 0 so check_starvation can't drive them
         // to death while dormant.  They can always reactivate via can_activate().
         starvation_ticks = 0;
-        if (can_activate(g, world)) activate(g, world);
+        if (can_activate(g, world)) {
+            activate(g, world);
+            dormant_ticks = 0; // fresh active span
+        } else {
+            dormant_ticks++;
+            // Dormancy death: non-primary buds that fail to activate for a
+            // full growing season get shed.  Real trees prune their latent
+            // bud inventory this way — prevents infinite accumulation of
+            // lateral buds on mature trunks.  Primary meristems are exempt
+            // because they sustain themselves via floor hormone production
+            // and the plant's continuity depends on them.
+            if (!is_primary && dormant_ticks >= g.meristem_dormancy_death_ticks) {
+                die(plant);
+                return;
+            }
+        }
         return;
     }
 
+    // Active — bud just grew or is growing.  Keep dormancy clock at zero.
+    dormant_ticks = 0;
     produce_auxin(plant, g, world);
     photosynthesize(plant, g, world);
     ticks_since_last_node++;

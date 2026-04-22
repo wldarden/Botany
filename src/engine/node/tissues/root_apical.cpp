@@ -49,9 +49,24 @@ void RootApicalNode::update_tissue(Plant& plant, const WorldParams& world) {
         // Reset starvation_ticks each tick so check_starvation() (which runs after
         // update_tissue) cannot accumulate to starvation_ticks_max.
         starvation_ticks = 0;
-        if (can_activate(g, world)) activate(g, world);
+        if (can_activate(g, world)) {
+            activate(g, world);
+            dormant_ticks = 0; // fresh active span
+        } else {
+            dormant_ticks++;
+            // Dormancy death: mirrors ApicalNode.  Non-primary root tips that
+            // fail to activate over a full growing season die off so a mature
+            // plant doesn't carry unbounded latent lateral-root inventory.
+            if (!is_primary && dormant_ticks >= g.meristem_dormancy_death_ticks) {
+                die(plant);
+                return;
+            }
+        }
         return;
     }
+
+    // Active — keep the dormancy clock reset.
+    dormant_ticks = 0;
 
     // Active root tips: auxin self-maintenance (local PIN-recycling maximum) and
     // cytokinin production from local metabolic state (sugar + water).  Both

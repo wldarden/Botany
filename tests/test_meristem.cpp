@@ -229,6 +229,81 @@ TEST_CASE("Axillary meristem activates when auxin low and cytokinin high", "[mer
     REQUIRE(active_after > active_before);
 }
 
+TEST_CASE("Dormant non-primary meristem dies after dormancy threshold", "[meristem][dormancy]") {
+    Genome g = default_genome();
+    g.meristem_dormancy_death_ticks = 5; // fast threshold for test
+    g.auxin_threshold = 0.0f;            // keep lateral buds from activating (ambient auxin always above threshold)
+    g.growth_rate = 0.5f;
+    g.shoot_plastochron = 1;
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Grow two internodes so a dormant lateral SA exists.
+    for (int i = 0; i < 2; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.local().chemical(ChemicalID::Sugar) = 100.0f;
+            n.local().chemical(ChemicalID::Auxin) = 1.0f; // keep laterals dormant
+        });
+        plant.tick(default_world_params());
+    }
+
+    // Grab a specific dormant non-primary bud and remember its id.
+    uint32_t target_id = 0;
+    bool found = false;
+    plant.for_each_node([&](const Node& n) {
+        if (found) return;
+        if (auto* ap = n.as_apical()) {
+            if (!ap->active && !ap->is_primary) { target_id = ap->id; found = true; }
+        }
+    });
+    REQUIRE(found);
+
+    // Stop further spawning so we isolate the aging-out behaviour.
+    g.shoot_plastochron = 1000000u;
+    // (Can't mutate plant's genome mid-sim, so instead stop supplying sugar so
+    // the active primary can't grow.  Plus keep auxin high on the target bud
+    // so it doesn't activate.)
+    for (int i = 0; i < 10; i++) {
+        plant.for_each_node_mut([](Node& n) {
+            n.local().chemical(ChemicalID::Sugar) = 0.0f; // halt growth
+            n.local().chemical(ChemicalID::Auxin) = 1.0f; // keep laterals dormant
+        });
+        plant.tick(default_world_params());
+    }
+
+    bool still_exists = false;
+    plant.for_each_node([&](const Node& n) {
+        if (n.id == target_id) still_exists = true;
+    });
+    REQUIRE_FALSE(still_exists);
+}
+
+TEST_CASE("Primary meristem survives past dormancy threshold", "[meristem][dormancy]") {
+    Genome g = default_genome();
+    g.meristem_dormancy_death_ticks = 5;
+    Plant plant(g, glm::vec3(0.0f));
+
+    // Find the primary SA and force-dormant it with dormant_ticks past the threshold.
+    ApicalNode* primary = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto* ap = n.as_apical()) if (ap->is_primary) primary = ap;
+    });
+    REQUIRE(primary != nullptr);
+    primary->active = false;
+    primary->dormant_ticks = g.meristem_dormancy_death_ticks + 100;
+
+    // Starve everything so can_activate fails — still shouldn't kill a primary.
+    plant.for_each_node_mut([](Node& n) { n.local().chemical(ChemicalID::Sugar) = 0.0f; });
+
+    uint32_t before_id = primary->id;
+    plant.tick(default_world_params());
+
+    ApicalNode* primary_after = nullptr;
+    plant.for_each_node_mut([&](Node& n) {
+        if (auto* ap = n.as_apical()) if (ap->id == before_id) primary_after = ap;
+    });
+    REQUIRE(primary_after != nullptr); // primary survived the threshold tick
+}
+
 // -----------------------------------------------------------------------
 // Bug: can_activate() read parent STEM cytokinin, but STEM conduit nodes
 // never accumulate cytokinin — it flows through them to SA sinks without

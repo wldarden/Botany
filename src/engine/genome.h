@@ -22,6 +22,7 @@ struct Genome {
     float cytokinin_sugar_half_saturation;  // g glucose — sugar level at which CK production hits half-max.
     float cytokinin_water_half_saturation;  // ml — water level at which CK production hits half-max.
     float quiescence_threshold;             // ticks — active meristem reverts to dormant after this many consecutive low-sugar ticks (before starvation_ticks_max death).
+    uint32_t meristem_dormancy_death_ticks; // ticks — non-primary dormant meristem dies if it fails to activate this long. Mirrors real trees shedding unused axillary buds after ~1 growing season.
     uint32_t starvation_ticks_max_stem;     // ticks — STEM nodes (non-meristem woody tissue) survive this many consecutive zero-sugar ticks before death. Stand-in until starch reserves are modeled.
     uint32_t starvation_ticks_max_root;     // ticks — ROOT nodes (non-meristem root tissue) survive this many consecutive zero-sugar ticks before death. Fine roots have less reserve than trunk.
     float auxin_bias;                  // equilibrium shift for basipetal flow (negative = toward root)
@@ -235,6 +236,7 @@ inline Genome default_genome() {
         .cytokinin_sugar_half_saturation = 0.05f, // CK more sensitive to sugar than auxin; sharper response
         .cytokinin_water_half_saturation = 0.1f,  // matches auxin water sensitivity
         .quiescence_threshold = 150.0f,           // ~6 days — meristem goes dormant after sustained starvation, well before death (starvation_ticks_max = 2200)
+        .meristem_dormancy_death_ticks = 2000,    // ~83 days / one growing season — unactivated axillary buds die off so trunks don't carry infinite inventory of latent buds
         .starvation_ticks_max_stem = 8000,        // ~333 days — woody trunks carry significant parenchyma starch reserves
         .starvation_ticks_max_root = 6000,        // ~250 days — root tissue reserves somewhat less than trunk; fine roots die faster than woody roots
         .auxin_bias = -0.1f,                  // gentle basipetal shift (auxin accumulates toward root)
@@ -269,20 +271,20 @@ inline Genome default_genome() {
         .stem_green_radius_threshold = 0.04f,     // 4mm radius — thicker than initial (1.5mm) but thin
 
         .growth_rate = 0.002f,              // ~5 mm/day = 0.2 mm/hr
-        .shoot_plastochron = 24,            // 1 day between node creation (like real meristems)
+        .shoot_plastochron = 48,            // 1 day between node creation (like real meristems)
         .branch_angle = 0.785f,             // ~45 degrees
         .cambium_responsiveness = 0.0002f, // dm/hr·bias — calibrated so main trunk (bias ~2.0) thickens at
                                             // ~0.00004 dm/hr, matching old thickening_rate. Lateral branches
                                             // with weaker canalization thicken proportionally less.
         .internode_elongation_rate = 0.004f, // dm/hr — intercalary stretch after creation
-        .max_internode_length = 1.0f,       // 10 cm — elongation target
+        .max_internode_length = 2.0f,       // 10 cm — elongation target
         .internode_maturation_ticks = 72,    // 3 days until elongation lockout (visual constraint)
 
         .root_growth_rate = 0.004f,         // ~1 cm/day = 0.4 mm/hr
-        .root_plastochron = 24,             // 1 day between root node creation
+        .root_plastochron = 48,             // 1 day between root node creation
         .root_branch_angle = 0.35f,         // ~20 degrees
         .root_internode_elongation_rate = 0.002f, // dm/hr
-        .root_internode_maturation_ticks = 48,    // 2 days until elongation lockout
+        .root_internode_maturation_ticks = 68,    // 2 days until elongation lockout
         .root_gravitropism_strength = .20f,
         .root_gravitropism_depth = 0.5f,
         .root_cytokinin_production_rate = 0.5f,    // raw rate (CK no longer gated on local auxin post-Task 1); set so ~20 active RAs feed xylem enough CK to drive SA growth

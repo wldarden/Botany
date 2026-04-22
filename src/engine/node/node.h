@@ -44,6 +44,14 @@ public:
     // --- Chemicals ---
     uint32_t starvation_ticks = 0;
 
+    // --- Meristem dormancy tracking (only used by APICAL and ROOT_APICAL) ---
+    // Counts consecutive ticks the meristem has been dormant (active=false).
+    // Resets to 0 on activation.  When it exceeds g.meristem_dormancy_death_ticks,
+    // non-primary meristems die().  Mirrors real-plant biology where unused
+    // lateral buds are physically shed (or overgrown by bark) after ~1 growing
+    // season of non-activation.
+    uint32_t dormant_ticks = 0;
+
     // --- Mass / stress (computed each tick, children's values are one tick stale) ---
     float total_mass = 0.0f;       // self mass + all children's total_mass
     glm::vec3 mass_moment{0.0f};   // self_mass * position + Σ child.mass_moment
