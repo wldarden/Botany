@@ -143,6 +143,7 @@ TEST_CASE("Root chain growth spawns root axillary on interior node", "[meristem]
     Genome g = default_genome();
     g.root_growth_rate = 0.5f;
     g.root_plastochron = 1; // spawn root node every tick for fast testing
+    g.primary_root_lateral_delay_internodes = 0; // disable head start for this test — we want to verify axillary spawning on the very first internode
     Plant plant(g, glm::vec3(0.0f));
 
     for (int i = 0; i < 3; i++) {

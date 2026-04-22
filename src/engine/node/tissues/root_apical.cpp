@@ -2,7 +2,9 @@
 #include "engine/node/meristems/helpers.h"
 #include "engine/plant.h"
 #include "engine/sugar.h"
+#include "engine/vascular_sub_stepped.h"
 #include "engine/world_params.h"
+#include <algorithm>
 #include <glm/geometric.hpp>
 
 namespace botany {
@@ -149,9 +151,29 @@ void RootApicalNode::elongate(const Genome& g, const WorldParams& world) {
     if (water_gf < 1e-6f) return;
     gf *= water_gf;
 
+    // Demand brake: if upstream xylem water is near cap, the plant already
+    // has plenty of water — there is no reason to keep extending roots and
+    // spending sugar to capture water no one is drinking.  When xylem fill
+    // is low (shoot draining faster than roots refill), brake opens and the
+    // RA grows at full sugar-limited rate.  When fill approaches cap, brake
+    // closes.  Linear in fill fraction; clamped to [0, 1].  Walks up to the
+    // nearest xylem-bearing ancestor since meristems have no xylem of
+    // their own.  Falls back to no brake (demand = 1) if no upstream xylem
+    // exists yet (early seedling case — lets roots establish unimpeded).
+    float demand = 1.0f;
+    for (const Node* n = parent; n != nullptr; n = n->parent) {
+        const TransportPool* xyl = n->xylem();
+        if (!xyl) continue;
+        const float cap = xylem_capacity(*n, g);
+        if (cap <= 1e-8f) continue;
+        const float fill = std::clamp(xyl->chemical(ChemicalID::Water) / cap, 0.0f, 1.0f);
+        demand = 1.0f - fill;
+        break;
+    }
+
     if (glm::length(growth_dir) < 1e-4f) roll_direction(g);
 
-    float actual_rate = g.root_growth_rate * gf;
+    float actual_rate = g.root_growth_rate * gf * demand;
     local().chemical(ChemicalID::Sugar) -= actual_rate * world.sugar_cost_root_growth;
     tick_chem_consumed[static_cast<size_t>(ChemicalID::Sugar)] += actual_rate * world.sugar_cost_root_growth;
     offset += growth_dir * actual_rate;
@@ -169,8 +191,14 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
     internode->add_child(this);
     position = internode->position + offset;
 
-    // Lateral branching: compute offset and spawn axillary bud
-    if (!plant.root_meristems_at_cap()) {
+    // Lateral branching: compute offset and spawn axillary bud.
+    // Primary RA suppresses lateral buds for its first N internodes so the
+    // tap root gets a head start before branching begins — otherwise the
+    // surface region of the primary gets densely branched with laterals
+    // that all sit near the shoot-auxin source and activate together.
+    const bool suppress_lateral =
+        is_primary && internodes_spawned < g.primary_root_lateral_delay_internodes;
+    if (!plant.root_meristems_at_cap() && !suppress_lateral) {
         glm::vec3 branch_dir_val = branch_direction(growth_dir, g.root_branch_angle, id);
         glm::vec3 ax_radial = branch_dir_val - growth_dir * glm::dot(branch_dir_val, growth_dir);
         float ax_rl = glm::length(ax_radial);
@@ -179,6 +207,7 @@ void RootApicalNode::spawn_internode(Plant& plant, const Genome& g) {
         spawn_axillary(plant, internode, g, lateral_offset);
     }
 
+    ++internodes_spawned;
     ticks_since_last_node = 0;
     growth_dir = glm::vec3(0.0f); // re-roll direction for next internode
 }

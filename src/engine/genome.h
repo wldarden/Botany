@@ -84,6 +84,7 @@ struct Genome {
     float root_ck_growth_floor;            // Km for CK-gated root elongation — low so trace CK permits growth; zero CK stops it
     float root_auxin_activation_threshold; // min auxin to activate dormant root meristem
     float root_cytokinin_inhibition_threshold; // cytokinin above this inhibits root activation
+    uint32_t primary_root_lateral_delay_internodes; // primary RA skips spawning dormant lateral buds for its first N internodes (head start for main tap root)
 
     // Geometry
     float max_leaf_size;              // dm — maximum leaf side-length
@@ -288,7 +289,8 @@ inline Genome default_genome() {
         .root_auxin_growth_threshold = 0.10f,       // Km for auxin-gated root elongation (mirrors SAM's cytokinin_growth_threshold pattern)
         .root_ck_growth_floor = 0.001f,             // low Km — trace CK permits growth, zero stops it
         .root_auxin_activation_threshold = 0.01f,  // below RA self-eq (~0.017) so deep lateral RAs can activate without shoot-delivered auxin
-        .root_cytokinin_inhibition_threshold = 0.15f, // mirrors auxin_threshold for symmetric branching control
+        .root_cytokinin_inhibition_threshold = 0.075f, // lowered to reach into the realized xylem CK range (~0.09–0.10 at surface) so inhibition actually fires and keeps dormant laterals dormant
+        .primary_root_lateral_delay_internodes = 5,    // primary tap root gets 5 internode head start before it starts laying down lateral buds
 
         .max_leaf_size = 1.5f,              // 15 cm side-length at maturity (realistic broad leaf)
         .leaf_growth_rate = 0.005f,         // ~0.5 mm/hr — full size (1.5dm) in ~300 hrs (~12 days)
