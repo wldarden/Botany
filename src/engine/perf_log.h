@@ -10,17 +10,22 @@
 namespace botany {
 
 struct PerfStats {
-    double light_ms = 0;
-    double plant_tick_ms = 0;
-    double debug_log_ms = 0;
+    // Top-level engine buckets.
+    double light_ms = 0;        // CPU light/shadow pass (0 when GPU LightSystem drives it, or on skipped intervals)
+    double plant_tick_ms = 0;   // total across all plants; phase0+phase1+phase2 should sum to ~this
+    double debug_log_ms = 0;    // --debug-log CSV write (not plant-sim)
 
-    // Node-level breakdown (accumulated across all nodes in a tick)
-    double node_position_ms = 0;
-    double node_maintenance_ms = 0;
-    double node_grow_ms = 0;
-    double node_mass_stress_ms = 0;
-    double node_droop_break_ms = 0;
-    double node_transport_ms = 0;
+    // Plant::tick_tree phase breakdown (all summed across all plants in a tick).
+    double phase0_auxin_transport_ms = 0;  // diffuse_auxin_across_seed_junction + pin_transport
+    double phase1_metabolism_ms      = 0;  // per-node DFS metabolism walk
+    double phase2_vascular_ms        = 0;  // full vascular_sub_stepped pass
+
+    // Vascular sub-phase breakdown (summed across N sub-steps × all plants).
+    // These should sum to ~phase2_vascular_ms (remainder is loop/budget overhead).
+    double vascular_inject_ms  = 0;
+    double vascular_jacobi_ms  = 0;
+    double vascular_radial_ms  = 0;
+    double vascular_extract_ms = 0;
 
     // Per-tick sugar accounting (g glucose, summed across all nodes in all plants)
     float sugar_spent_maintenance = 0;  // consumed by maintenance this tick
@@ -28,7 +33,6 @@ struct PerfStats {
     float sugar_spent_transport   = 0;  // moved between nodes this tick (= total exported = total imported)
 
     uint32_t node_count = 0;
-    uint32_t apical_count = 0;
 
     void reset() { *this = PerfStats{}; }
 };
@@ -38,8 +42,9 @@ public:
     void open(const std::string& path) {
         file_.open(path);
         if (file_) {
-            file_ << "tick,nodes,SA,total_ms,light_ms,plant_ms,debug_ms,"
-                  << "position_ms,maintenance_ms,grow_ms,mass_stress_ms,droop_break_ms,transport_ms,"
+            file_ << "tick,nodes,total_ms,light_ms,plant_ms,debug_ms,"
+                  << "phase0_auxin_ms,phase1_metabolism_ms,phase2_vascular_ms,"
+                  << "vascular_inject_ms,vascular_jacobi_ms,vascular_radial_ms,vascular_extract_ms,"
                   << "sugar_spent_maintenance,sugar_spent_growth,sugar_spent_transport\n";
         }
     }
@@ -54,17 +59,17 @@ public:
         double total = stats_.light_ms + stats_.plant_tick_ms + stats_.debug_log_ms;
         file_ << tick << ","
               << stats_.node_count << ","
-              << stats_.apical_count << ","
               << total << ","
               << stats_.light_ms << ","
               << stats_.plant_tick_ms << ","
               << stats_.debug_log_ms << ","
-              << stats_.node_position_ms << ","
-              << stats_.node_maintenance_ms << ","
-              << stats_.node_grow_ms << ","
-              << stats_.node_mass_stress_ms << ","
-              << stats_.node_droop_break_ms << ","
-              << stats_.node_transport_ms << ","
+              << stats_.phase0_auxin_transport_ms << ","
+              << stats_.phase1_metabolism_ms << ","
+              << stats_.phase2_vascular_ms << ","
+              << stats_.vascular_inject_ms << ","
+              << stats_.vascular_jacobi_ms << ","
+              << stats_.vascular_radial_ms << ","
+              << stats_.vascular_extract_ms << ","
               << stats_.sugar_spent_maintenance << ","
               << stats_.sugar_spent_growth << ","
               << stats_.sugar_spent_transport << "\n";

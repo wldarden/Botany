@@ -146,7 +146,7 @@ static void tick_recursive(Node& node, Plant& plant, const WorldParams& world) {
     }
 }
 
-void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
+void Plant::tick_tree(const WorldParams& world, PerfStats* perf) {
     // Clear last_auxin_flux on every node before anything writes to it this tick.
     // PIN writes first, then per-node diffusion accumulates during the DFS walk,
     // and update_canalization reads. The post-tick logger in engine.cpp reads the
@@ -172,10 +172,22 @@ void Plant::tick_tree(const WorldParams& world, PerfStats* /*perf*/) {
     // accumulator) can't leave us with zero source auxin.  The junction
     // transfer takes a diffusion-rate fraction first; pin_transport then
     // pumps the remainder.  Both paths deposit into root children's .local.
-    diffuse_auxin_across_seed_junction(*this, genome_); // explicit shoot↔root auxin bridge (bypasses seed.local)
-    pin_transport(*this, genome_);              // PIN-mediated polar auxin transport (before metabolism)
-    tick_recursive(*nodes_[0], *this, world);   // Phase 1: per-node metabolism
-    vascular_sub_stepped(*this, genome_, world); // Phase 2: vascular transport (after metabolism)
+    // Phase 0: polar auxin transport (seed-junction bridge + PIN).
+    {
+        ScopedTimer t(perf ? perf->phase0_auxin_transport_ms : ScopedTimer::dummy);
+        diffuse_auxin_across_seed_junction(*this, genome_); // explicit shoot↔root auxin bridge (bypasses seed.local)
+        pin_transport(*this, genome_);                      // PIN-mediated polar auxin transport (before metabolism)
+    }
+    // Phase 1: per-node metabolism DFS walk.
+    {
+        ScopedTimer t(perf ? perf->phase1_metabolism_ms : ScopedTimer::dummy);
+        tick_recursive(*nodes_[0], *this, world);
+    }
+    // Phase 2: vascular transport (sub-stepped; inner sub-phase timers live in vascular_sub_stepped.cpp).
+    {
+        ScopedTimer t(perf ? perf->phase2_vascular_ms : ScopedTimer::dummy);
+        vascular_sub_stepped(*this, genome_, world);
+    }
     flush_removals();
 
     // After the DFS walk + removals: if either primary meristem's tracker is
