@@ -549,7 +549,12 @@ TEST_CASE("GA boosts intercalary elongation rate", "[meristem][gibberellin]") {
 TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
     WorldParams wp = default_world_params();
 
-    // Plant 1: no ethylene on stem
+    // compute_ethylene() runs at tick start and resets ethylene to 0 before
+    // per-node metabolism, so tests can't pre-inject values.  Instead we
+    // arrange a natural production trigger on plant2: a starved, shaded
+    // leaf next to the stem produces ethylene, which diffuses onto the
+    // stem within the same tick and inhibits its elongation when the
+    // DFS walk reaches the stem.
     Genome g = default_genome();
     Plant plant1(g, glm::vec3(0.0f));
 
@@ -560,15 +565,25 @@ TEST_CASE("Ethylene inhibits elongation", "[meristem][ethylene]") {
     plant1.seed_mut()->add_child(stem1);
     fill_water(plant1, g);
 
-    // Plant 2: inject ethylene directly onto stem
+    // Plant 2: same stem plus a starved shaded leaf close enough to diffuse
+    // ethylene onto the stem (diffusion_radius = 1.0 dm by default; we place
+    // it 0.1 dm away so falloff ≈ 0.9).
     Plant plant2(g, glm::vec3(0.0f));
 
     Node* stem2 = plant2.create_node(NodeType::STEM, glm::vec3(0.0f, 0.5f, 0.0f), 0.05f);
     stem2->age = 1;
     stem2->local().chemical(ChemicalID::Sugar) = 50.0f;
-    stem2->local().chemical(ChemicalID::Ethylene) = 1.0f;  // direct injection
     plant2.seed_mut()->local().chemical(ChemicalID::Sugar) = 50.0f;
     plant2.seed_mut()->add_child(stem2);
+
+    Node* ethylene_source = plant2.create_node(NodeType::LEAF, glm::vec3(0.0f), 0.05f);
+    ethylene_source->position = stem2->position + glm::vec3(0.1f, 0.0f, 0.0f);
+    ethylene_source->local().chemical(ChemicalID::Sugar) = 0.0f; // starvation trigger
+    if (auto* leaf = ethylene_source->as_leaf()) {
+        leaf->leaf_size = 0.1f;
+        leaf->light_exposure = 0.01f; // shade trigger
+    }
+    stem2->add_child(ethylene_source);
     fill_water(plant2, g);
 
     float offset1_before = glm::length(stem1->offset);

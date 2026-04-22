@@ -344,7 +344,7 @@ inline Genome default_genome() {
         .ethylene_shade_threshold = 0.3f,
         .ethylene_age_rate = 0.05f,
         .ethylene_age_onset = 720,            // 30 days
-        .ethylene_crowding_rate = 0.1f,
+        .ethylene_crowding_rate = 0.0f,       // disabled: crowding per-neighbor was too strong on dense canopies (5× over abscission threshold from neighbor count alone) — shade + starvation + age cover the abscission cases we actually want
         .ethylene_crowding_radius = 0.5f,     // dm
         .ethylene_diffusion_radius = 1.0f,    // dm
         .ethylene_abscission_threshold = 0.5f,

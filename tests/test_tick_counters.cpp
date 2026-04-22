@@ -83,8 +83,10 @@ TEST_CASE("tick counters: GA and Ethylene produced populate after spin-up", "[ti
     });
     INFO("After 300 ticks, at least one leaf should have emitted GA this tick");
     REQUIRE(total_ga_prod > 0.0f);
-    // Ethylene: compute_ethylene() is currently not wired into Plant::tick_tree(),
-    // so no ethylene is produced in the running engine — zero is correct here.
+    // Ethylene: gas-cloud signal wired into Plant::tick_tree().  With a mature
+    // plant some leaves will trip starvation/shade/age triggers and produce,
+    // but the test genome's triggers may or may not fire on this particular
+    // topology — accept zero as a valid outcome.
     REQUIRE(total_eth_prod >= 0.0f);
 }
 

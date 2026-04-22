@@ -178,9 +178,14 @@ void Plant::tick_tree(const WorldParams& world, PerfStats* perf) {
         diffuse_auxin_across_seed_junction(*this, genome_); // explicit shoot↔root auxin bridge (bypasses seed.local)
         pin_transport(*this, genome_);                      // PIN-mediated polar auxin transport (before metabolism)
     }
-    // Phase 1: per-node metabolism DFS walk.
+    // Ethylene: signal-model gas cloud.  Reset + produce + diffuse before
+    // per-node metabolism so leaves read this tick's ethylene when they
+    // check their abscission threshold in update_tissue.  Billed to
+    // phase1_metabolism_ms since conceptually it's part of the per-node
+    // signaling layer that runs in Phase 1.
     {
         ScopedTimer t(perf ? perf->phase1_metabolism_ms : ScopedTimer::dummy);
+        compute_ethylene(*this, world);
         tick_recursive(*nodes_[0], *this, world);
     }
     // Phase 2: vascular transport (sub-stepped; inner sub-phase timers live in vascular_sub_stepped.cpp).

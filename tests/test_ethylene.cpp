@@ -97,6 +97,7 @@ TEST_CASE("Old leaf produces age ethylene", "[ethylene]") {
 
 TEST_CASE("Crowded nodes produce ethylene", "[ethylene]") {
     Genome g = default_genome();
+    g.ethylene_crowding_rate = 0.1f; // re-enable: the default ships at 0 (too aggressive on dense canopies)
     Plant plant(g, glm::vec3(0.0f));
 
     glm::vec3 center(5.0f, 5.0f, 5.0f);
@@ -214,4 +215,7 @@ TEST_CASE("Senescing leaf is removed after senescence_duration", "[ethylene][abs
     REQUIRE(plant.node_count() < count_before);
 }
 
-// Disabled: compute_ethylene is currently disabled in Plant::tick() (crowding kills leaves instantly)
+// Crowding trigger is disabled by default (ethylene_crowding_rate = 0) — on dense canopies it
+// produced multiples of the abscission threshold from neighbor count alone.  Shade, starvation,
+// and age are the active abscission drivers.  Tests that need crowding behavior should set the
+// rate explicitly.
