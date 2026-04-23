@@ -294,4 +294,22 @@ void Plant::for_each_node_mut(std::function<void(Node&)> fn) {
     }
 }
 
+Plant::Plant(const Genome& genome, bool /*empty_tag*/)
+    : genome_(genome)
+{
+    // Intentionally empty — snapshot loader populates nodes_ and sets next_id_.
+}
+
+std::unique_ptr<Plant> Plant::from_empty(const Genome& genome) {
+    return std::unique_ptr<Plant>(new Plant(genome, /*empty_tag=*/true));
+}
+
+void Plant::install_node(std::unique_ptr<Node> node) {
+    nodes_.push_back(std::move(node));
+}
+
+void Plant::set_next_id(uint32_t next) {
+    next_id_ = next;
+}
+
 } // namespace botany

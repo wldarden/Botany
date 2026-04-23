@@ -3,6 +3,7 @@
 #include "serialization/plant_snapshot.h"
 #include "engine/genome.h"
 #include "engine/plant.h"
+#include <memory>
 #include "engine/node/node.h"
 #include "engine/node/stem_node.h"
 #include "engine/node/tissues/leaf.h"
@@ -155,4 +156,21 @@ TEST_CASE("conduit pool chemicals round-trip", "[plant_snapshot][node]") {
     REQUIRE(p.phloem.at(ChemicalID::Sugar) == 0.05f);
     REQUIRE(p.xylem.at(ChemicalID::Water)  == 0.3f);
     REQUIRE(p.xylem.at(ChemicalID::Cytokinin) == 0.015f);
+}
+
+TEST_CASE("Plant::from_empty yields an empty plant", "[plant_snapshot][plant]") {
+    auto p = Plant::from_empty(default_genome());
+    REQUIRE(p != nullptr);
+    REQUIRE(p->node_count() == 0);
+}
+
+TEST_CASE("Plant::install_node + set_next_id populate nodes manually", "[plant_snapshot][plant]") {
+    auto p = Plant::from_empty(default_genome());
+    auto s = std::make_unique<StemNode>(99, glm::vec3(0.0f), 0.02f);
+    Node* raw = s.get();
+    p->install_node(std::move(s));
+    p->set_next_id(100);
+    REQUIRE(p->node_count() == 1);
+    REQUIRE(p->seed() == raw);
+    REQUIRE(p->next_id() == 100u); // next_id() increments; now 101
 }

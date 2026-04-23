@@ -15,6 +15,21 @@ class Plant {
 public:
     Plant(const Genome& genome, glm::vec3 position);
 
+    // Factory for loading from a snapshot: constructs a Plant with the given
+    // genome but no default seed/SA/RA.  Caller must install_node() for every
+    // node from the snapshot and then set_next_id() to match the snapshot's
+    // next-id counter before the plant is ticked.
+    static std::unique_ptr<Plant> from_empty(const Genome& genome);
+
+    // Install a pre-constructed node.  Takes ownership.  Caller is responsible
+    // for setting parent / children links, chemicals, and any subclass state
+    // before this plant is ticked.  Used by the snapshot loader.
+    void install_node(std::unique_ptr<Node> node);
+
+    // Override the id counter so future create_node() calls don't collide with
+    // ids already loaded from a snapshot.
+    void set_next_id(uint32_t next);
+
     const Genome& genome() const { return genome_; }
 
     const Node* seed() const { return nodes_[0].get(); }
@@ -56,6 +71,11 @@ public:
     int32_t primary_ra_id_this_tick = -1;
 
 private:
+    // Snapshot-load constructor: tag-dispatched so it doesn't collide with the
+    // normal (Genome, vec3) seeding constructor.  Leaves nodes_ empty.  The
+    // loader populates nodes via install_node() and then calls set_next_id().
+    Plant(const Genome& genome, bool /*empty_tag*/);
+
     void tick_tree(const WorldParams& world, PerfStats* perf);
     void promote_primary_meristems();  // called after tick_tree walk if a primary is missing
     Genome genome_;
