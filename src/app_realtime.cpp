@@ -13,6 +13,8 @@
 #include <limits>
 #include "engine/engine.h"
 #include "engine/genome_io.h"
+#include "serialization/plant_snapshot.h"
+#include <optional>
 #include "engine/node/node.h"
 #include "engine/node/tissues/leaf.h"
 #include "engine/node/tissues/apical.h"
@@ -349,6 +351,8 @@ static ChemicalAccessor build_color_accessor(OverlayCategory cat, ChemicalID che
 int main(int argc, char* argv[]) {
     std::string color_chemical;
     std::string world_path;
+    std::string load_plant_path;
+    std::string genome_override_path;
 
     bool log_perf = false;
     for (int i = 1; i < argc; i++) {
@@ -358,6 +362,10 @@ int main(int argc, char* argv[]) {
             world_path = argv[++i];
         } else if (std::strcmp(argv[i], "--logperf") == 0) {
             log_perf = true;
+        } else if (std::strcmp(argv[i], "--load-plant") == 0 && i + 1 < argc) {
+            load_plant_path = argv[++i];
+        } else if (std::strcmp(argv[i], "--genome-override") == 0 && i + 1 < argc) {
+            genome_override_path = argv[++i];
         }
     }
 
@@ -370,7 +378,29 @@ int main(int argc, char* argv[]) {
     int selected_genome = 0;  // 0 = "default"
 
     Genome g = default_genome();
-    PlantID plant_id = engine.create_plant(g, glm::vec3(0.0f));
+    PlantID plant_id;
+    if (!load_plant_path.empty()) {
+        std::optional<Genome> override;
+        if (!genome_override_path.empty()) {
+            override = load_genome_file(genome_override_path);
+        }
+        try {
+            LoadedPlant lp = load_plant_snapshot(load_plant_path, override);
+            g = lp.genome;
+            plant_id = engine.adopt_plant(std::move(lp.plant));
+            engine.set_tick(static_cast<uint32_t>(lp.engine_tick));
+            std::cerr << "Loaded plant from " << load_plant_path
+                      << " at tick " << lp.engine_tick << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to load snapshot: " << e.what() << "\n";
+            return 1;
+        }
+    } else {
+        plant_id = engine.create_plant(g, glm::vec3(0.0f));
+        if (!genome_override_path.empty()) {
+            std::cerr << "--genome-override ignored without --load-plant\n";
+        }
+    }
     engine.debug_log().open("debug/debug_log.csv");
     if (log_perf) {
         engine.perf_log().open("perf_log.csv");
