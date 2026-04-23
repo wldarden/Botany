@@ -291,3 +291,87 @@ TEST_CASE("loaded plant continues simulating without crashing", "[plant_snapshot
 
     std::filesystem::remove_all(tmp);
 }
+
+TEST_CASE("genome override replaces the embedded genome on load", "[plant_snapshot][override]") {
+    Genome original = default_genome();
+    original.growth_rate = 0.9999f;  // distinctive
+    Plant plant(original, glm::vec3(0.0f));
+
+    auto tmp = std::filesystem::temp_directory_path() / "botany_override_test";
+    std::filesystem::remove_all(tmp);
+    SaveResult sr = save_plant_snapshot(plant, 5, tmp.string());
+    REQUIRE(sr.ok);
+
+    Genome override_g = default_genome();
+    override_g.growth_rate = 0.00001f; // different, distinctive
+
+    LoadedPlant lp = load_plant_snapshot(sr.path, override_g);
+    REQUIRE(lp.genome.growth_rate == 0.00001f);
+    REQUIRE(lp.plant->genome().growth_rate == 0.00001f);
+
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("load rejects bad magic", "[plant_snapshot][corrupt]") {
+    auto tmp = std::filesystem::temp_directory_path() / "botany_bad_magic.tree";
+    { std::ofstream f(tmp, std::ios::binary); f.write("XXXX", 4); f.write("\x00\x00\x00\x00", 4); }
+    REQUIRE_THROWS_AS(load_plant_snapshot(tmp.string(), std::nullopt), std::runtime_error);
+    std::filesystem::remove(tmp);
+}
+
+TEST_CASE("load rejects unknown version", "[plant_snapshot][corrupt]") {
+    auto tmp = std::filesystem::temp_directory_path() / "botany_bad_version.tree";
+    { std::ofstream f(tmp, std::ios::binary);
+      f.write("BTNT", 4);
+      uint32_t bogus = 999999u;
+      f.write(reinterpret_cast<const char*>(&bogus), sizeof(bogus));
+    }
+    REQUIRE_THROWS_AS(load_plant_snapshot(tmp.string(), std::nullopt), std::runtime_error);
+    std::filesystem::remove(tmp);
+}
+
+TEST_CASE("load rejects truncated body", "[plant_snapshot][corrupt]") {
+    // Save a valid file, then truncate it to just the header.
+    Plant plant(default_genome(), glm::vec3(0.0f));
+    auto tmp = std::filesystem::temp_directory_path() / "botany_trunc_test";
+    std::filesystem::remove_all(tmp);
+    SaveResult sr = save_plant_snapshot(plant, 0, tmp.string());
+    REQUIRE(sr.ok);
+    std::filesystem::resize_file(sr.path, 64);
+    REQUIRE_THROWS_AS(load_plant_snapshot(sr.path, std::nullopt), std::runtime_error);
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("canalization bias preserved across save+load", "[plant_snapshot][canalization]") {
+    // Construct a small tree by hand with deterministic bias values (avoids
+    // relying on multi-tick sim dynamics for test stability).
+    Engine engine;
+    engine.create_plant(default_genome(), glm::vec3(0.0f));
+    for (int i = 0; i < 40; i++) engine.tick();
+    Plant& pl = engine.get_plant_mut(0);
+
+    // Inject known bias on the seed so we have a non-empty map guaranteed.
+    Node* seed = pl.seed_mut();
+    REQUIRE(!seed->children.empty());
+    Node* child0 = seed->children[0];
+    seed->auxin_flow_bias[child0] = 0.73f;
+
+    auto tmp = std::filesystem::temp_directory_path() / "botany_cana_test";
+    std::filesystem::remove_all(tmp);
+    SaveResult sr = save_plant_snapshot(pl, engine.get_tick(), tmp.string());
+    REQUIRE(sr.ok);
+
+    LoadedPlant lp = load_plant_snapshot(sr.path, std::nullopt);
+    Node* loaded_seed = lp.plant->seed_mut();
+    // Find the loaded-side child that has the same id as child0.
+    Node* loaded_child0 = nullptr;
+    for (Node* c : loaded_seed->children) {
+        if (c->id == child0->id) { loaded_child0 = c; break; }
+    }
+    REQUIRE(loaded_child0 != nullptr);
+    auto it = loaded_seed->auxin_flow_bias.find(loaded_child0);
+    REQUIRE(it != loaded_seed->auxin_flow_bias.end());
+    REQUIRE(it->second == 0.73f);
+
+    std::filesystem::remove_all(tmp);
+}
