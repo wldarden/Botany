@@ -475,3 +475,65 @@ TEST_CASE("Engine autocompress disabled does not run compression", "[compression
     for (int i = 0; i < 20; ++i) engine.tick();
     REQUIRE(engine.last_compression().passes_run == 0u);
 }
+
+#include "serialization/plant_snapshot.h"
+#include <glm/geometric.hpp>
+#include <filesystem>
+#include <optional>
+
+TEST_CASE("compression preserves leaves world-position after next tick", "[compression][integration]") {
+    Engine engine;
+    Genome g = default_genome();
+    engine.create_plant(g, glm::vec3(0.0f));
+    for (int i = 0; i < 300; ++i) engine.tick();
+    Plant& plant = engine.get_plant_mut(0);
+
+    // Snapshot every LEAF's world position pre-compression.
+    std::unordered_map<uint32_t, glm::vec3> leaf_pos_before;
+    plant.for_each_node([&](const Node& n) {
+        if (n.type == NodeType::LEAF) leaf_pos_before[n.id] = n.position;
+    });
+    REQUIRE(!leaf_pos_before.empty());
+
+    CompressionResult r = engine.trigger_compression();
+    // One more tick so sync_world_position runs on the modified chain.
+    engine.tick();
+
+    uint32_t checked = 0;
+    plant.for_each_node([&](const Node& n) {
+        if (n.type != NodeType::LEAF) return;
+        auto it = leaf_pos_before.find(n.id);
+        if (it == leaf_pos_before.end()) return; // leaf that was created post-compression
+        float d = glm::distance(n.position, it->second);
+        // Allow one tick of growth movement (leaves drift as stems elongate).
+        REQUIRE(d < 0.01f);
+        checked++;
+    });
+    // Only require that we actually checked something if compression ran.
+    if (r.merges_performed > 0u) REQUIRE(checked > 0u);
+}
+
+TEST_CASE("compress -> save -> load -> continue ticks cleanly", "[compression][integration]") {
+    Engine engine;
+    Genome g = default_genome();
+    engine.create_plant(g, glm::vec3(0.0f));
+    for (int i = 0; i < 300; ++i) engine.tick();
+    engine.trigger_compression();
+    uint32_t nodes_after_compress = engine.get_plant(0).node_count();
+
+    auto tmp = std::filesystem::temp_directory_path() / "botany_compress_snapshot_test";
+    std::filesystem::remove_all(tmp);
+    SaveResult sr = save_plant_snapshot(engine.get_plant(0), engine.get_tick(), tmp.string());
+    REQUIRE(sr.ok);
+
+    LoadedPlant lp = load_plant_snapshot(sr.path, std::nullopt);
+    REQUIRE(lp.plant->node_count() == nodes_after_compress);
+
+    Engine engineB;
+    engineB.adopt_plant(std::move(lp.plant));
+    engineB.set_tick(static_cast<uint32_t>(lp.engine_tick));
+    for (int i = 0; i < 20; ++i) engineB.tick();
+    REQUIRE(engineB.get_plant(0).node_count() > 0u);
+
+    std::filesystem::remove_all(tmp);
+}
