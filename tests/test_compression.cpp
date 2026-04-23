@@ -1,11 +1,14 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include <glm/vec3.hpp>
+#include <cmath>
 
 #include "engine/compression.h"
 #include "engine/plant.h"
 #include "engine/genome.h"
 
 using namespace botany;
+using Catch::Approx;
 
 TEST_CASE("compress_plant on a fresh young plant reports no merges", "[compression][stub]") {
     Plant plant(default_genome(), glm::vec3(0.0f));
@@ -191,4 +194,161 @@ TEST_CASE("can_merge: stem cannot absorb root-type child", "[compression][predic
 
     CompressionParams params;
     REQUIRE_FALSE(can_merge(*stem_ptr, *root_ptr, g, params));
+}
+
+// Forward-declaration of the test-visible helper.  compress_plant calls this
+// internally but the tests exercise it directly for precise assertions.
+namespace botany {
+void merge_pair(Plant& plant, Node& parent, Node& child, CompressionResult& result);
+}
+
+TEST_CASE("merge_pair absorbs C's geometry into P", "[compression][merge]") {
+    Genome g = default_genome();
+    auto c = build_stem_chain(g, 0.04f, 0.04f,
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        g.internode_maturation_ticks + 10, g.internode_maturation_ticks + 10);
+
+    CompressionResult result;
+    merge_pair(*c.plant, *c.A, *c.B, result);
+    c.plant->flush_removals();
+
+    // Post-merge A's offset is the grandparent→C vector.
+    REQUIRE(c.A->offset == glm::vec3(0.0f, 2.0f, 0.0f));
+    // Volume-preserving radius of two equal-radius, equal-length segments is the same radius.
+    REQUIRE(c.A->radius == Approx(0.04f).epsilon(1e-4));
+    REQUIRE(c.plant->node_count() == 2u); // seed + A; C removed
+    REQUIRE(result.merges_performed == 1u);
+}
+
+TEST_CASE("merge_pair uses volume-preserving radius on unequal r/L", "[compression][merge]") {
+    Genome g = default_genome();
+    // r1=0.05 L1=1.0, r2=0.03 L2=1.0 → r_merged = sqrt((0.0025 + 0.0009) / 2) = sqrt(0.0017)
+    auto c = build_stem_chain(g, 0.05f, 0.03f,
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        g.internode_maturation_ticks + 10, g.internode_maturation_ticks + 10);
+
+    // Temporarily loosen the radius ratio gate so the test can proceed.
+    // (can_merge defaults reject |0.05-0.03|/0.05 = 0.4 > 0.20.)
+    // merge_pair doesn't re-check; it's the caller's responsibility.
+    CompressionResult result;
+    merge_pair(*c.plant, *c.A, *c.B, result);
+    c.plant->flush_removals();
+
+    float expected = std::sqrt((0.05f*0.05f + 0.03f*0.03f) / 2.0f);
+    REQUIRE(c.A->radius == Approx(expected).epsilon(1e-4));
+}
+
+TEST_CASE("merge_pair sums local chemicals", "[compression][merge]") {
+    Genome g = default_genome();
+    auto c = build_stem_chain(g, 0.04f, 0.04f,
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        g.internode_maturation_ticks + 10, g.internode_maturation_ticks + 10);
+    c.A->local().chemical(ChemicalID::Sugar) = 0.003f;
+    c.B->local().chemical(ChemicalID::Sugar) = 0.005f;
+    c.A->local().chemical(ChemicalID::Water) = 2.0f;
+    c.B->local().chemical(ChemicalID::Water) = 3.0f;
+
+    CompressionResult result;
+    merge_pair(*c.plant, *c.A, *c.B, result);
+    c.plant->flush_removals();
+
+    // Caps on a 0.04 dm radius, L=2 dm stem are large enough to not clamp these values.
+    REQUIRE(c.A->local().chemical(ChemicalID::Sugar) == Approx(0.008f).epsilon(1e-5));
+    REQUIRE(c.A->local().chemical(ChemicalID::Water) == Approx(5.0f).epsilon(1e-5));
+    REQUIRE(result.delta_sugar == 0.0f); // no clamping
+    REQUIRE(result.delta_water == 0.0f);
+}
+
+TEST_CASE("merge_pair sums conduit pool chemicals", "[compression][merge]") {
+    Genome g = default_genome();
+    auto c = build_stem_chain(g, 0.04f, 0.04f,
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        g.internode_maturation_ticks + 10, g.internode_maturation_ticks + 10);
+    c.A->phloem()->chemical(ChemicalID::Sugar) = 0.001f;
+    c.B->phloem()->chemical(ChemicalID::Sugar) = 0.002f;
+    c.A->xylem()->chemical(ChemicalID::Water) = 0.5f;
+    c.B->xylem()->chemical(ChemicalID::Water) = 0.7f;
+
+    CompressionResult result;
+    merge_pair(*c.plant, *c.A, *c.B, result);
+    c.plant->flush_removals();
+
+    REQUIRE(c.A->phloem()->chemical(ChemicalID::Sugar) == Approx(0.003f).epsilon(1e-5));
+    REQUIRE(c.A->xylem()->chemical(ChemicalID::Water)  == Approx(1.2f).epsilon(1e-5));
+}
+
+TEST_CASE("merge_pair reparents children of C to P with same offsets", "[compression][merge]") {
+    Genome g = default_genome();
+    auto c = build_stem_chain(g, 0.04f, 0.04f,
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        g.internode_maturation_ticks + 10, g.internode_maturation_ticks + 10);
+    // Attach a leaf and a dormant bud to C — both should migrate to A.
+    auto leaf = std::make_unique<LeafNode>(100, glm::vec3(0.0f), 0.0f);
+    leaf->parent = c.B;
+    leaf->offset = glm::vec3(0.1f, 0.0f, 0.0f);
+    Node* leaf_ptr = leaf.get();
+    c.B->children.push_back(leaf_ptr);
+    c.plant->install_node(std::move(leaf));
+
+    auto bud = std::make_unique<ApicalNode>(101, glm::vec3(0.0f), 0.01f);
+    bud->parent = c.B;
+    bud->offset = glm::vec3(-0.1f, 0.0f, 0.0f);
+    Node* bud_ptr = bud.get();
+    if (auto* a = bud_ptr->as_apical()) a->active = false;
+    c.B->children.push_back(bud_ptr);
+    c.plant->install_node(std::move(bud));
+
+    CompressionResult result;
+    merge_pair(*c.plant, *c.A, *c.B, result);
+    c.plant->flush_removals();
+
+    // Both leaf and bud now have A as parent; their offsets unchanged.
+    REQUIRE(leaf_ptr->parent == c.A);
+    REQUIRE(leaf_ptr->offset == glm::vec3(0.1f, 0.0f, 0.0f));
+    REQUIRE(bud_ptr->parent == c.A);
+    REQUIRE(bud_ptr->offset == glm::vec3(-0.1f, 0.0f, 0.0f));
+
+    // A's children now include leaf + bud (and no B).
+    bool found_leaf = false, found_bud = false;
+    for (Node* cc : c.A->children) {
+        if (cc == leaf_ptr) found_leaf = true;
+        if (cc == bud_ptr)  found_bud = true;
+    }
+    REQUIRE(found_leaf);
+    REQUIRE(found_bud);
+    REQUIRE(c.A->children.size() == 2u); // leaf + bud; B removed
+}
+
+TEST_CASE("merge_pair carries auxin_flow_bias from B→child into A→child", "[compression][merge]") {
+    Genome g = default_genome();
+    auto c = build_stem_chain(g, 0.04f, 0.04f,
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        g.internode_maturation_ticks + 10, g.internode_maturation_ticks + 10);
+    // Attach a grandchild to B so bias transfer has somewhere to land.
+    auto gc = std::make_unique<StemNode>(200, glm::vec3(0.0f), 0.04f);
+    gc->parent = c.B;
+    gc->offset = glm::vec3(0.0f, 1.0f, 0.0f);
+    gc->age    = g.internode_maturation_ticks + 10;
+    Node* gc_ptr = gc.get();
+    c.B->children.push_back(gc_ptr);
+    c.plant->install_node(std::move(gc));
+
+    c.B->auxin_flow_bias[gc_ptr] = 0.73f;
+    c.A->auxin_flow_bias[c.B]    = 0.44f; // will be destroyed
+
+    CompressionResult result;
+    merge_pair(*c.plant, *c.A, *c.B, result);
+    c.plant->flush_removals();
+
+    auto it = c.A->auxin_flow_bias.find(gc_ptr);
+    REQUIRE(it != c.A->auxin_flow_bias.end());
+    REQUIRE(it->second == 0.73f);
+    // A→B entry is gone.
+    REQUIRE(c.A->auxin_flow_bias.find(c.B) == c.A->auxin_flow_bias.end());
 }
