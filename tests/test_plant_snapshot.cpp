@@ -134,6 +134,8 @@ TEST_CASE("apical trailer round-trips", "[plant_snapshot][node]") {
     a.active = false;
     a.is_primary = true;
     a.growth_dir = glm::vec3(0.1f, 0.9f, 0.0f);
+    a.set_point_dir = glm::vec3(0.0f, 1.0f, 0.0f);
+    a.phyllotaxis_index = 3;
     a.ticks_since_last_node = 7;
 
     std::stringstream ss;
@@ -144,6 +146,8 @@ TEST_CASE("apical trailer round-trips", "[plant_snapshot][node]") {
     REQUIRE(t.active == false);
     REQUIRE(t.is_primary == true);
     REQUIRE(t.growth_dir == glm::vec3(0.1f, 0.9f, 0.0f));
+    REQUIRE(t.set_point_dir == glm::vec3(0.0f, 1.0f, 0.0f));
+    REQUIRE(t.phyllotaxis_index == 3u);
     REQUIRE(t.ticks_since_last_node == 7u);
 }
 

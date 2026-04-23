@@ -434,6 +434,8 @@ void write_apical_trailer(std::ostream& out, const ApicalNode& a) {
     write_val(out, static_cast<uint8_t>(a.active ? 1 : 0));
     write_val(out, static_cast<uint8_t>(a.is_primary ? 1 : 0));
     write_val(out, a.growth_dir);
+    write_val(out, a.set_point_dir);
+    write_val(out, a.phyllotaxis_index);
     write_val(out, a.ticks_since_last_node);
 }
 
@@ -442,6 +444,8 @@ ApicalTrailer read_apical_trailer(std::istream& in) {
     t.active                = read_val<uint8_t>(in) != 0;
     t.is_primary            = read_val<uint8_t>(in) != 0;
     t.growth_dir            = read_val<glm::vec3>(in);
+    t.set_point_dir         = read_val<glm::vec3>(in);
+    t.phyllotaxis_index     = read_val<uint32_t>(in);
     t.ticks_since_last_node = read_val<uint32_t>(in);
     return t;
 }
@@ -646,6 +650,8 @@ LoadedPlant load_plant_snapshot(const std::string& path,
             a->active                = rec.apical->active;
             a->is_primary            = rec.apical->is_primary;
             a->growth_dir            = rec.apical->growth_dir;
+            a->set_point_dir         = rec.apical->set_point_dir;
+            a->phyllotaxis_index     = rec.apical->phyllotaxis_index;
             a->ticks_since_last_node = rec.apical->ticks_since_last_node;
         }
         if (rec.root_apical) {

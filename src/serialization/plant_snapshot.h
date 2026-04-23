@@ -14,7 +14,7 @@ namespace botany {
 
 class Plant;
 
-constexpr uint32_t PLANT_SNAPSHOT_VERSION = 1;
+constexpr uint32_t PLANT_SNAPSHOT_VERSION = 2;
 // Magic "BTNT" (Botany Tree snapshot).
 constexpr char PLANT_SNAPSHOT_MAGIC[4] = {'B','T','N','T'};
 
@@ -85,6 +85,8 @@ struct ApicalTrailer {
     bool      active;
     bool      is_primary;
     glm::vec3 growth_dir;
+    glm::vec3 set_point_dir;
+    uint32_t  phyllotaxis_index;
     uint32_t  ticks_since_last_node;
 };
 
