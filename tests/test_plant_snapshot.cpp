@@ -5,6 +5,9 @@
 #include "engine/plant.h"
 #include "engine/node/node.h"
 #include "engine/node/stem_node.h"
+#include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
 
 using namespace botany;
 
@@ -78,4 +81,78 @@ TEST_CASE("node common fields round-trip through binary", "[plant_snapshot][node
     REQUIRE(rec.local_chemicals.at(ChemicalID::Sugar) == 1.5f);
     REQUIRE(rec.local_chemicals.at(ChemicalID::Auxin) == 0.25f);
     REQUIRE(rec.local_chemicals.at(ChemicalID::Water) == 2.0f);
+}
+
+TEST_CASE("leaf trailer round-trips", "[plant_snapshot][node]") {
+    LeafNode l(10, glm::vec3(0.0f), 0.01f);
+    l.leaf_size = 0.5f;
+    l.light_exposure = 0.75f;
+    l.senescence_ticks = 12;
+    l.deficit_ticks = 5;
+    l.facing = glm::vec3(0.0f, 0.707f, 0.707f);
+
+    std::stringstream ss;
+    write_leaf_trailer(ss, l);
+
+    std::stringstream rs(ss.str());
+    LeafTrailer t = read_leaf_trailer(rs);
+    REQUIRE(t.leaf_size == 0.5f);
+    REQUIRE(t.light_exposure == 0.75f);
+    REQUIRE(t.senescence_ticks == 12u);
+    REQUIRE(t.deficit_ticks == 5u);
+    REQUIRE(t.facing == glm::vec3(0.0f, 0.707f, 0.707f));
+}
+
+TEST_CASE("apical trailer round-trips", "[plant_snapshot][node]") {
+    ApicalNode a(11, glm::vec3(0.0f), 0.01f);
+    a.active = false;
+    a.is_primary = true;
+    a.growth_dir = glm::vec3(0.1f, 0.9f, 0.0f);
+    a.ticks_since_last_node = 7;
+
+    std::stringstream ss;
+    write_apical_trailer(ss, a);
+
+    std::stringstream rs(ss.str());
+    ApicalTrailer t = read_apical_trailer(rs);
+    REQUIRE(t.active == false);
+    REQUIRE(t.is_primary == true);
+    REQUIRE(t.growth_dir == glm::vec3(0.1f, 0.9f, 0.0f));
+    REQUIRE(t.ticks_since_last_node == 7u);
+}
+
+TEST_CASE("root_apical trailer round-trips", "[plant_snapshot][node]") {
+    RootApicalNode r(12, glm::vec3(0.0f), 0.005f);
+    r.active = true;
+    r.is_primary = true;
+    r.growth_dir = glm::vec3(0.0f, -1.0f, 0.0f);
+    r.ticks_since_last_node = 3;
+    r.internodes_spawned = 8;
+
+    std::stringstream ss;
+    write_root_apical_trailer(ss, r);
+
+    std::stringstream rs(ss.str());
+    RootApicalTrailer t = read_root_apical_trailer(rs);
+    REQUIRE(t.active == true);
+    REQUIRE(t.is_primary == true);
+    REQUIRE(t.growth_dir == glm::vec3(0.0f, -1.0f, 0.0f));
+    REQUIRE(t.ticks_since_last_node == 3u);
+    REQUIRE(t.internodes_spawned == 8u);
+}
+
+TEST_CASE("conduit pool chemicals round-trip", "[plant_snapshot][node]") {
+    StemNode s(42, glm::vec3(0.0f), 0.02f);
+    s.phloem()->chemical(ChemicalID::Sugar) = 0.05f;
+    s.xylem()->chemical(ChemicalID::Water) = 0.3f;
+    s.xylem()->chemical(ChemicalID::Cytokinin) = 0.015f;
+
+    std::stringstream ss;
+    write_conduit_pools(ss, s);
+
+    std::stringstream rs(ss.str());
+    ConduitPools p = read_conduit_pools(rs);
+    REQUIRE(p.phloem.at(ChemicalID::Sugar) == 0.05f);
+    REQUIRE(p.xylem.at(ChemicalID::Water)  == 0.3f);
+    REQUIRE(p.xylem.at(ChemicalID::Cytokinin) == 0.015f);
 }

@@ -1,6 +1,12 @@
 #include "serialization/plant_snapshot.h"
 #include "engine/plant.h"
 #include "engine/node/node.h"
+#include "engine/node/stem_node.h"
+#include "engine/node/root_node.h"
+#include "engine/node/tissues/leaf.h"
+#include "engine/node/tissues/apical.h"
+#include "engine/node/tissues/root_apical.h"
+#include "engine/compartments.h"
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
@@ -397,6 +403,73 @@ NodeCommonRecord read_node_common(std::istream& in) {
     r.local_chemicals  = read_chem_map(in);
     r.auxin_flow_bias  = read_bias_map(in);
     return r;
+}
+
+void write_leaf_trailer(std::ostream& out, const LeafNode& l) {
+    write_val(out, l.leaf_size);
+    write_val(out, l.light_exposure);
+    write_val(out, l.senescence_ticks);
+    write_val(out, l.deficit_ticks);
+    write_val(out, l.facing);
+}
+
+LeafTrailer read_leaf_trailer(std::istream& in) {
+    LeafTrailer t;
+    t.leaf_size        = read_val<float>(in);
+    t.light_exposure   = read_val<float>(in);
+    t.senescence_ticks = read_val<uint32_t>(in);
+    t.deficit_ticks    = read_val<uint32_t>(in);
+    t.facing           = read_val<glm::vec3>(in);
+    return t;
+}
+
+void write_apical_trailer(std::ostream& out, const ApicalNode& a) {
+    write_val(out, static_cast<uint8_t>(a.active ? 1 : 0));
+    write_val(out, static_cast<uint8_t>(a.is_primary ? 1 : 0));
+    write_val(out, a.growth_dir);
+    write_val(out, a.ticks_since_last_node);
+}
+
+ApicalTrailer read_apical_trailer(std::istream& in) {
+    ApicalTrailer t;
+    t.active                = read_val<uint8_t>(in) != 0;
+    t.is_primary            = read_val<uint8_t>(in) != 0;
+    t.growth_dir            = read_val<glm::vec3>(in);
+    t.ticks_since_last_node = read_val<uint32_t>(in);
+    return t;
+}
+
+void write_root_apical_trailer(std::ostream& out, const RootApicalNode& r) {
+    write_val(out, static_cast<uint8_t>(r.active ? 1 : 0));
+    write_val(out, static_cast<uint8_t>(r.is_primary ? 1 : 0));
+    write_val(out, r.growth_dir);
+    write_val(out, r.ticks_since_last_node);
+    write_val(out, r.internodes_spawned);
+}
+
+RootApicalTrailer read_root_apical_trailer(std::istream& in) {
+    RootApicalTrailer t;
+    t.active                = read_val<uint8_t>(in) != 0;
+    t.is_primary            = read_val<uint8_t>(in) != 0;
+    t.growth_dir            = read_val<glm::vec3>(in);
+    t.ticks_since_last_node = read_val<uint32_t>(in);
+    t.internodes_spawned    = read_val<uint32_t>(in);
+    return t;
+}
+
+void write_conduit_pools(std::ostream& out, const Node& n) {
+    const TransportPool* p = n.phloem();
+    const TransportPool* x = n.xylem();
+    static const std::unordered_map<ChemicalID, float> kEmpty;
+    write_chem_map(out, p ? p->chemicals : kEmpty);
+    write_chem_map(out, x ? x->chemicals : kEmpty);
+}
+
+ConduitPools read_conduit_pools(std::istream& in) {
+    ConduitPools p;
+    p.phloem = read_chem_map(in);
+    p.xylem  = read_chem_map(in);
+    return p;
 }
 
 // Stubs — filled in by later tasks.
