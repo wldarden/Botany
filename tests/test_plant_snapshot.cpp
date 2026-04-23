@@ -2,9 +2,11 @@
 #include <sstream>
 #include <fstream>
 #include <filesystem>
+#include <unordered_map>
 #include "serialization/plant_snapshot.h"
 #include "engine/genome.h"
 #include "engine/plant.h"
+#include "engine/engine.h"
 #include <memory>
 #include "engine/node/node.h"
 #include "engine/node/stem_node.h"
@@ -13,6 +15,27 @@
 #include "engine/node/tissues/root_apical.h"
 
 using namespace botany;
+
+static void deep_compare_nodes(const Node& a, const Node& b) {
+    REQUIRE(a.id == b.id);
+    REQUIRE(a.type == b.type);
+    REQUIRE(a.age == b.age);
+    REQUIRE(a.starvation_ticks == b.starvation_ticks);
+    REQUIRE(a.dormant_ticks == b.dormant_ticks);
+    REQUIRE(a.radius == b.radius);
+    REQUIRE(a.position == b.position);
+    REQUIRE(a.offset == b.offset);
+    REQUIRE(a.rest_offset == b.rest_offset);
+    REQUIRE(a.ever_active == b.ever_active);
+    REQUIRE(a.local().chemicals.size() == b.local().chemicals.size());
+    for (const auto& kv : a.local().chemicals) {
+        REQUIRE(b.local().chemical(kv.first) == kv.second);
+    }
+    // Parent id match (NOT pointer)
+    uint32_t ap = a.parent ? a.parent->id : UINT32_MAX;
+    uint32_t bp = b.parent ? b.parent->id : UINT32_MAX;
+    REQUIRE(ap == bp);
+}
 
 TEST_CASE("plant_snapshot header magic roundtrips", "[plant_snapshot][header]") {
     std::stringstream ss;
@@ -196,6 +219,34 @@ TEST_CASE("save_plant_snapshot writes a file with valid header", "[plant_snapsho
     uint64_t engine_tick = 0;
     in.read(reinterpret_cast<char*>(&engine_tick), sizeof(engine_tick));
     REQUIRE(engine_tick == 42u);
+
+    std::filesystem::remove_all(tmp);
+}
+
+TEST_CASE("save+load round-trip preserves tiny plant", "[plant_snapshot][roundtrip]") {
+    Engine engine;
+    engine.create_plant(default_genome(), glm::vec3(0.0f));
+    for (int i = 0; i < 20; i++) engine.tick();
+
+    const Plant& original = engine.get_plant(0);
+    auto tmp = std::filesystem::temp_directory_path() / "botany_rt_test";
+    std::filesystem::remove_all(tmp);
+
+    SaveResult sr = save_plant_snapshot(original, engine.get_tick(), tmp.string());
+    REQUIRE(sr.ok);
+
+    LoadedPlant lp = load_plant_snapshot(sr.path, std::nullopt);
+    REQUIRE(lp.plant != nullptr);
+    REQUIRE(lp.plant->node_count() == original.node_count());
+    REQUIRE(lp.engine_tick == engine.get_tick());
+
+    std::unordered_map<uint32_t, const Node*> orig_by_id;
+    original.for_each_node([&](const Node& n) { orig_by_id[n.id] = &n; });
+    lp.plant->for_each_node([&](const Node& n) {
+        auto it = orig_by_id.find(n.id);
+        REQUIRE(it != orig_by_id.end());
+        deep_compare_nodes(*it->second, n);
+    });
 
     std::filesystem::remove_all(tmp);
 }

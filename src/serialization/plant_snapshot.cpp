@@ -561,8 +561,134 @@ SaveResult save_plant_snapshot(const Plant& p, uint64_t engine_tick, const std::
     return r;
 }
 
-LoadedPlant load_plant_snapshot(const std::string&, const std::optional<Genome>&) {
-    throw std::runtime_error("load_plant_snapshot not implemented yet");
+LoadedPlant load_plant_snapshot(const std::string& path,
+                                const std::optional<Genome>& genome_override) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("plant_snapshot: cannot open " + path);
+
+    if (!plant_snapshot_check_magic(in))
+        throw std::runtime_error("plant_snapshot: bad magic in " + path);
+
+    uint32_t version = read_val<uint32_t>(in);
+    if (version != PLANT_SNAPSHOT_VERSION)
+        throw std::runtime_error("plant_snapshot: unsupported version " + std::to_string(version));
+
+    uint64_t engine_tick = read_val<uint64_t>(in);
+    Genome file_genome   = read_genome_binary(in);
+    uint32_t node_count  = read_val<uint32_t>(in);
+    uint32_t next_id     = read_val<uint32_t>(in);
+
+    Genome active = genome_override ? *genome_override : file_genome;
+
+    auto plant = Plant::from_empty(active);
+
+    struct LoadedRecord {
+        NodeCommonRecord common;
+        std::optional<ConduitPools> pools;
+        std::optional<LeafTrailer>  leaf;
+        std::optional<ApicalTrailer> apical;
+        std::optional<RootApicalTrailer> root_apical;
+    };
+
+    std::vector<LoadedRecord> records;
+    records.reserve(node_count);
+
+    // Pass 1a: read records into memory.
+    for (uint32_t i = 0; i < node_count; i++) {
+        LoadedRecord rec;
+        rec.common = read_node_common(in);
+        if (rec.common.type == NodeType::STEM || rec.common.type == NodeType::ROOT)
+            rec.pools = read_conduit_pools(in);
+        switch (rec.common.type) {
+            case NodeType::LEAF:        rec.leaf = read_leaf_trailer(in); break;
+            case NodeType::APICAL:      rec.apical = read_apical_trailer(in); break;
+            case NodeType::ROOT_APICAL: rec.root_apical = read_root_apical_trailer(in); break;
+            case NodeType::STEM:
+            case NodeType::ROOT:        break;
+        }
+        records.push_back(std::move(rec));
+    }
+
+    // Pass 1b: allocate subclass + fill common state + trailers + pools.
+    std::unordered_map<uint32_t, Node*> by_id;
+    for (const LoadedRecord& rec : records) {
+        std::unique_ptr<Node> n;
+        switch (rec.common.type) {
+            case NodeType::STEM:        n = std::make_unique<StemNode>(rec.common.id, rec.common.position, rec.common.radius); break;
+            case NodeType::ROOT:        n = std::make_unique<RootNode>(rec.common.id, rec.common.position, rec.common.radius); break;
+            case NodeType::LEAF:        n = std::make_unique<LeafNode>(rec.common.id, rec.common.position, rec.common.radius); break;
+            case NodeType::APICAL:      n = std::make_unique<ApicalNode>(rec.common.id, rec.common.position, rec.common.radius); break;
+            case NodeType::ROOT_APICAL: n = std::make_unique<RootApicalNode>(rec.common.id, rec.common.position, rec.common.radius); break;
+        }
+        n->age              = rec.common.age;
+        n->starvation_ticks = rec.common.starvation_ticks;
+        n->dormant_ticks    = rec.common.dormant_ticks;
+        n->offset           = rec.common.offset;
+        n->rest_offset      = rec.common.rest_offset;
+        n->position         = rec.common.position;
+        n->ever_active      = rec.common.ever_active;
+        n->local().chemicals = rec.common.local_chemicals;
+
+        if (rec.pools) {
+            if (auto* p = n->phloem()) p->chemicals = rec.pools->phloem;
+            if (auto* x = n->xylem())  x->chemicals = rec.pools->xylem;
+        }
+        if (rec.leaf) {
+            auto* l = n->as_leaf();
+            l->leaf_size        = rec.leaf->leaf_size;
+            l->light_exposure   = rec.leaf->light_exposure;
+            l->senescence_ticks = rec.leaf->senescence_ticks;
+            l->deficit_ticks    = rec.leaf->deficit_ticks;
+            l->facing           = rec.leaf->facing;
+        }
+        if (rec.apical) {
+            auto* a = n->as_apical();
+            a->active                = rec.apical->active;
+            a->is_primary            = rec.apical->is_primary;
+            a->growth_dir            = rec.apical->growth_dir;
+            a->ticks_since_last_node = rec.apical->ticks_since_last_node;
+        }
+        if (rec.root_apical) {
+            auto* r = n->as_root_apical();
+            r->active                = rec.root_apical->active;
+            r->is_primary            = rec.root_apical->is_primary;
+            r->growth_dir            = rec.root_apical->growth_dir;
+            r->ticks_since_last_node = rec.root_apical->ticks_since_last_node;
+            r->internodes_spawned    = rec.root_apical->internodes_spawned;
+        }
+
+        by_id[rec.common.id] = n.get();
+        plant->install_node(std::move(n));
+    }
+
+    // Pass 2: wire parent/children pointers.
+    for (const LoadedRecord& rec : records) {
+        Node* self = by_id.at(rec.common.id);
+        if (rec.common.parent_id == UINT32_MAX) continue;
+        auto pit = by_id.find(rec.common.parent_id);
+        if (pit == by_id.end())
+            throw std::runtime_error("plant_snapshot: node " + std::to_string(rec.common.id)
+                                   + " references unknown parent " + std::to_string(rec.common.parent_id));
+        self->parent = pit->second;
+        pit->second->children.push_back(self);
+    }
+
+    // Pass 3: re-key auxin_flow_bias from child_id → child ptr.
+    for (const LoadedRecord& rec : records) {
+        Node* self = by_id.at(rec.common.id);
+        for (const auto& kv : rec.common.auxin_flow_bias) {
+            auto cit = by_id.find(kv.first);
+            if (cit != by_id.end()) self->auxin_flow_bias[cit->second] = kv.second;
+        }
+    }
+
+    plant->set_next_id(next_id);
+
+    LoadedPlant out;
+    out.plant = std::move(plant);
+    out.genome = active;
+    out.engine_tick = engine_tick;
+    return out;
 }
 
 } // namespace botany
