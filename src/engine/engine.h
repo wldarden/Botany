@@ -25,6 +25,14 @@ public:
     void tick();
     void reset();
 
+    // Install a plant constructed outside the engine (e.g., from a snapshot).
+    // Returns the assigned PlantID.  Takes ownership.
+    PlantID adopt_plant(std::unique_ptr<Plant> plant);
+
+    // Override the current tick counter (used when loading a snapshot so HUDs
+    // and age-dependent signals see the correct elapsed sim time).
+    void set_tick(uint32_t tick);
+
     const Plant& get_plant(PlantID id) const;
     Plant& get_plant_mut(PlantID id);
 

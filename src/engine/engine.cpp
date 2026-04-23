@@ -139,4 +139,14 @@ Plant& Engine::get_plant_mut(PlantID id) {
     return *plants_.at(id);
 }
 
+PlantID Engine::adopt_plant(std::unique_ptr<Plant> plant) {
+    PlantID id = static_cast<PlantID>(plants_.size());
+    plants_.push_back(std::move(plant));
+    return id;
+}
+
+void Engine::set_tick(uint32_t tick) {
+    tick_ = tick;
+}
+
 } // namespace botany
