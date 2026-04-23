@@ -15,7 +15,8 @@ TEST_CASE("compress_plant on a fresh young plant reports no merges", "[compressi
     CompressionParams params;
     CompressionResult r = compress_plant(plant, params);
     REQUIRE(r.merges_performed == 0u);
-    REQUIRE(r.passes_run == 0u);
+    // One detecting pass runs; nothing mergeable → immediate bail-out.
+    REQUIRE(r.passes_run == 1u);
 }
 
 #include <memory>
@@ -351,4 +352,87 @@ TEST_CASE("merge_pair carries auxin_flow_bias from B→child into A→child", "[
     REQUIRE(it->second == 0.73f);
     // A→B entry is gone.
     REQUIRE(c.A->auxin_flow_bias.find(c.B) == c.A->auxin_flow_bias.end());
+}
+
+TEST_CASE("compress_plant merges a straight mature chain", "[compression][scan]") {
+    // Build seed → A → B → C → D, all mature same radius, all straight.
+    Genome g = default_genome();
+    auto plant = Plant::from_empty(g);
+    auto seed = std::make_unique<StemNode>(0, glm::vec3(0.0f), g.initial_radius);
+    Node* seed_ptr = seed.get();
+    plant->install_node(std::move(seed));
+
+    auto add_child = [&](Node* parent, uint32_t id, const glm::vec3& offset) -> Node* {
+        auto n = std::make_unique<StemNode>(id, glm::vec3(0.0f), 0.04f);
+        n->parent = parent;
+        n->offset = offset;
+        n->age    = g.internode_maturation_ticks + 50;
+        Node* raw = n.get();
+        parent->children.push_back(raw);
+        plant->install_node(std::move(n));
+        return raw;
+    };
+    Node* A = add_child(seed_ptr, 1, glm::vec3(0.0f, 0.1f, 0.0f));
+    Node* B = add_child(A,        2, glm::vec3(0.0f, 0.1f, 0.0f));
+    Node* C = add_child(B,        3, glm::vec3(0.0f, 0.1f, 0.0f));
+    Node* D = add_child(C,        4, glm::vec3(0.0f, 0.1f, 0.0f));
+    (void)B; (void)D;
+    plant->set_next_id(5);
+    REQUIRE(plant->node_count() == 5u); // seed + 4
+
+    CompressionParams params;
+    CompressionResult r = compress_plant(*plant, params);
+    REQUIRE(r.merges_performed > 0u);
+    REQUIRE(plant->node_count() < 5u);
+}
+
+TEST_CASE("compress_plant is idempotent — second run merges nothing", "[compression][scan]") {
+    Genome g = default_genome();
+    auto plant = Plant::from_empty(g);
+    auto seed = std::make_unique<StemNode>(0, glm::vec3(0.0f), g.initial_radius);
+    Node* seed_ptr = seed.get();
+    plant->install_node(std::move(seed));
+    auto add = [&](Node* p, uint32_t id) {
+        auto n = std::make_unique<StemNode>(id, glm::vec3(0.0f), 0.04f);
+        n->parent = p; n->offset = glm::vec3(0.0f, 0.1f, 0.0f);
+        n->age = g.internode_maturation_ticks + 50;
+        Node* raw = n.get();
+        p->children.push_back(raw);
+        plant->install_node(std::move(n));
+        return raw;
+    };
+    Node* A = add(seed_ptr, 1);
+    Node* B = add(A, 2);
+    (void)B;
+    plant->set_next_id(3);
+
+    CompressionParams params;
+    CompressionResult r1 = compress_plant(*plant, params);
+    CompressionResult r2 = compress_plant(*plant, params);
+    REQUIRE(r1.merges_performed >= 1u);
+    REQUIRE(r2.merges_performed == 0u);
+}
+
+TEST_CASE("compress_plant respects max_passes cap", "[compression][scan]") {
+    Genome g = default_genome();
+    auto plant = Plant::from_empty(g);
+    auto seed = std::make_unique<StemNode>(0, glm::vec3(0.0f), g.initial_radius);
+    Node* seed_ptr = seed.get();
+    plant->install_node(std::move(seed));
+    Node* last = seed_ptr;
+    for (uint32_t id = 1; id < 20; ++id) {
+        auto n = std::make_unique<StemNode>(id, glm::vec3(0.0f), 0.04f);
+        n->parent = last; n->offset = glm::vec3(0.0f, 0.05f, 0.0f);
+        n->age = g.internode_maturation_ticks + 50;
+        Node* raw = n.get();
+        last->children.push_back(raw);
+        plant->install_node(std::move(n));
+        last = raw;
+    }
+    plant->set_next_id(20);
+
+    CompressionParams params;
+    params.max_passes = 1;
+    CompressionResult r = compress_plant(*plant, params);
+    REQUIRE(r.passes_run == 1u);
 }

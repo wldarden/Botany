@@ -8,6 +8,9 @@
 #include "engine/vascular_sub_stepped.h" // phloem_capacity, xylem_capacity
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 #include <glm/geometric.hpp>
 
 namespace botany {
@@ -166,9 +169,56 @@ void merge_pair(Plant& plant, Node& parent, Node& child, CompressionResult& resu
     result.merges_performed++;
 }
 
-CompressionResult compress_plant(Plant& /*plant*/, const CompressionParams& /*params*/) {
+namespace {
+
+// Single pass.  For each candidate (parent, child) pair where parent has
+// exactly one structural child, invoke merge_pair if can_merge accepts it.
+// Collects pointers first to avoid mutating the tree mid-traversal.
+uint32_t compress_plant_single_pass(Plant& plant,
+                                    const Genome& g,
+                                    const CompressionParams& params,
+                                    CompressionResult& result) {
+    // Snapshot candidate pairs before mutation.
+    std::vector<std::pair<Node*, Node*>> candidates;
+    plant.for_each_node_mut([&](Node& parent) {
+        if (!is_conduit_type(parent.type)) return;
+        if (count_structural_children(parent) != 1) return;
+        for (Node* child : parent.children) {
+            if (child->type == parent.type && is_conduit_type(child->type)) {
+                candidates.emplace_back(&parent, child);
+                break;
+            }
+        }
+    });
+
+    uint32_t merges_this_pass = 0;
+    // Track nodes that are already consumed this pass so we don't try to
+    // merge a node that just got absorbed.
+    std::unordered_set<Node*> consumed;
+    for (auto& pair : candidates) {
+        Node* p = pair.first;
+        Node* c = pair.second;
+        if (consumed.count(p) || consumed.count(c)) continue;
+        if (!can_merge(*p, *c, g, params)) continue;
+        merge_pair(plant, *p, *c, result);
+        consumed.insert(c);
+        merges_this_pass++;
+    }
+    return merges_this_pass;
+}
+
+} // namespace
+
+CompressionResult compress_plant(Plant& plant, const CompressionParams& params) {
     CompressionResult r;
-    return r; // Filled in by Tasks 3-4.
+    const Genome& g = plant.genome();
+    for (uint32_t pass = 0; pass < params.max_passes; ++pass) {
+        uint32_t merged = compress_plant_single_pass(plant, g, params, r);
+        r.passes_run++;
+        plant.flush_removals();
+        if (merged == 0) break;
+    }
+    return r;
 }
 
 } // namespace botany
