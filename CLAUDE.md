@@ -12,6 +12,12 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 # Run realtime viewer (must run from project root for shader path)
 ./build/botany_realtime [--color auxin|cytokinin|sugar|gibberellin|ethylene|type]
 
+# Load a previously saved snapshot and continue simulating it
+./build/botany_realtime --load-plant saves/plant_<timestamp>_tick<N>.tree [--genome-override some_genome.txt]
+
+# Save the current plant from inside botany_realtime
+Cmd+S (macOS) / Ctrl+S (Linux/Windows) writes saves/plant_<timestamp>_tick<N>.tree
+
 # Run evolution app
 ./build/botany_evolve
 
@@ -83,6 +89,11 @@ All 5 node types extend `Node` directly — flat hierarchy, no intermediate clas
 - **app_playback.cpp** - Playback viewer with ImGui scrubbing
 - **app_evolve.cpp** - Evolution app with ImGui config (population, competitors, max ticks, threads, 8 fitness weight sliders), progress bar, live stats table, fitness history plot, best plant + competitors rendering (best at full color, competitors dimmed), Export Best button. Autosaves best_genome.txt on improvement.
 - **app_sugar_test.cpp** - Headless sugar economy tester. Builds 3 hardcoded static trees (seedling/medium/large), freezes growth, runs N ticks of production/maintenance/transport. Reports production/maintenance ratios. Usage: `./build/botany_sugar_test [--ticks N] [--csv] [--tree seedling|medium|large]`
+
+Snapshot format: `src/serialization/plant_snapshot.{h,cpp}` writes `.tree`
+binary files (magic "BTNT", single plant, full node + conduit + meristem
+state). Playback recordings (`botany_headless --recording-interval N` → `.bin`)
+are a separate, playback-only format owned by `serializer.*`.
 
 ### Tests (`tests/`)
 218 tests / 583 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, vascularization, and cytokinin transport.
