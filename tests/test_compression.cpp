@@ -436,3 +436,42 @@ TEST_CASE("compress_plant respects max_passes cap", "[compression][scan]") {
     CompressionResult r = compress_plant(*plant, params);
     REQUIRE(r.passes_run == 1u);
 }
+
+#include "engine/engine.h"
+
+TEST_CASE("Engine::trigger_compression runs immediately", "[compression][engine]") {
+    Engine engine;
+    Genome g = default_genome();
+    engine.create_plant(g, glm::vec3(0.0f));
+    for (int i = 0; i < 200; ++i) engine.tick(); // grow enough internodes
+    uint32_t before = engine.get_plant(0).node_count();
+
+    engine.trigger_compression();
+    uint32_t after = engine.get_plant(0).node_count();
+    // Either the plant has mergeable pairs (after < before) or it doesn't
+    // (after == before).  Both are acceptable; we're testing the mechanism.
+    REQUIRE(after <= before);
+    REQUIRE(engine.last_compression().passes_run >= 1u);
+}
+
+TEST_CASE("Engine autocompress fires on interval", "[compression][engine]") {
+    Engine engine;
+    Genome g = default_genome();
+    engine.create_plant(g, glm::vec3(0.0f));
+    engine.enable_autocompress(true);
+    engine.set_compression_interval(5);
+
+    // Tick 20 times — interval 5 should trigger 4 compressions (ticks 5,10,15,20).
+    for (int i = 0; i < 20; ++i) engine.tick();
+    REQUIRE(engine.last_compression().passes_run >= 1u);
+}
+
+TEST_CASE("Engine autocompress disabled does not run compression", "[compression][engine]") {
+    Engine engine;
+    Genome g = default_genome();
+    engine.create_plant(g, glm::vec3(0.0f));
+    engine.enable_autocompress(false);
+    engine.set_compression_interval(5);
+    for (int i = 0; i < 20; ++i) engine.tick();
+    REQUIRE(engine.last_compression().passes_run == 0u);
+}

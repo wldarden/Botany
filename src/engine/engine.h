@@ -12,6 +12,7 @@
 #include "engine/debug_log.h"
 #include "engine/global_economy_log.h"
 #include "engine/perf_log.h"
+#include "engine/compression.h"
 
 namespace botany {
 
@@ -48,6 +49,13 @@ public:
     GlobalEconomyLog& global_economy_log() { return global_economy_log_; }
     PerfLog& perf_log() { return perf_log_; }
 
+    // --- Compression controls ---
+    void enable_autocompress(bool enabled);
+    void set_compression_interval(uint32_t ticks);
+    void set_compression_params(const CompressionParams& params);
+    CompressionResult trigger_compression();
+    const CompressionResult& last_compression() const;
+
 private:
     uint32_t tick_ = 0;
     std::vector<std::unique_ptr<Plant>> plants_;
@@ -56,6 +64,11 @@ private:
     DebugLog debug_log_;
     GlobalEconomyLog global_economy_log_;
     PerfLog perf_log_;
+
+    bool              compression_enabled_  = false;
+    uint32_t          compression_interval_ = 1000;
+    CompressionParams compression_params_;
+    CompressionResult last_compression_;
 };
 
 } // namespace botany

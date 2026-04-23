@@ -123,6 +123,14 @@ void Engine::tick() {
         perf_log_.flush(tick_);
     }
 
+    // Autocompress: runs at tick-interval boundaries, between full ticks.
+    if (compression_enabled_
+        && tick_ > 0
+        && (tick_ % compression_interval_) == 0
+        && !plants_.empty()) {
+        last_compression_ = compress_plant(*plants_[0], compression_params_);
+    }
+
     tick_++;
 }
 
@@ -147,6 +155,31 @@ PlantID Engine::adopt_plant(std::unique_ptr<Plant> plant) {
 
 void Engine::set_tick(uint32_t tick) {
     tick_ = tick;
+}
+
+void Engine::enable_autocompress(bool enabled) {
+    compression_enabled_ = enabled;
+}
+
+void Engine::set_compression_interval(uint32_t ticks) {
+    compression_interval_ = ticks == 0 ? 1 : ticks;
+}
+
+void Engine::set_compression_params(const CompressionParams& params) {
+    compression_params_ = params;
+}
+
+CompressionResult Engine::trigger_compression() {
+    if (plants_.empty()) {
+        last_compression_ = CompressionResult{};
+        return last_compression_;
+    }
+    last_compression_ = compress_plant(*plants_[0], compression_params_);
+    return last_compression_;
+}
+
+const CompressionResult& Engine::last_compression() const {
+    return last_compression_;
 }
 
 } // namespace botany
