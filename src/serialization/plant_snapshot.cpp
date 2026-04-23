@@ -11,6 +11,13 @@
 #include <iostream>
 #include <stdexcept>
 #include <climits>
+#include <chrono>
+#include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <vector>
 
 namespace botany {
 
@@ -472,9 +479,86 @@ ConduitPools read_conduit_pools(std::istream& in) {
     return p;
 }
 
-// Stubs — filled in by later tasks.
-SaveResult save_plant_snapshot(const Plant&, uint64_t, const std::string&) {
-    return SaveResult{false, "", "save_plant_snapshot not implemented yet"};
+namespace {
+
+std::string make_timestamp_now() {
+    auto t = std::chrono::system_clock::now();
+    std::time_t tt = std::chrono::system_clock::to_time_t(t);
+    std::tm lt{};
+#if defined(_WIN32)
+    localtime_s(&lt, &tt);
+#else
+    localtime_r(&tt, &lt);
+#endif
+    std::ostringstream os;
+    os << std::put_time(&lt, "%Y%m%d_%H%M%S");
+    return os.str();
+}
+
+// DFS from seed so parent always precedes children in the file.
+void dfs_collect(const Node* n, std::vector<const Node*>& out) {
+    if (!n) return;
+    out.push_back(n);
+    for (const Node* c : n->children) dfs_collect(c, out);
+}
+
+void write_node_full(std::ostream& out, const Node& n) {
+    uint32_t parent_id = n.parent ? n.parent->id : UINT32_MAX;
+    write_node_common(out, n, parent_id);
+    if (n.type == NodeType::STEM || n.type == NodeType::ROOT) {
+        write_conduit_pools(out, n);
+    }
+    switch (n.type) {
+        case NodeType::LEAF:        write_leaf_trailer(out, *n.as_leaf()); break;
+        case NodeType::APICAL:      write_apical_trailer(out, *n.as_apical()); break;
+        case NodeType::ROOT_APICAL: write_root_apical_trailer(out, *n.as_root_apical()); break;
+        case NodeType::STEM:
+        case NodeType::ROOT:        /* no trailer beyond conduit pools */ break;
+    }
+}
+
+} // namespace
+
+SaveResult save_plant_snapshot(const Plant& p, uint64_t engine_tick, const std::string& dir) {
+    SaveResult r;
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) { r.error = "cannot create dir: " + ec.message(); return r; }
+
+    std::ostringstream name;
+    name << "plant_" << make_timestamp_now() << "_tick" << engine_tick << ".tree";
+    auto full = std::filesystem::path(dir) / name.str();
+
+    std::ofstream out(full, std::ios::binary);
+    if (!out) { r.error = "cannot open output: " + full.string(); return r; }
+
+    // Header
+    plant_snapshot_write_magic(out);
+    write_val(out, PLANT_SNAPSHOT_VERSION);
+    write_val(out, engine_tick);
+    write_genome_binary(out, p.genome());
+
+    // Collect nodes in DFS order (parents precede children).
+    std::vector<const Node*> order;
+    dfs_collect(p.seed(), order);
+
+    // next_node_id: one past the max id we saw, consistent with create_node contract.
+    uint32_t max_id = 0;
+    for (const Node* n : order) if (n->id >= max_id) max_id = n->id;
+    uint32_t next_id = max_id + 1;
+
+    uint32_t count = static_cast<uint32_t>(order.size());
+    write_val(out, count);
+    write_val(out, next_id);
+
+    for (const Node* n : order) write_node_full(out, *n);
+
+    out.flush();
+    if (!out) { r.error = "write failed"; return r; }
+
+    r.ok = true;
+    r.path = full.string();
+    return r;
 }
 
 LoadedPlant load_plant_snapshot(const std::string&, const std::optional<Genome>&) {

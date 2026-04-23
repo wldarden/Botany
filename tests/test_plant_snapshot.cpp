@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <sstream>
+#include <fstream>
+#include <filesystem>
 #include "serialization/plant_snapshot.h"
 #include "engine/genome.h"
 #include "engine/plant.h"
@@ -173,4 +175,27 @@ TEST_CASE("Plant::install_node + set_next_id populate nodes manually", "[plant_s
     REQUIRE(p->node_count() == 1);
     REQUIRE(p->seed() == raw);
     REQUIRE(p->next_id() == 100u); // next_id() increments; now 101
+}
+
+TEST_CASE("save_plant_snapshot writes a file with valid header", "[plant_snapshot][save]") {
+    Plant plant(default_genome(), glm::vec3(0.0f));
+    auto tmp = std::filesystem::temp_directory_path() / "botany_snap_test";
+    std::filesystem::remove_all(tmp);
+
+    SaveResult r = save_plant_snapshot(plant, /*engine_tick=*/42, tmp.string());
+    REQUIRE(r.ok);
+    REQUIRE(!r.path.empty());
+    REQUIRE(std::filesystem::exists(r.path));
+
+    // Re-open and check magic + version + tick.
+    std::ifstream in(r.path, std::ios::binary);
+    REQUIRE(plant_snapshot_check_magic(in));
+    uint32_t version = 0;
+    in.read(reinterpret_cast<char*>(&version), sizeof(version));
+    REQUIRE(version == PLANT_SNAPSHOT_VERSION);
+    uint64_t engine_tick = 0;
+    in.read(reinterpret_cast<char*>(&engine_tick), sizeof(engine_tick));
+    REQUIRE(engine_tick == 42u);
+
+    std::filesystem::remove_all(tmp);
 }
