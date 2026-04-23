@@ -1,8 +1,10 @@
 #include "serialization/plant_snapshot.h"
 #include "engine/plant.h"
+#include "engine/node/node.h"
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
+#include <climits>
 
 namespace botany {
 
@@ -313,6 +315,88 @@ Genome read_genome_binary(std::istream& in) {
     g.leaf_turgor_target_fraction = read_val<float>(in);
     g.root_water_reserve_fraction = read_val<float>(in);
     return g;
+}
+
+namespace {
+
+void write_chem_map(std::ostream& out, const std::unordered_map<ChemicalID, float>& m) {
+    uint16_t count = static_cast<uint16_t>(m.size());
+    write_val(out, count);
+    for (const auto& kv : m) {
+        write_val(out, static_cast<uint8_t>(kv.first));
+        write_val(out, kv.second);
+    }
+}
+
+std::unordered_map<ChemicalID, float> read_chem_map(std::istream& in) {
+    uint16_t count = read_val<uint16_t>(in);
+    std::unordered_map<ChemicalID, float> m;
+    m.reserve(count);
+    for (uint16_t i = 0; i < count; i++) {
+        auto id = static_cast<ChemicalID>(read_val<uint8_t>(in));
+        float v = read_val<float>(in);
+        m[id] = v;
+    }
+    return m;
+}
+
+void write_bias_map(std::ostream& out, const std::unordered_map<Node*, float>& m) {
+    uint16_t count = static_cast<uint16_t>(m.size());
+    write_val(out, count);
+    for (const auto& kv : m) {
+        // Safe: by the time we serialize, every node has a valid id.
+        uint32_t child_id = kv.first ? kv.first->id : UINT32_MAX;
+        write_val(out, child_id);
+        write_val(out, kv.second);
+    }
+}
+
+std::unordered_map<uint32_t, float> read_bias_map(std::istream& in) {
+    uint16_t count = read_val<uint16_t>(in);
+    std::unordered_map<uint32_t, float> m;
+    m.reserve(count);
+    for (uint16_t i = 0; i < count; i++) {
+        uint32_t id = read_val<uint32_t>(in);
+        float v    = read_val<float>(in);
+        m[id] = v;
+    }
+    return m;
+}
+
+} // namespace
+
+void write_node_common(std::ostream& out, const Node& n, uint32_t parent_id) {
+    write_val(out, n.id);
+    write_val(out, parent_id);
+    write_val(out, static_cast<uint8_t>(n.type));
+    write_val(out, n.age);
+    write_val(out, n.starvation_ticks);
+    write_val(out, n.dormant_ticks);
+    write_val(out, n.position);
+    write_val(out, n.offset);
+    write_val(out, n.rest_offset);
+    write_val(out, n.radius);
+    write_val(out, static_cast<uint8_t>(n.ever_active ? 1 : 0));
+    write_chem_map(out, n.local().chemicals);
+    write_bias_map(out, n.auxin_flow_bias);
+}
+
+NodeCommonRecord read_node_common(std::istream& in) {
+    NodeCommonRecord r;
+    r.id               = read_val<uint32_t>(in);
+    r.parent_id        = read_val<uint32_t>(in);
+    r.type             = static_cast<NodeType>(read_val<uint8_t>(in));
+    r.age              = read_val<uint32_t>(in);
+    r.starvation_ticks = read_val<uint32_t>(in);
+    r.dormant_ticks    = read_val<uint32_t>(in);
+    r.position         = read_val<glm::vec3>(in);
+    r.offset           = read_val<glm::vec3>(in);
+    r.rest_offset      = read_val<glm::vec3>(in);
+    r.radius           = read_val<float>(in);
+    r.ever_active      = read_val<uint8_t>(in) != 0;
+    r.local_chemicals  = read_chem_map(in);
+    r.auxin_flow_bias  = read_bias_map(in);
+    return r;
 }
 
 // Stubs — filled in by later tasks.

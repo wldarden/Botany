@@ -5,7 +5,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <glm/vec3.hpp>
 #include "engine/genome.h"
+#include "engine/node/node.h"
 
 namespace botany {
 
@@ -45,6 +48,28 @@ LoadedPlant load_plant_snapshot(const std::string& path,
 
 void plant_snapshot_write_magic(std::ostream& out);
 bool plant_snapshot_check_magic(std::istream& in);
+
+// Per-node common-field record returned by read_node_common.  The snapshot
+// loader uses this to populate the allocated subclass, then reads any
+// type-specific trailer.
+struct NodeCommonRecord {
+    uint32_t  id;
+    uint32_t  parent_id;
+    NodeType  type;
+    uint32_t  age;
+    uint32_t  starvation_ticks;
+    uint32_t  dormant_ticks;
+    glm::vec3 position;
+    glm::vec3 offset;
+    glm::vec3 rest_offset;
+    float     radius;
+    bool      ever_active;
+    std::unordered_map<ChemicalID, float> local_chemicals;
+    std::unordered_map<uint32_t,   float> auxin_flow_bias; // keyed by child_id
+};
+
+void             write_node_common(std::ostream& out, const Node& n, uint32_t parent_id);
+NodeCommonRecord read_node_common(std::istream& in);
 
 // --- Genome binary I/O (internal; exposed for tests) ---
 // Writes every Genome field in declared order.  Adding or reordering a
