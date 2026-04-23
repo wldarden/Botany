@@ -95,6 +95,12 @@ binary files (magic "BTNT", single plant, full node + conduit + meristem
 state). Playback recordings (`botany_headless --recording-interval N` → `.bin`)
 are a separate, playback-only format owned by `serializer.*`.
 
+Compression: `src/engine/compression.{h,cpp}` collapses adjacent stem/root
+nodes that share type, alignment, and size.  Runs between ticks — manually
+from the Controls → Compression panel in `botany_realtime`, or automatically
+every N ticks when auto-compress is enabled.  Lossy by design: cap-clamping
+can trim trace sugar/water per merge (logged in `CompressionResult`).
+
 ### Tests (`tests/`)
 218 tests / 583 assertions covering: node, plant, sugar, water, hormone, gibberellin, ethylene, meristem, engine, serializer, evolution, auxin sensitivity, vascularization, and cytokinin transport.
 Key files:
