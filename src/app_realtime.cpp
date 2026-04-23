@@ -354,6 +354,7 @@ int main(int argc, char* argv[]) {
     std::string world_path;
     std::string load_plant_path;
     std::string genome_override_path;
+    std::string debug_log_path; // empty = no debug log this session
 
     bool log_perf = false;
     for (int i = 1; i < argc; i++) {
@@ -367,6 +368,8 @@ int main(int argc, char* argv[]) {
             load_plant_path = argv[++i];
         } else if (std::strcmp(argv[i], "--genome-override") == 0 && i + 1 < argc) {
             genome_override_path = argv[++i];
+        } else if (std::strcmp(argv[i], "--debug-log") == 0 && i + 1 < argc) {
+            debug_log_path = argv[++i];
         }
     }
 
@@ -407,7 +410,10 @@ int main(int argc, char* argv[]) {
             std::cerr << "--genome-override ignored without --load-plant\n";
         }
     }
-    engine.debug_log().open("debug/debug_log.csv");
+    if (!debug_log_path.empty()) {
+        engine.debug_log().open(debug_log_path);
+        std::cerr << "Debug log: " << debug_log_path << "\n";
+    }
     if (log_perf) {
         engine.perf_log().open("perf_log.csv");
         std::cout << "Performance logging enabled -> perf_log.csv" << std::endl;

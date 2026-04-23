@@ -10,7 +10,9 @@ A plant growth simulator using hormone-driven meristem mechanics. Plants grow fr
 /usr/local/bin/cmake --build build
 
 # Run realtime viewer (must run from project root for shader path)
-./build/botany_realtime [--color auxin|cytokinin|sugar|gibberellin|ethylene|type]
+./build/botany_realtime [--color auxin|cytokinin|sugar|gibberellin|ethylene|type] [--debug-log debug/debug_log.csv]
+# --debug-log is opt-in.  Without it, the viewer produces no per-tick CSV —
+# matching botany_headless's convention.
 
 # Load a previously saved snapshot and continue simulating it
 ./build/botany_realtime --load-plant saves/plant_<timestamp>_tick<N>.tree [--genome-override some_genome.txt]
