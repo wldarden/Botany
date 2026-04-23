@@ -83,6 +83,7 @@ add_library(botany_engine STATIC
     src/engine/vascular.cpp
     src/engine/vascular_sub_stepped.cpp
     src/engine/engine.cpp
+    src/engine/genome_io.cpp
     src/engine/world_params.cpp
     src/engine/ui_helpers.cpp
 )
@@ -144,6 +145,7 @@ enable_testing()
 add_executable(botany_tests
     tests/test_compartments.cpp
     tests/test_genome.cpp
+    tests/test_genome_io.cpp
     tests/test_node.cpp
     tests/test_plant.cpp
     tests/test_hormone.cpp
