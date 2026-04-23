@@ -12,6 +12,7 @@
 #include <string>
 #include <limits>
 #include "engine/engine.h"
+#include "engine/compression.h"
 #include "engine/genome_io.h"
 #include "serialization/plant_snapshot.h"
 #include <optional>
@@ -373,6 +374,11 @@ int main(int argc, char* argv[]) {
     if (!world_path.empty()) {
         engine.world_params_mut() = load_world_params(world_path);
     }
+
+    bool compression_autocompress = false;
+    int  compression_interval     = 1000;
+    engine.enable_autocompress(compression_autocompress);
+    engine.set_compression_interval(static_cast<uint32_t>(compression_interval));
     const std::string genome_dir = "src/data";
     auto genome_names = scan_genome_files(genome_dir);
     int selected_genome = 0;  // 0 = "default"
@@ -784,6 +790,32 @@ int main(int argc, char* argv[]) {
                         ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "High");
                     }
                 }
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Compression")) {
+            if (ImGui::Checkbox("Auto-compress", &compression_autocompress)) {
+                engine.enable_autocompress(compression_autocompress);
+            }
+            if (compression_autocompress) {
+                if (ImGui::InputInt("Every N ticks", &compression_interval)) {
+                    if (compression_interval < 1) compression_interval = 1;
+                    engine.set_compression_interval(static_cast<uint32_t>(compression_interval));
+                }
+            } else {
+                if (ImGui::Button("Compress Now")) {
+                    engine.trigger_compression();
+                }
+            }
+            const CompressionResult& r = engine.last_compression();
+            ImGui::Separator();
+            ImGui::Text("Last run: %u merges / %u passes",
+                        r.merges_performed, r.passes_run);
+            if (r.delta_sugar != 0.0f || r.delta_water != 0.0f) {
+                ImGui::Text("Loss: sugar=%.4g g, water=%.4g ml",
+                            r.delta_sugar, r.delta_water);
+            } else if (r.passes_run > 0u) {
+                ImGui::TextUnformatted("No cap-clamp loss.");
             }
         }
 
