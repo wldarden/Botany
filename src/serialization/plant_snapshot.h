@@ -46,4 +46,11 @@ LoadedPlant load_plant_snapshot(const std::string& path,
 void plant_snapshot_write_magic(std::ostream& out);
 bool plant_snapshot_check_magic(std::istream& in);
 
+// --- Genome binary I/O (internal; exposed for tests) ---
+// Writes every Genome field in declared order.  Adding or reordering a
+// Genome field requires editing these two functions together AND bumping
+// PLANT_SNAPSHOT_VERSION.
+void   write_genome_binary(std::ostream& out, const Genome& g);
+Genome read_genome_binary(std::istream& in);
+
 } // namespace botany
