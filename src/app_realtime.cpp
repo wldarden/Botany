@@ -464,6 +464,10 @@ int main(int argc, char* argv[]) {
     bool mouse_was_pressed = false;
     int total_ticks = 0;
 
+    // Save-toast state.
+    std::string save_toast_msg;
+    double save_toast_expires = 0.0;
+
     while (!glfwWindowShouldClose(window)) {
         if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
             glfwSetWindowShouldClose(window, true);
@@ -497,6 +501,22 @@ int main(int argc, char* argv[]) {
             }
         }
         space_was_pressed = space_down;
+
+        // Cmd+S (macOS) / Ctrl+S (Linux/Win) saves the primary plant.
+        static bool s_prev = false;
+        bool s_down = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
+        bool mod    = glfwGetKey(window, GLFW_KEY_LEFT_SUPER)   == GLFW_PRESS
+                   || glfwGetKey(window, GLFW_KEY_RIGHT_SUPER)  == GLFW_PRESS
+                   || glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS
+                   || glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL)== GLFW_PRESS;
+        if (s_down && mod && !s_prev) {
+            if (engine.plant_count() > 0) {
+                SaveResult r = save_plant_snapshot(engine.get_plant(0), engine.get_tick());
+                save_toast_msg    = r.ok ? ("Saved \u2192 " + r.path) : ("Save failed: " + r.error);
+                save_toast_expires = glfwGetTime() + 2.0;
+            }
+        }
+        s_prev = s_down;
 
         // Run sim
         if (playing) {
@@ -568,6 +588,11 @@ int main(int argc, char* argv[]) {
         int days = hours / 24;
         ImGui::Text("Tick: %d (%dd %dh)  Nodes: %d", total_ticks, days, hours % 24,
                      static_cast<int>(engine.get_plant(plant_id).node_count()));
+
+        if (glfwGetTime() < save_toast_expires && !save_toast_msg.empty()) {
+            ImGui::Separator();
+            ImGui::TextWrapped("%s", save_toast_msg.c_str());
+        }
 
         // Node & sugar stats
         float total_sugar = 0.0f;
