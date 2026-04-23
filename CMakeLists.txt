@@ -93,6 +93,7 @@ target_link_libraries(botany_engine PUBLIC glm::glm)
 # Serialization library
 add_library(botany_serialization STATIC
     src/serialization/serializer.cpp
+    src/serialization/plant_snapshot.cpp
 )
 target_include_directories(botany_serialization PUBLIC src)
 target_link_libraries(botany_serialization PUBLIC botany_engine)
@@ -156,6 +157,7 @@ add_executable(botany_tests
     tests/test_gibberellin.cpp
     tests/test_ethylene.cpp
     tests/test_serializer.cpp
+    tests/test_plant_snapshot.cpp
     tests/test_evolution.cpp
     tests/test_auxin_sensitivity.cpp
     tests/test_vascularization.cpp
