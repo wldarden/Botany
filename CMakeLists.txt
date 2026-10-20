@@ -122,8 +122,20 @@ target_link_libraries(botany_playback PRIVATE botany_engine botany_renderer bota
 add_executable(botany_dump src/app_dump.cpp)
 target_link_libraries(botany_dump PRIVATE botany_engine botany_serialization)
 
-# Evolution library (external)
-add_subdirectory(/Users/wldarden/repos/evolve ${CMAKE_BINARY_DIR}/evolve)
+# Evolution library — fetched from GitHub by default; set
+# -DBOTANY_EVOLVE_LOCAL=/path/to/checkout to use a local copy (for active
+# development on evolve itself).
+set(BOTANY_EVOLVE_LOCAL "" CACHE PATH "Path to a local evolve checkout; empty = fetch from GitHub")
+if(BOTANY_EVOLVE_LOCAL AND EXISTS "${BOTANY_EVOLVE_LOCAL}/CMakeLists.txt")
+    add_subdirectory(${BOTANY_EVOLVE_LOCAL} ${CMAKE_BINARY_DIR}/evolve)
+else()
+    FetchContent_Declare(
+        evolve
+        GIT_REPOSITORY https://github.com/wldarden/evolve.git
+        GIT_TAG main
+    )
+    FetchContent_MakeAvailable(evolve)
+endif()
 
 # Evolution library (project)
 add_library(botany_evolution STATIC
